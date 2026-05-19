@@ -1,0 +1,36 @@
+{
+  "firefox": {
+    "command": "firefox",
+    "description": "Navegador Web",
+    "enabled": true
+  },
+  "spotify": {
+    "command": "flatpak run com.spotify.Client",
+    "description": "App de Música",
+    "enabled": true
+  },
+  "kitty": {
+    "command": "kitty",
+    "description": "Terminal ZSH",
+    "enabled": true
+  },
+  "Arquivos": {
+    "command": "dolphin",
+    "description": "App de gerenciamento de arquivos",
+    "enabled": true
+  },
+  "Visual Studio Code": {
+    "command": "code",
+    "description": "Editor de código",
+    "enabled": true
+  },
+  "chatgpt": {
+    "command": "firefox https://chat.openai.com",
+    "description": "ChatGPT", 
+    "enabled": true
+  }
+}
+
+
+
+
