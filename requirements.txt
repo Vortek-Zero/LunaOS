@@ -1,0 +1,10 @@
+edge-tts
+sounddevice
+soundfile
+SpeechRecognition
+pyaudio
+requests
+fastapi
+uvicorn[standard]
+pydantic
+spotipy==2.24.0
