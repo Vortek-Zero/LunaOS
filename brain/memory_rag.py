@@ -21,8 +21,9 @@ class MemoryRAG:
             self.client = chromadb.PersistentClient(path=str(DB_DIR))
             self.collection = self.client.get_or_create_collection(name="luna_memory")
             self.write_collection = self.client.get_or_create_collection(name="write_universe")
+            self.home_collection = self.client.get_or_create_collection(name="home_info")
             self.enabled = True
-            print(f"[MemoryRAG] ✓ Banco Vetorial ChromaDB iniciado ({self.collection.count()} memórias).")
+            print(f"[MemoryRAG] ✓ Banco Vetorial ChromaDB iniciado (Memórias: {self.collection.count()}, Casa: {self.home_collection.count()}).")
         except Exception as e:
             print(f"[MemoryRAG] ⚠ Erro ao iniciar ChromaDB: {e}")
             self.enabled = False
@@ -156,3 +157,45 @@ class MemoryRAG:
         except Exception:
             pass
         return ""
+
+    def remember_home_info(self, text: str, category: str = "geral") -> str:
+        """Salva uma informação sobre a casa (wifi, chaves, tarefas, etc.) no banco vetorial."""
+        if not self.enabled or not text.strip():
+            return "FALHOU: RAG desabilitado ou texto vazio."
+        import uuid
+        emb = self._get_embedding(text)
+        doc_id = str(uuid.uuid4())
+        try:
+            meta = {"category": category, "timestamp": time.time()}
+            if emb:
+                self.home_collection.add(
+                    documents=[text], embeddings=[emb], metadatas=[meta], ids=[doc_id]
+                )
+            else:
+                self.home_collection.add(
+                    documents=[text], metadatas=[meta], ids=[doc_id]
+                )
+            return f"✓ Informação sobre a casa registrada: '{text}'"
+        except Exception as e:
+            return f"FALHOU: Erro ao salvar informação da casa: {e}"
+
+    def retrieve_home_info(self, query: str, n_results: int = 3) -> str:
+        """Busca informações salvas sobre a casa."""
+        if not self.enabled or self.home_collection.count() == 0:
+            return ""
+        emb = self._get_embedding(query)
+        try:
+            if emb:
+                results = self.home_collection.query(
+                    query_embeddings=[emb],
+                    n_results=min(n_results, self.home_collection.count())
+                )
+                docs = results.get("documents", [[]])[0]
+            else:
+                docs = self._keyword_search(self.home_collection, query, n_results)
+            if docs:
+                return "[INFORMAÇÕES SOBRE A CASA (RAG)]\n" + "\n".join(f"- {d}" for d in docs)
+        except Exception:
+            pass
+        return ""
+

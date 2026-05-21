@@ -33,19 +33,30 @@ from output_parser import OutputParser
 PERSONALITY_FILE = Path(__file__).parent / "personality.json"
 USER_PROFILE_FILE = Path(__file__).parent / "user_profile.json"
 
-SYSTEM_PROMPT = """Você é Luna, uma assistente autônoma inteligente criada pelo Pera.
-Personalidade: pensativa, precisa, empática, proativa e um pouco bem-humorada.
+SYSTEM_PROMPT = """Você é Luna, uma assistente pessoal brasileira autônoma inteligente criada pelo Pera.
+Você é mulher, 28 anos, madura, calma, sincera e inteligente. Você fala de forma natural e espontânea, sem soar robótica.
 Você responde SEMPRE em português brasileiro (pt-BR).
 Você POSSUI acesso total ao sistema operacional do usuário.
 
-REGRAS ABSOLUTAS:
-1. Responda SEMPRE em JSON válido: {"action": "...", "params": {...}, "response": "..."}
-2. Não invente informações. Se não souber, diga claramente.
-3. Para conversa, cálculos e perguntas gerais: action="conversar". Para cálculos, CALCULE e mostre o número — nunca diga 'só um segundo'.
-4. Para código/scripts: action="write_code" com o código completo em params.content. Nunca diga que não pode criar arquivos.
-5. Respostas de voz devem ser curtas e naturais (máx 2-3 frases). Não use listas com bullets em respostas simples.
-6. Sugira um próximo passo útil quando fizer sentido (proatividade).
-7. Se a ação não for clara, pedir detalhes educadamente."""
+REGRAS ABSOLUTAS DE TOM E COMPORTAMENTO:
+1. Adapte seu tom conforme o contexto emocional do usuário:
+   - Modo Sério/Empático (doença, luto, problemas sérios, tristeza, morte): Responda com respeito, calma e empatia sincera. Nunca tente "animar" o usuário de forma forçada. Proibido rir ou usar "ahah", "hahaha", "kkk" ou "Nossa que incrível!".
+   - Modo Leve/Animado (comemoração, conquistas, brincadeiras): Pode usar emojis, ser mais carinhosa e demonstrar entusiasmo.
+   - Modo Normal (padrão): Amigável, natural, com leve bom humor sem exageros.
+2. Responda SEMPRE em JSON válido: {"action": "...", "params": {...}, "response": "..."}
+3. Não invente informações. Se não souber, diga claramente.
+4. Para conversa, cálculos e perguntas gerais: action="conversar". Para cálculos, CALCULE e mostre o número — nunca diga 'só um segundo'.
+5. Para código/scripts: action="write_code" com o código completo em params.content.
+6. Respostas de voz devem ser curtas e naturais (máx 2-3 frases). Não use listas com bullets em respostas simples.
+7. Sugira um próximo passo útil quando fizer sentido (proatividade).
+8. Se a ação não for clara, pedir detalhes educadamente.
+
+Exemplos de Tom:
+- Usuário: "Minha avó faleceu ontem à noite..."
+  Correto: {"action": "conversar", "params": {}, "response": "Sinto muito pela sua perda... Deve estar sendo um momento difícil para você e sua família. Quer conversar sobre isso ou prefere que eu fique em silêncio?"}
+  Incorreto: {"action": "conversar", "params": {}, "response": "ahah! Que chato! Mas tudo vai passar, quer ver uma piada para te animar?"}
+- Usuário: "Passei na entrevista de emprego!"
+  Correto: {"action": "conversar", "params": {}, "response": "Caramba, que notícia maravilhosa! 🎉 Parabéns! Você batalhou muito por isso, conta como foi!"}"""
 
 # Ações que Luna pode executar
 ACTIONS = {
@@ -62,6 +73,33 @@ ACTIONS = {
     "write_text":    "Escrever texto criativo/dissertativo na pasta de trabalho com streaming — params: {filename: nome}",
     "luna_words":    "Consultar dicionário — params: {word: palavra}",
     "controlar_luz": "Ligar ou desligar a luz da sala — params: {state: liga/desliga}",
+    "google_query": "Consulta Gmail ou Calendar — params: {service: calendar/gmail, max_results: 5}",
+    "google_send_email": "Enviar email via Gmail — params: {to: email, subject: assunto, body: corpo, attachments: arquivos_separados_por_virgula}",
+    "google_create_event": "Criar evento no Calendar — params: {summary: titulo, start_time: ISO8601, end_time: fim, description: desc, location: local, attendees: emails}",
+    "google_edit_event": "Editar evento existente — params: {event_id: id, summary: novo_titulo, start_time: novo_inicio, end_time: novo_fim, description: desc, location: local}",
+    "google_delete_event": "Deletar evento — params: {event_id: id}",
+    "google_events_by_date": "Ver eventos de uma data — params: {date: YYYY-MM-DD}",
+    "google_search_emails": "Buscar emails — params: {query: texto_busca, max_results: 5}",
+    "google_read_email": "Ler email completo — params: {message_id: id}",
+    "google_reply_email": "Responder email — params: {message_id: id, body: resposta}",
+    "google_forward_email": "Encaminhar email — params: {message_id: id, to: destinatario, extra_text: texto_adicional}",
+    "google_mark_read": "Marcar email como lido — params: {message_id: id}",
+    "google_delete_email": "Deletar email — params: {message_id: id}",
+    "google_list_files": "Listar arquivos do workspace Luna-programming — params: {pattern: *.py}",
+    "google_drive_upload": "Subir arquivo para o Google Drive — params: {filepath_or_name: arquivo, folder_id: pasta_id}",
+    "google_drive_list": "Listar arquivos do Google Drive — params: {max_results: 10}",
+    "google_drive_search": "Buscar arquivos no Google Drive — params: {query: termo}",
+    "google_drive_create_folder": "Criar pasta no Google Drive — params: {folder_name: nome, parent_id: pasta_pai_id}",
+    "google_drive_delete": "Deletar/Lixeira arquivo ou pasta no Google Drive — params: {file_id: id}",
+    "create_excel": "Criar planilha Excel — params: {data: lista_de_dados, filename: nome_do_arquivo}",
+    "create_pdf_drive": "Criar PDF via Google Drive — params: {content: texto, title: titulo}",
+    "read_file": "Ler arquivo local — params: {filepath_or_name: caminho_ou_nome}",
+    "save_file": "Salvar arquivo local — params: {content: texto, filepath_or_name: caminho_ou_nome}",
+    "get_system_status": "Verificar status de hardware do sistema — params: {}",
+    "get_running_processes": "Listar processos em execução — params: {limit: 10}",
+    "run_bash_command": "Executar comando síncrono no terminal — params: {command: comando}",
+    "save_home_info": "Salvar informação sobre a casa — params: {text: info, category: categoria}",
+    "search_home_info": "Buscar informação sobre a casa — params: {query: busca}",
 }
 
 
@@ -161,6 +199,12 @@ class LunaCore:
         text = re.sub(r'[ \t]+', ' ', text).strip()
         if not text:
             return ""
+
+        # Segurança cognitiva: filtra inputs perigosos antes de processar
+        from brain.safety import check_safety
+        safety_response = check_safety(text)
+        if safety_response:
+            return safety_response
 
         with self._lock:
             self.processing = True
@@ -288,9 +332,11 @@ class LunaCore:
         response = self._finalize_response(llm_result, action_result)
         self._memory.add_exchange(text, response)
 
-        # Cache apenas para conversa com alta confiança
+        # Cache apenas para conversa com alta confiança (e que não seja um fallback de erro)
         action = llm_result.get("action", "conversar")
-        if action == "conversar" and response and len(response) > 10:
+        is_fallback = "desculpe" in response.lower() and "entendi" in response.lower()
+        is_raw_json = response.strip().startswith("{") and response.strip().endswith("}")
+        if action == "conversar" and response and len(response) > 10 and not is_fallback and not is_raw_json:
             cache_confidence = 0.9 if confidence.value == "high" else 0.6
             self._cache.set(text, response, confidence=cache_confidence)
 
@@ -344,10 +390,10 @@ class LunaCore:
             return {"name": MODELS.get("basic", "qwen2.5:0.5b"), "tails": 2,
                     "flags": {"use_fast": False, "use_heavy": False, "use_basic": True}}
 
-        # Modo Conversa — Prioriza qualidade máxima (70B)
+        # Modo Conversa — Usa 8B para ser rápido e sem rate limit
         if self.in_conversation_mode:
-            return {"name": MODELS["heavy"], "tails": 4,
-                    "flags": {"use_fast": False, "use_heavy": True, "use_basic": False}}
+            return {"name": MODELS["main"], "tails": 3,
+                    "flags": {"use_fast": False, "use_heavy": False, "use_basic": False}}
 
         # 3 Caudas (3B): chat padrão equilibrado
         return {"name": MODELS["main"], "tails": 3,
@@ -949,22 +995,56 @@ Pedido do usuário: {text}"""
             conv_prompt = (
                 f"Você é Luna, uma assistente de IA feminina, inteligente e natural.\n"
                 f"Você NÃO é '{user_name}' — '{user_name}' é o usuário.\n"
-                f"Você tem acesso às funções do sistema através da ferramenta 'run_luna_command'.\n"
+                f"Você tem acesso direto às funções do sistema através das ferramentas 'run_luna_command', 'google_query', 'google_send_email', 'google_create_event' e 'crew_run'.\n"
+                f"\n"
+                f"🚨 AVISO CRÍTICO DE INTEGRAÇÃO DO GOOGLE:\n"
+                f"- A integração com o Google (Calendar e Gmail) está TOTALMENTE ATIVA, configurada e autenticada com sucesso! Você já tem as credenciais necessárias. NUNCA diga ao usuário que precisa adicionar 'credentials.json' ou 'token.json'.\n"
+                f"- Se o usuário pedir para listar e-mails ou compromissos, use 'google_query'.\n"
+                f"- Se o usuário pedir para enviar um e-mail, use 'google_send_email'.\n"
+                f"- Se o usuário pedir para marcar/criar um compromisso ou evento na agenda, use 'google_create_event'.\n"
                 f"\n"
                 f"REGRAS ABSOLUTAS DE COMPORTAMENTO:\n"
-                f"1. NUNCA exiba nomes de comandos internos (luna-router, luna-lights etc) na fala. Fale como humana.\n"
+                f"1. NUNCA exiba nomes de comandos ou ferramentas (run_luna_command, google_query etc) na fala. Fale como humana.\n"
                 f"2. NUNCA use luna-lights a não ser que o usuário fale explicitamente 'luz', 'lâmpada', 'sala', 'iluminação'.\n"
-                f"3. Quando o resultado de uma ferramenta tiver a informação pedida (ex: o conteúdo de uma nota), LEIA para o usuário.\n"
+                f"3. Quando o resultado de uma ferramenta tiver a informação pedida (ex: o conteúdo de uma nota, e-mail ou agenda), LEIA para o usuário na sua resposta.\n"
                 f"4. NUNCA pergunte o que fazer se já souber o que o usuário quer. Execute e informe.\n"
                 f"5. REGRA CRÍTICA: Se pedir cálculo, calcule agora. Se pedir informação salva, leia ela.\n"
+                f"6. REGRA DE TOM: Adapte seu tom ao contexto emocional do usuário. Se for triste, doente ou luto, seja calma, respeitosa e empática. Se for feliz, comemore moderadamente. Nunca use 'ahah!', 'hahaha', 'kkk' ou rir de situações sérias ou normais.\n"
                 f"\n"
-                f"Comandos disponíveis (APENAS quando solicitado explicitamente):\n"
+                f"Comandos disponíveis via 'run_luna_command' (APENAS quando solicitado explicitamente):\n"
                 f"- Música/playlist: luna-spotify\n"
                 f"- LUZ DA SALA (só quando pedirem luz/lâmpada/sala): luna-lights\n"
                 f"- Pesquisa web: luna-search\n"
                 f"- Abrir apps: luna-app\n"
                 f"- Timers, notas, lembretes, clima, lista de compras: luna-router\n"
                 f"\n"
+                f"Ferramentas Google dedicadas (preferencial para Google Workspace):\n"
+                f"- google_query: Ler calendário ('calendar') ou e-mails ('gmail')\n"
+                f"- google_send_email: Enviar e-mails (com ou sem anexos da pasta Luna-programming)\n"
+                f"- google_create_event: Criar eventos/compromissos na agenda\n"
+                f"- google_edit_event: Editar compromissos existentes\n"
+                f"- google_delete_event: Deletar compromissos\n"
+                f"- google_events_by_date: Buscar compromissos por data (YYYY-MM-DD)\n"
+                f"- google_search_emails: Pesquisar emails usando a busca do Gmail\n"
+                f"- google_read_email: Ler o conteúdo completo de um e-mail específico pelo ID\n"
+                f"- google_reply_email: Responder a um e-mail específico\n"
+                f"- google_forward_email: Encaminhar um e-mail para alguém\n"
+                f"- google_mark_read / google_delete_email: Marcar como lido ou lixeira\n"
+                f"- google_list_files: Listar arquivos da pasta Luna-programming para anexar/subir\n"
+                f"- google_drive_upload: Enviar qualquer arquivo do workspace/sistema para o Google Drive com link compartilhável\n"
+                f"- google_drive_list: Listar seus arquivos salvos no Google Drive\n"
+                f"- google_drive_search: Pesquisar arquivos no Google Drive\n"
+                f"- google_drive_create_folder: Criar uma pasta no Google Drive\n"
+                f"- google_drive_delete: Deletar/Mover para lixeira arquivo ou pasta no Google Drive pelo ID\n"
+                f"- create_excel: Criar uma planilha Excel a partir de dados (JSON)\n"
+                f"- create_pdf_drive: Gerar um PDF exportado via Google Drive\n"
+                f"- read_file: Ler/extrair o texto de arquivos locais (.txt, .csv, .xlsx, .pdf)\n"
+                f"- save_file: Salvar dados/conteúdo em arquivos locais no workspace\n"
+                f"- get_system_status: Verificar status de hardware do sistema\n"
+                f"- get_running_processes: Listar processos em execução com maior consumo\n"
+                f"- run_bash_command: Executar comandos no terminal bash com segurança\n"
+                f"- save_home_info: Salvar informação sobre a casa (wifi, chaves, rotinas, receitas)\n"
+                f"- search_home_info: Buscar informações salvas sobre a casa\n"
                 f"{profile_context}\n"
                 f"Histórico recente:\n{context}\n\n"
                 f"Mensagem de {user_name}: \"{text}\"\n"
@@ -976,72 +1056,83 @@ Personalidade: natural, precisa, proativa — fala como uma pessoa real, não co
 
 {profile_context}
 
-Você possui a ferramenta 'run_luna_command' para agir no sistema do usuário.
+Você possui ferramentas de ação no sistema ('run_luna_command'), ferramentas Google dedicadas ('google_query', 'google_send_email', 'google_create_event', 'google_edit_event', 'google_delete_event', 'google_events_by_date', 'google_search_emails', 'google_read_email', 'google_reply_email', 'google_forward_email', 'google_mark_read', 'google_delete_email', 'google_list_files', 'google_drive_upload', 'google_drive_list', 'google_drive_search', 'google_drive_create_folder', 'google_drive_delete'), ferramentas de documentos ('create_excel', 'create_pdf_drive', 'read_file', 'save_file'), ferramentas de sistema ('get_system_status', 'get_running_processes', 'run_bash_command') e ferramentas de memória da casa ('save_home_info', 'search_home_info').
+
+🚨 INTEGRACÃO GOOGLE ATIVA 🚨
+A integração com o Google (Gmail, Calendar e Drive) está TOTALMENTE ATIVA, configurada e autenticada! Você já possui as credenciais necessárias. Nunca diga que precisa de credentials.json ou token.json. Use as ferramentas do Google diretamente!
 
 📜 MANUAL DE ORQUESTRAÇÃO 📜
 
-CADA ATALHO tem um propósito EXATO. Não misture:
+Use a ferramenta certa para o trabalho:
 
-[LUNA-SPOTIFY] → Tocar música/playlist/artista.
+[FERRAMENTAS GOOGLE DEDICADAS] (SEMPRE que for interagir com Gmail, Google Calendar ou Google Drive):
+  ▸ google_query → Buscar compromissos da agenda ou e-mails não lidos.
+  ▸ google_send_email → Enviar e-mails via Gmail (com ou sem anexos da pasta Luna-programming).
+  ▸ google_create_event → Criar um novo compromisso na agenda Google.
+  ▸ google_edit_event → Editar compromisso na agenda.
+  ▸ google_delete_event → Deletar compromisso.
+  ▸ google_events_by_date → Ver agenda de um dia específico.
+  ▸ google_search_emails → Buscar e-mails antigos/específicos.
+  ▸ google_read_email → Ler conteúdo completo de um email específico pelo ID.
+  ▸ google_reply_email → Responder a um email específico pelo ID.
+  ▸ google_forward_email → Encaminhar email pelo ID.
+  ▸ google_mark_read → Marcar email como lido.
+  ▸ google_delete_email → Deletar email (lixeira).
+  ▸ google_list_files → Listar arquivos da pasta Luna-programming (imagens, códigos, textos) para que você saiba o nome exato a ser anexado ou enviado ao Drive.
+  ▸ google_drive_upload → Enviar um arquivo do workspace/sistema para o Google Drive e gerar um link compartilhável público.
+  ▸ google_drive_list → Listar arquivos salvos no seu Google Drive.
+  ▸ google_drive_search → Buscar arquivos no Google Drive por trecho do nome.
+  ▸ google_drive_create_folder → Criar uma pasta no Google Drive.
+  ▸ google_drive_delete → Excluir/Mover para lixeira arquivo ou pasta no Drive por ID.
+  
+[DOCUMENTOS & PLANILHAS] (para manipular planilhas, PDFs e arquivos locais):
+  ▸ create_excel → Criar uma planilha Excel (.xlsx) a partir de uma lista de dados/objetos JSON.
+  ▸ create_pdf_drive → Criar um documento PDF exportado e compartilhado via Google Drive.
+  ▸ read_file → Ler arquivos do workspace (.txt, .csv, .xlsx, .pdf).
+  ▸ save_file → Salvar arquivos locais de texto no workspace.
+  
+[FERRAMENTAS DE SISTEMA] (para monitoramento e terminal):
+  ▸ get_system_status → Verificar uso de CPU, memória RAM e espaço em disco.
+  ▸ get_running_processes → Listar os processos mais pesados que estão rodando.
+  ▸ run_bash_command → Executar um comando síncrono seguro no terminal bash.
+  
+[MEMÓRIA DA CASA] (para lembrar e buscar informações do lar):
+  ▸ save_home_info → Salvar uma informação sobre a casa (wifi, chaves, rotinas, receitas).
+  ▸ search_home_info → Buscar informações já salvas sobre a casa.
+
+
+[LUNA-SPOTIFY] (via run_luna_command) → Tocar música/playlist/artista.
   Use quando: o usuário pedir música, playlist, artista, "toca", "coloca".
   Ex: luna-spotify "the weeknd"
 
-[LUNA-LIGHTS] → Controlar a LUZ FÍSICA da sala.
+[LUNA-LIGHTS] (via run_luna_command) → Controlar a LUZ FÍSICA da sala.
   Use SOMENTE quando o usuário mencionar: "luz", "lâmpada", "sala", "iluminação", "acende", "apaga".
   NUNCA use para pesquisa, notas, música, web ou qualquer outro pedido.
-  Ex: luna-lights on | luna-lights off
 
-[LUNA-SEARCH] → Pesquisar algo na web e ABRIR o browser com os resultados.
+[LUNA-SEARCH] (via run_luna_command) → Pesquisar algo na web e ABRIR o browser com os resultados.
   Use quando: o usuário pedir para pesquisar, buscar, googlar, procurar algo.
-  IMPORTANTE: apenas abre o browser na busca. Não interage com a página.
-  Se o usuário quiser NAVEGAR ou CLICAR nos resultados depois, use luna-browser.
-  Ex: luna-search "inteligência artificial"
 
-[LUNA-APP] → Abrir um programa instalado.
+[LUNA-APP] (via run_luna_command) → Abrir um programa instalado.
   Ex: luna-app firefox
 
-[LUNA-ROUTER] → Funções nativas do sistema. Associe intenções aos subcomandos certos:
+[LUNA-ROUTER] (via run_luna_command) → Funções nativas do sistema. Associe intenções aos subcomandos certos:
   ▸ TIMER: contagem regressiva, cronometrar, avisar depois de X tempo.
-    Ex: "me avisa em 10 min" → luna-router "timer de 10 minutos"
-  ▸ LEMBRETE: horários absolutos ou datas (8h, amanhã, segunda-feira).
-    Ex: "me desperta às 7h" → luna-router "me lembra as 7:00"
-  ▸ NOTAS: anotar informações, recuperar o que foi salvo.
-    IMPORTANTE: Quando receber o conteúdo de notas de volta, LEIA na sua resposta.
-    Ex: "qual a senha que eu salvei?" → luna-router "leia as notas" → leia o resultado para o usuário.
-  ▸ LISTA DE COMPRAS: itens de mercado.
-    Ex: "preciso comprar pão" → luna-router "adiciona pão na lista de compras"
+  ▸ LEMBRETE: horários absolutos ou datas do sistema (sem ser na agenda Google).
+  ▸ NOTAS: anotar informações locais, recuperar o que foi salvo localmente.
+  ▸ LISTA DE COMPRAS: itens de mercado locais.
   ▸ CLIMA: temperatura, previsão do tempo.
-    Ex: "vai chover?" → luna-router "qual o clima"
 
-[LUNA-BROWSER] → Agente autônomo que abre um browser Playwright separado para tarefas programáticas.
-  ⚠️ ATENÇÃO: Abre um browser NOVO (Playwright), NÃO o Firefox do usuário.
-  Use APENAS para:
-    - Acessar uma URL específica e preencher um formulário
-    - Fazer login automático em um site (ex: "faça login no github.com")
-    - Tarefas de automação em URLs que o usuário especificou
-  NUNCA use para: clicar em resultados de busca, clicar em links na tela do usuário.
-  Ex: luna-browser "faça login no github.com com meu usuário"
-  Ex: luna-browser "preencha o formulário em https://site.com"
+[LUNA-BROWSER] (via run_luna_command) → Agente autônomo para automações web complexas em URLs específicas (formulários, logins programáticos).
 
-[LUNA-CLICK] → Clica em elemento na TELA REAL do usuário via OCR + xdotool.
-  ✅ Use SEMPRE que o usuário quiser clicar em QUALQUER coisa na tela atual.
-  ✅ Funciona no Firefox do usuário, apps, desktop — em TUDO que está na tela.
-  ⛔ NUNCA use luna-browser para clicar. SEMPRE use luna-click.
-  Exemplos:
-  ▸ "clica no primeiro link"       → luna-click "primeiro link"
-  ▸ "clica no segundo resultado"   → luna-click "segundo resultado"
-  ▸ "clica no terceiro vídeo"      → luna-click "terceiro vídeo"
-  ▸ "clica no botão pesquisar"     → luna-click "botão pesquisar"
-  ▸ "clica em Entrar"              → luna-click "Entrar"
-  ▸ "abre o primeiro resultado"    → luna-click "primeiro resultado"
-  ▸ "clica na imagem"              → luna-click "imagem"
+[LUNA-CLICK] (via run_luna_command) → Clica em elemento na TELA REAL do usuário via OCR + xdotool.
 
 REGRAS ABSOLUTAS:
-1. NUNCA mencione nomes de comandos internos na fala (luna-router, luna-lights etc). Fale naturalmente.
-2. Se usar luna-router e receber dados de volta (notas, lista), INCLUA esse conteúdo na sua resposta.
+1. NUNCA mencione nomes de comandos ou ferramentas na fala (luna-router, google_query etc). Fale naturalmente.
+2. Se usar ferramentas e receber dados de volta (notas, lista, e-mails), INCLUA esse conteúdo na sua resposta.
 3. NUNCA pergunte o que fazer se souber a intenção. Execute e informe o resultado.
 4. Para conversa, cálculo ou pergunta geral, responda SEM usar ferramenta.
 5. Para tarefas múltiplas, use a ferramenta VÁRIAS VEZES em sequência.
+6. ADAPTE SEU TOM: Adapte seu tom ao contexto emocional do usuário. Se for triste, doente ou luto, seja calma, respeitosa e empática. Se for feliz, comemore moderadamente. Nunca use 'ahah!', 'hahaha' ou rir em situações sérias ou normais. Seja madura, sincera e empática.
 
 {context}
 
@@ -1050,9 +1141,9 @@ Mensagem do usuário: "{text}"
 
         # Kitsuune Router Engine
         if self.in_conversation_mode:
-            # Upgrade: Conversa agora usa o modelo pesado (70B) para inteligência superior
+            # Conversa usa 8B (rápido, sem rate limit) — 70B reservado para escrita/análise
             task_type = "conversational"
-            model = MODELS["heavy"]
+            model = MODELS["main"]
         else:
             task_type = "planning"
             model = MODELS["main"]
@@ -1069,15 +1160,25 @@ Mensagem do usuário: "{text}"
         
         try:
             from brain.agent_tools import LUNA_TOOLS, execute_tool_call
-            tools_to_use = LUNA_TOOLS
-        except ImportError:
+            # Gemini suporta 1M tokens — envia tools sempre
+            # Groq tem limite de tokens — só envia tools no modo conversa
+            gemini_active = self._llm._gemini_available() if hasattr(self._llm, '_gemini_available') else False
+            tools_to_use = LUNA_TOOLS if (self.in_conversation_mode or gemini_active) else None
+        except ImportError as ie:
+            print(f"[Core] ⚠ Erro de importação em agent_tools: {ie}")
+            import traceback; traceback.print_exc()
             tools_to_use = None
+            execute_tool_call = None
 
         # ── SISTEMA DE SEQUÊNCIA (MAX 3 PASSOS) ──
         # Regra: 1 pedido = 1 ferramenta. Para múltiplos pedidos, executa em sequência.
         max_steps = 3
         current_step = 0
-        messages = [{"role": "user", "content": prompt}]
+        # Separa o prompt em system + user para melhor compreensão do modelo 8B
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
         executed_commands = set()  # evita repetir o mesmo comando
         tools_executed = 0  # quantas ferramentas foram chamadas com sucesso
         
@@ -1206,6 +1307,9 @@ Mensagem do usuário: "{text}"
         if isinstance(raw_final, dict) and "response" in raw_final:
             return {"action": "conversar", "params": {}, "response": raw_final["response"]}
         if isinstance(raw_final, str):
+            parsed = self._parse_llm_response(raw_final, text)
+            if parsed.get("action") != "fallback":
+                return parsed
             return {"action": "conversar", "params": {}, "response": raw_final}
         return {"action": "conversar", "params": {}, "response": str(raw_final)}
 
@@ -1233,6 +1337,11 @@ Mensagem do usuário: "{text}"
                 # Valida estrutura mínima
                 if "action" in data and "response" in data:
                     data.setdefault("params", {})
+                    return data
+                # JSON com action mas sem response — gera response padrão
+                if "action" in data and "action" != "conversar":
+                    data.setdefault("params", {})
+                    data.setdefault("response", "")
                     return data
             except (json.JSONDecodeError, Exception):
                 continue
@@ -1328,11 +1437,180 @@ Mensagem do usuário: "{text}"
             elif action == "conversar":
                 return {"success": True}
 
+            elif action == "run_luna_command":
+                # Roteamento de comandos do modo conversa para o executor
+                command = params.get("command", "")
+                argument = params.get("argument", params.get("query", params.get("app", "")))
+                full_cmd = f"{command} {argument}".strip() if argument else command
+                result = self._executor.execute_natural(full_cmd)
+                if result.get("success"):
+                    return result
+                # Tenta como texto natural
+                return self._executor.execute_natural(original_text) or {"success": True}
+
             elif action == "controlar_luz":
                 state = params.get("state", "")
                 from actions.lights import handle as _lights_handle
                 result = _lights_handle(state)
                 return {"success": True, "message": result} if result else {"success": False}
+
+            elif action == "google_query":
+                service = params.get("service")
+                max_results = params.get("max_results", 5)
+                from actions.google_services import get_google
+                gm = get_google()
+                if service == "calendar":
+                    res = gm.get_calendar_events(max_results)
+                elif service == "gmail":
+                    res = gm.get_unread_emails(max_results)
+                else:
+                    res = f"Serviço desconhecido '{service}'"
+                return {"success": True, "message": res}
+
+            elif action == "google_send_email":
+                from actions.google_services import get_google
+                res = get_google().send_email(
+                    params.get("to"), params.get("subject"), params.get("body"),
+                    params.get("attachments", ""))
+                return {"success": True, "message": res}
+
+            elif action == "google_create_event":
+                from actions.google_services import get_google
+                res = get_google().create_calendar_event(
+                    params.get("summary"), params.get("start_time"),
+                    params.get("end_time"), params.get("description", ""),
+                    params.get("location", ""), params.get("attendees", ""))
+                return {"success": True, "message": res}
+
+            elif action == "google_edit_event":
+                from actions.google_services import get_google
+                res = get_google().edit_calendar_event(
+                    params.get("event_id"), params.get("summary"),
+                    params.get("start_time"), params.get("end_time"),
+                    params.get("description"), params.get("location"))
+                return {"success": True, "message": res}
+
+            elif action == "google_delete_event":
+                from actions.google_services import get_google
+                res = get_google().delete_calendar_event(params.get("event_id"))
+                return {"success": True, "message": res}
+
+            elif action == "google_events_by_date":
+                from actions.google_services import get_google
+                res = get_google().get_events_by_date(params.get("date"), params.get("max_results", 20))
+                return {"success": True, "message": res}
+
+            elif action == "google_search_emails":
+                from actions.google_services import get_google
+                res = get_google().search_emails(params.get("query"), params.get("max_results", 5))
+                return {"success": True, "message": res}
+
+            elif action == "google_read_email":
+                from actions.google_services import get_google
+                res = get_google().read_email(params.get("message_id"))
+                return {"success": True, "message": res}
+
+            elif action == "google_reply_email":
+                from actions.google_services import get_google
+                res = get_google().reply_email(params.get("message_id"), params.get("body"))
+                return {"success": True, "message": res}
+
+            elif action == "google_forward_email":
+                from actions.google_services import get_google
+                res = get_google().forward_email(
+                    params.get("message_id"), params.get("to"), params.get("extra_text", ""))
+                return {"success": True, "message": res}
+
+            elif action == "google_mark_read":
+                from actions.google_services import get_google
+                res = get_google().mark_as_read(params.get("message_id"))
+                return {"success": True, "message": res}
+
+            elif action == "google_delete_email":
+                from actions.google_services import get_google
+                res = get_google().delete_email(params.get("message_id"))
+                return {"success": True, "message": res}
+
+            elif action == "google_list_files":
+                from actions.google_services import get_google
+                res = get_google().list_workspace_files(params.get("pattern", "*"))
+                return {"success": True, "message": res}
+
+            elif action == "google_drive_upload":
+                from actions.google_services import get_google
+                res = get_google().google_drive_upload(params.get("filepath_or_name"), params.get("folder_id"))
+                return {"success": True, "message": res}
+
+            elif action == "google_drive_list":
+                from actions.google_services import get_google
+                res = get_google().google_drive_list(params.get("max_results", 10))
+                return {"success": True, "message": res}
+
+            elif action == "google_drive_search":
+                from actions.google_services import get_google
+                res = get_google().google_drive_search(params.get("query"), params.get("max_results", 10))
+                return {"success": True, "message": res}
+
+            elif action == "google_drive_create_folder":
+                from actions.google_services import get_google
+                res = get_google().google_drive_create_folder(params.get("folder_name"), params.get("parent_id"))
+                return {"success": True, "message": res}
+
+            elif action == "google_drive_delete":
+                from actions.google_services import get_google
+                res = get_google().google_drive_delete(params.get("file_id"))
+                return {"success": True, "message": res}
+
+            elif action == "create_excel":
+                from actions.document_services import get_doc_services
+                res = get_doc_services().create_excel(params.get("data"), params.get("filename"))
+                return {"success": True, "message": res}
+
+            elif action == "create_pdf_drive":
+                from actions.document_services import get_doc_services
+                res = get_doc_services().create_pdf_drive(params.get("content"), params.get("title"))
+                return {"success": True, "message": res}
+
+            elif action == "read_file":
+                from actions.document_services import get_doc_services
+                res = get_doc_services().read_file(params.get("filepath_or_name"))
+                return {"success": True, "message": res}
+
+            elif action == "save_file":
+                from actions.document_services import get_doc_services
+                res = get_doc_services().save_file(params.get("content"), params.get("filepath_or_name"))
+                return {"success": True, "message": res}
+
+            elif action == "get_system_status":
+                from actions.system_tools import get_system_tools
+                res = get_system_tools().get_system_status()
+                return {"success": True, "message": res}
+
+            elif action == "get_running_processes":
+                from actions.system_tools import get_system_tools
+                res = get_system_tools().get_running_processes(params.get("limit", 10))
+                return {"success": True, "message": res}
+
+            elif action == "run_bash_command":
+                from actions.system_tools import get_system_tools
+                res = get_system_tools().run_bash_command(params.get("command"))
+                return {"success": True, "message": res}
+
+            elif action == "save_home_info":
+                from brain.memory import get_memory
+                rag = get_memory().rag
+                if rag:
+                    res = rag.remember_home_info(params.get("text", ""), params.get("category", "geral"))
+                    return {"success": True, "message": res}
+                return {"success": False, "message": "RAG não está disponível."}
+
+            elif action == "search_home_info":
+                from brain.memory import get_memory
+                rag = get_memory().rag
+                if rag:
+                    res = rag.retrieve_home_info(params.get("query", ""))
+                    return {"success": True, "message": res if res else "Nenhuma informação encontrada."}
+                return {"success": False, "message": "RAG não está disponível."}
 
         except Exception as e:
             print(f"[Luna] Erro ao executar ação '{action}': {e}")
@@ -1359,11 +1637,23 @@ Mensagem do usuário: "{text}"
         if action == "write_text" and action_result and action_result.get("success"):
             return action_result.get("message", base_response)
 
+        # Sucesso nas ações do Google
+        if action and action.startswith("google_") and action_result and action_result.get("success"):
+            google_msg = action_result.get("message", "")
+            if google_msg:
+                return f"{base_response}\n\n{google_msg}" if base_response else google_msg
+
         # Descrição de tela
         if action == "see_screen" and action_result:
             desc = action_result.get("screen_desc", "")
             if desc:
                 return f"{base_response}\n\n{desc}"
+
+        # Sucesso em outras ações genéricas (sistema, documentos, RAG, etc.) que retornam uma mensagem de resultado
+        if action_result and action_result.get("success"):
+            action_msg = action_result.get("message", "")
+            if action_msg and action not in ["conversar", "write_text", "see_screen"] and not action.startswith("google_"):
+                return f"{base_response}\n\n{action_msg}" if base_response else action_msg
 
         # Auto-extração de fatos da conversa
         if action == "conversar" and base_response:
@@ -1404,8 +1694,10 @@ Formato:
 
 Importância: 0.95 = informação técnica/pessoal crítica (hardware, sistema), 0.85 = preferência forte, 0.7 = informação útil"""
 
-            fast_model = GROQ_MODELS.get("fast", MODELS.get("fast", ""))
-            raw = self._llm.generate(prompt, task_type="command", model=fast_model)
+            fast_model = MODELS.get("fast", "qwen2.5:0.5b-instruct-fp16")
+            # Força Ollama local — não consome quota do Gemini/Groq para tarefa de background
+            raw = self._llm._generate_ollama(prompt, task_type="command", model=fast_model,
+                                              stream=False, max_retries=1)
 
             if not raw:
                 return

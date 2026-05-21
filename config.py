@@ -91,6 +91,16 @@ VOICE_CONFIG = {
 }
 
 # --- MOTOR DE TTS ---
+# Prioridade de motores de voz
+TTS_PRIORITY = os.getenv("LUNA_TTS_PRIORITY", "google_cloud,f5,edge_tts,elevenlabs,azure,pyttsx3").split(",")
+
+# Credenciais e vozes de outros motores
+ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
+ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  # padrão pt-BR/Rachel
+AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY", "")
+AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "eastus")
+AZURE_SPEECH_VOICE = os.getenv("AZURE_SPEECH_VOICE", "pt-BR-ThalitaNeural")
+
 # Se USE_LOCAL_F5 for True, usará o clonador de voz zero-shot (F5-TTS) com seu MP3
 USE_LOCAL_F5 = False
 F5_REF_AUDIO = str(Path(__file__).parent / "voice" / "Vozparaokokoro.mp3")
@@ -116,14 +126,28 @@ MEMORY_SAVE_DEBOUNCE_SECONDS = 5.0
 WORKER_URL     = os.getenv("LUNA_WORKER_URL", "http://192.168.1.100:8000")
 WORKER_API_KEY = os.getenv("LUNA_WORKER_API_KEY", "luna-changeme")
 
+# ── Gemini LLM API ────────────────────────────────────────────
+# aistudio.google.com/apikey — Gemini 2.5 Flash (primário)
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+GEMINI_MODELS = {
+    "heavy":     "gemini-2.5-flash",
+    "main":      "gemini-2.5-flash",
+    "fast":      "gemini-2.5-flash",
+    "fallback":  "gemini-2.0-flash",       # fallback 1
+    "fallback2": "gemini-2.5-flash-lite",  # fallback 2
+}
+
 # ── Groq LLM API ──────────────────────────────────────────────
 # console.groq.com — Whisper STT + LLM (llama3, gemma2, mixtral)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
 # Modelos Groq (substituem Ollama quando disponível)
+# REGRA: 8B = chat/conversa/planejamento (rápido, sem rate limit)
+#        70B = escrita criativa, análise pesada, código complexo
 GROQ_MODELS = {
-    "heavy": "qwen/qwen3-32b",             # substitui qwen-2.5-coder-32b (descontinuado) — coding/análise
-    "main":  "llama-3.3-70b-versatile",    # conversação geral — produção
+    "heavy": "llama-3.3-70b-versatile",    # escrita criativa + análise pesada — reservado
+    "main":  "llama-3.1-8b-instant",       # chat/conversa/planejamento — produção (rápido)
     "fast":  "llama-3.1-8b-instant",       # comandos rápidos — produção
 }
 

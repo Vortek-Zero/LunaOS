@@ -180,42 +180,189 @@ class TTSEngine:
                 self._speaking = False
 
     async def _generate_audio(self, text: str, rate: str = None, pitch: str = None) -> None:
-        """Gera o arquivo de audio via F5-TTS, Kokoro ou edge-tts."""
-        rate  = rate  or self.rate
-        pitch = pitch or self.pitch
+        """Gera o arquivo de áudio tentando os motores na ordem da prioridade configurada."""
+        priority = getattr(config, "TTS_PRIORITY", ["google_cloud", "f5", "edge_tts", "elevenlabs", "azure", "pyttsx3"])
+        
+        for engine_name in priority:
+            engine_name = engine_name.strip().lower()
+            success = False
+            
+            if engine_name == "google_cloud":
+                success = await self._play_google_cloud(text)
+            elif engine_name == "f5":
+                success = await self._play_f5(text)
+            elif engine_name == "edge_tts":
+                success = await self._play_edge_tts(text, rate, pitch)
+            elif engine_name == "elevenlabs":
+                success = await self._play_elevenlabs(text)
+            elif engine_name == "azure":
+                success = await self._play_azure(text)
+            elif engine_name == "pyttsx3":
+                success = await self._play_pyttsx3(text)
+                
+            if success and os.path.exists(TTS_TEMP_FILE) and os.path.getsize(TTS_TEMP_FILE) > 0:
+                print(f"[TTS] ✓ Áudio gerado com sucesso usando o motor: {engine_name}")
+                return
+                
+        print("[TTS] ❌ Falha crítica: Nenhum motor de voz conseguiu gerar o áudio.")
 
-        # Prioridade 1: F5-TTS (Zero-shot cloning)
+    async def _play_google_cloud(self, text: str) -> bool:
+        try:
+            from google.cloud import texttospeech
+            creds = None
+            try:
+                from actions.google_services import get_google
+                g = get_google()
+                if g and g.available:
+                    creds = g.creds
+            except Exception:
+                pass
+            
+            if creds:
+                client = texttospeech.TextToSpeechClient(credentials=creds)
+            else:
+                client = texttospeech.TextToSpeechClient()
+                
+            input_text = texttospeech.SynthesisInput(text=text)
+            voice_name = getattr(config, "GOOGLE_CLOUD_TTS_VOICE", "pt-BR-Neural2-A")
+            voice = texttospeech.VoiceSelectionParams(
+                language_code="pt-BR",
+                name=voice_name
+            )
+            audio_config = texttospeech.AudioConfig(
+                audio_encoding=texttospeech.AudioEncoding.MP3
+            )
+            
+            response = client.synthesize_speech(
+                input=input_text, voice=voice, audio_config=audio_config
+            )
+            
+            with open(TTS_TEMP_FILE, "wb") as out:
+                out.write(response.audio_content)
+            return True
+        except Exception as e:
+            # Silencioso se não configurado
+            return False
+
+    async def _play_f5(self, text: str) -> bool:
         if hasattr(self, 'f5_engine') and self.f5_engine is not None:
             try:
                 self.f5_engine.generate_to_file(text, TTS_TEMP_FILE)
-                return
+                return True
             except Exception as e:
-                print(f"[TTS] ⚠ Erro na clonagem F5: {e}. Fazendo fallback...")
+                print(f"[TTS] ⚠ Erro no F5-TTS: {e}")
+        return False
 
-        # Prioridade 2: Kokoro
-        if self.kokoro and USE_LOCAL_XTTS:
-            try:
-                voice_name = getattr(config, "LOCAL_TTS_VOICE", "pf_dora")
-                samples, sample_rate = self.kokoro.create(
-                    text, voice=voice_name, speed=1.0, lang="pt-br"
-                )
-                sf.write(TTS_TEMP_FILE, samples, sample_rate)
-                return
-            except Exception as e:
-                print(f"[TTS] ⚠ Erro na IA Local: {e}. Fazendo fallback...")
-
-        # Fallback final para Edge TTS
+    async def _play_edge_tts(self, text: str, rate: str = None, pitch: str = None) -> bool:
         if not HAS_EDGE_TTS:
-            return
+            return False
+        try:
+            rate = rate or self.rate
+            pitch = pitch or self.pitch
+            communicate = edge_tts.Communicate(
+                text,
+                self.voice,
+                rate=rate,
+                pitch=pitch,
+                volume=self.volume,
+            )
+            await communicate.save(TTS_TEMP_FILE)
+            return True
+        except Exception as e:
+            print(f"[TTS] ⚠ Erro no Edge TTS: {e}")
+            return False
 
-        communicate = edge_tts.Communicate(
-            text,
-            self.voice,
-            rate=rate,
-            pitch=pitch,
-            volume=self.volume,
-        )
-        await communicate.save(TTS_TEMP_FILE)
+    async def _play_elevenlabs(self, text: str) -> bool:
+        api_key = getattr(config, "ELEVENLABS_API_KEY", "")
+        if not api_key:
+            return False
+        try:
+            import requests
+            voice_id = getattr(config, "ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")
+            url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+            headers = {
+                "Accept": "audio/mpeg",
+                "Content-Type": "application/json",
+                "xi-api-key": api_key
+            }
+            data = {
+                "text": text,
+                "model_id": "eleven_multilingual_v2",
+                "voice_settings": {
+                    "stability": 0.5,
+                    "similarity_boost": 0.75
+                }
+            }
+            resp = requests.post(url, json=data, headers=headers, timeout=10)
+            if resp.status_code == 200:
+                with open(TTS_TEMP_FILE, "wb") as f:
+                    f.write(resp.content)
+                return True
+            else:
+                print(f"[TTS] ⚠ ElevenLabs respondeu {resp.status_code}: {resp.text}")
+                return False
+        except Exception as e:
+            print(f"[TTS] ⚠ Erro no ElevenLabs: {e}")
+            return False
+
+    async def _play_azure(self, text: str) -> bool:
+        key = getattr(config, "AZURE_SPEECH_KEY", "")
+        region = getattr(config, "AZURE_SPEECH_REGION", "eastus")
+        if not key:
+            return False
+        try:
+            import requests
+            url = f"https://{region}.tts.speech.microsoft.com/cognitiveservices/v1"
+            headers = {
+                "Ocp-Apim-Subscription-Key": key,
+                "Content-Type": "application/ssml+xml",
+                "X-Microsoft-OutputFormat": "audio-16khz-128kbitrate-mono-mp3",
+                "User-Agent": "LunaTTS"
+            }
+            voice = getattr(config, "AZURE_SPEECH_VOICE", "pt-BR-ThalitaNeural")
+            ssml = f"""<speak version='1.0' xml:lang='pt-BR'>
+                <voice xml:lang='pt-BR' name='{voice}'>
+                    {text}
+                </voice>
+            </speak>"""
+            resp = requests.post(url, data=ssml.encode('utf-8'), headers=headers, timeout=10)
+            if resp.status_code == 200:
+                with open(TTS_TEMP_FILE, "wb") as f:
+                    f.write(resp.content)
+                return True
+            else:
+                print(f"[TTS] ⚠ Azure TTS respondeu {resp.status_code}: {resp.text}")
+                return False
+        except Exception as e:
+            print(f"[TTS] ⚠ Erro no Azure: {e}")
+            return False
+
+    async def _play_pyttsx3(self, text: str) -> bool:
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            voices = engine.getProperty('voices')
+            for voice in voices:
+                if 'pt' in voice.languages or 'brazil' in voice.name.lower():
+                    engine.setProperty('voice', voice.id)
+                    break
+            
+            wav_file = str(TEMP_DIR / "luna_pyttsx3.wav")
+            engine.save_to_file(text, wav_file)
+            engine.runAndWait()
+            
+            if os.path.exists(wav_file):
+                if os.path.exists(TTS_TEMP_FILE):
+                    try:
+                        os.remove(TTS_TEMP_FILE)
+                    except Exception:
+                        pass
+                os.rename(wav_file, TTS_TEMP_FILE)
+                return True
+            return False
+        except Exception as e:
+            print(f"[TTS] ⚠ Erro no pyttsx3: {e}")
+            return False
 
     def _clean_text(self, text: str) -> str:
         """Remove markdown e símbolos antes de falar."""

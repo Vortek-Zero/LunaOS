@@ -753,8 +753,7 @@
       <button class="nav-btn" onclick="showTab('control')" id="nav-control"><i data-lucide="home"></i> Controle</button>
       <button class="nav-btn" onclick="showTab('wiki')" id="nav-wiki"><i data-lucide="book-open"></i> Wiki</button>
       <button class="nav-btn" onclick="showTab('coding')" id="nav-coding" style="color:#fd9644;border-color:transparent"><i data-lucide="code-2"></i> Coding</button>
-      <button class="nav-btn" onclick="showTab('write')" id="nav-write" style="color:#00d9a3;border-color:transparent"><i data-lucide="pen-tool"></i> Write ✍️</button>
-      <button class="nav-btn" onclick="window.location.href='/joy'" id="nav-joy" style="color:#fd79a8;border-color:transparent"><i data-lucide="gamepad-2"></i> Joy 🎮</button>
+      <button class="nav-btn" onclick="showTab('joy')" id="nav-joy" style="color:#fd79a8;border-color:transparent"><i data-lucide="gamepad-2"></i> Joy 🎮</button>
     </div>
     <div id="sessionList" style="display:none"></div>
     <button id="newChatBtn" style="display:none" onclick="newSession()"><i data-lucide="plus"></i> Nova conversa</button>
@@ -1193,6 +1192,11 @@
       </div>
     </div>
 
+    <!-- ══ JOY MODE ══ -->
+    <div id="panel-joy" class="panel" style="padding:0;overflow:hidden;width:100%;height:100%">
+      <iframe id="joyFrame" style="width:100%;height:100%;border:none;background:var(--bg)"></iframe>
+    </div>
+
   </main>
 
   <!-- Fullscreen preview popup -->
@@ -1344,7 +1348,7 @@ function showTab(tab){
   document.getElementById('panel-'+tab).classList.add('active');
   document.getElementById('nav-'+tab).classList.add('active');
   document.getElementById('topbarTitle').textContent=
-    {chat:'Chat',voice:'Voz',media:'Mídia',widgets:'Widgets',system:'Sistema',control:'Controle',wiki:'Wiki',coding:'Coding',write:'Write'}[tab]||'Luna';
+    {chat:'Chat',voice:'Voz',media:'Mídia',widgets:'Widgets',system:'Sistema',control:'Controle',wiki:'Wiki',coding:'Coding',write:'Write',joy:'Joy'}[tab]||'Luna';
   // Show/hide session list only on chat tab
   document.getElementById('sessionList').style.display=tab==='chat'?'flex':'none';
   document.getElementById('newChatBtn').style.display=tab==='chat'?'':'none';
@@ -1358,6 +1362,12 @@ function showTab(tab){
   if(tab==='wiki'){renderWiki(document.getElementById('wikiSearch').value)}
   if(tab==='coding'){initCodingMode()}
   if(tab==='write'){initWriteMode()}
+  if(tab==='joy'){
+    const token = localStorage.getItem('luna_token') || '';
+    const base = localStorage.getItem('luna_base') || '';
+    const key = localStorage.getItem('luna_key') || '';
+    document.getElementById('joyFrame').src = `/joy?token=${encodeURIComponent(token)}&base=${encodeURIComponent(base)}&key=${encodeURIComponent(key)}`;
+  }
   if(typeof lucide!=='undefined') lucide.createIcons();
 }
 

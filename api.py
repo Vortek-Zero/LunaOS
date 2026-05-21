@@ -43,8 +43,11 @@ app.add_middleware(
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(api_key: Optional[str] = Depends(API_KEY_HEADER)):
+async def verify_api_key(request: Request, api_key: Optional[str] = Depends(API_KEY_HEADER)):
     """Verifica API key. Permite acesso sem key a / e /api/health."""
+    client_host = request.client.host if request.client else None
+    if client_host in ("127.0.0.1", "localhost", "::1"):
+        return api_key or config.API_KEY
     if not api_key or api_key != config.API_KEY:
         raise HTTPException(
             status_code=403,
@@ -1361,7 +1364,15 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
 
 if _web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_web_dir)), name="static")
-
+@app.post("/api/shutdown")
+async def shutdown():
+    import os, signal, asyncio
+    print("🛑 Shutting down Luna Backend...")
+    async def exit_later():
+        await asyncio.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGINT)
+    asyncio.create_task(exit_later())
+    return {"success": True, "message": "Backend shutting down..."}
 
 
 # ── Função para iniciar o servidor ────────────────────────────
@@ -1369,13 +1380,14 @@ if _web_dir.exists():
 def run_server(host: str = None, port: int = None):
     """Inicia o servidor FastAPI com uvicorn."""
     import uvicorn
+    import os
     from pathlib import Path as _Path
     _host = host or config.API_HOST
     _port = port or config.API_PORT
 
     _ssl_key  = _Path(__file__).parent / "ssl" / "key.pem"
     _ssl_cert = _Path(__file__).parent / "ssl" / "cert.pem"
-    _https = _ssl_key.exists() and _ssl_cert.exists()
+    _https = os.getenv("LUNA_USE_HTTPS", "false").lower() == "true" and _ssl_key.exists() and _ssl_cert.exists()
     _scheme = "https" if _https else "http"
 
     print(f"\n🌐 Luna API (FastAPI + Uvicorn)")

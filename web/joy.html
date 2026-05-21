@@ -208,6 +208,7 @@ body::before{content:'';position:fixed;pointer-events:none;z-index:0;
 @media(max-width:400px){
   .cell,.chess-cell{width:34px;height:34px;font-size:1.1em}
 }
+body.in-iframe .sb-back { display: none !important; }
 </style>
 </head>
 <body>
@@ -661,8 +662,17 @@ async function sendChat(){
 }
 
 // ── Init ──────────────────────────────────────────────────────
-// Check if activated by "vamos nos divertir" param
 const _params=new URLSearchParams(location.search);
+if(window.self !== window.top) {
+  document.body.classList.add('in-iframe');
+  const parentToken = _params.get('token') || '';
+  const parentBase = _params.get('base') || '';
+  const parentKey = _params.get('key') || '';
+  if (parentToken) localStorage.setItem('luna_token', parentToken);
+  if (parentBase) localStorage.setItem('luna_base', parentBase);
+  if (parentKey) localStorage.setItem('luna_key', parentKey);
+}
+// Check if activated by "vamos nos divertir" param
 const _autoGame=_params.get('game');
 if(_autoGame) selectGame(_autoGame);
 </script>

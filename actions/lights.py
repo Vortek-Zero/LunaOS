@@ -12,7 +12,7 @@ except ImportError:
 
 DEVICE_ID = "eb64a81b56fb8003dexqdd"
 LOCAL_KEY  = "Ek&~Ah`=4s}5.'Z#"
-IP_DEVICE  = "192.168.1.15"
+IP_DEVICE  = "192.168.1.5"
 
 _RESPOSTAS_LIGA = [
     "Luz da sala ligada!",
@@ -73,10 +73,10 @@ def handle(cmd: str) -> str | None:
     c = cmd.lower()
     if not any(w in c for w in _KEYWORDS_LUZ):
         return None
-    if any(w in c for w in _KEYWORDS_LIGA):
-        return _set_light(True)
     if any(w in c for w in _KEYWORDS_DESLIGA):
         return _set_light(False)
+    if any(w in c for w in _KEYWORDS_LIGA):
+        return _set_light(True)
     return None
 
 

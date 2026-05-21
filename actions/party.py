@@ -16,7 +16,7 @@ except ImportError:
 
 DEVICE_ID = "eb64a81b56fb8003dexqdd"
 LOCAL_KEY  = "Ek&~Ah`=4s}5.'Z#"
-IP_DEVICE  = "192.168.1.15"
+IP_DEVICE  = "192.168.1.5"
 
 _stop_event = threading.Event()
 _thread: threading.Thread | None = None
