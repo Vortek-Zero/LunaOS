@@ -85,6 +85,9 @@ def _get_pa():
 
 # ── Utilidades de áudio ────────────────────────────────────────
 def _play_activation_sound() -> None:
+    if not _ACTIVATE_SOUND.exists():
+        print("\a", end="", flush=True)
+        return
     for player, args in [
         ("mpg123", ["-q", str(_ACTIVATE_SOUND)]),
         ("paplay", [str(_ACTIVATE_SOUND)]),
@@ -257,6 +260,7 @@ class STTEngine:
         MAX_CHUNKS       = 80   # máx ~2.5s (80 × 512 / 16000)
         CHUNK_WAKE       = 512
 
+        consecutive_errors = 0
         while not self._stop_bg.is_set():
             try:
                 stream = pa.open(
@@ -264,9 +268,18 @@ class STTEngine:
                     rate=SAMPLE_RATE, input=True,
                     frames_per_buffer=CHUNK_WAKE,
                 )
+                consecutive_errors = 0  # Reset upon success
             except Exception as e:
-                print(f"[STT] Erro ao abrir stream: {e}")
-                time.sleep(1.0)
+                consecutive_errors += 1
+                if consecutive_errors == 1:
+                    print(f"[STT] Erro ao abrir stream: {e}")
+                
+                if consecutive_errors >= 3:
+                    print("\n[STT] ⚠ Microfone indisponível ou bloqueado. Desativando o modo de escuta automática (wakeword) para evitar spam de erros.")
+                    self.stop_wakeword_listener()
+                    break
+                    
+                time.sleep(2.0)
                 continue
 
             ring_buf     = []

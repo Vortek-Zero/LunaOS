@@ -236,12 +236,12 @@ def _require_user(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Token inválido ou conta removida.")
     return username
 
-ADMIN_PASSWORD = "@M2011m."
+ADMIN_PASSWORD = config.ADMIN_PASSWORD
 
 def _require_admin(request: Request) -> str:
     username = _require_user(request)
     admin_pass = request.headers.get("X-Admin-Pass", "")
-    if admin_pass != ADMIN_PASSWORD:
+    if not ADMIN_PASSWORD or admin_pass != ADMIN_PASSWORD:
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador.")
     return username
 
@@ -1365,7 +1365,7 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
 if _web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_web_dir)), name="static")
 @app.post("/api/shutdown")
-async def shutdown():
+async def shutdown(_key: str = Depends(verify_api_key)):
     import os, signal, asyncio
     print("🛑 Shutting down Luna Backend...")
     async def exit_later():

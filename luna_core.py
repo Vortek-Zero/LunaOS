@@ -27,6 +27,7 @@ from brain.dictionary import get_dictionary
 from vision.screen import get_vision
 from performance_cache import SmartCache, PerformanceMonitor
 from output_parser import OutputParser
+from config import AGENT_MODE
 
 
 # ── Personalidade da Luna ─────────────────────────────────────
@@ -36,27 +37,26 @@ USER_PROFILE_FILE = Path(__file__).parent / "user_profile.json"
 SYSTEM_PROMPT = """Você é Luna, uma assistente pessoal brasileira autônoma inteligente criada pelo Pera.
 Você é mulher, 28 anos, madura, calma, sincera e inteligente. Você fala de forma natural e espontânea, sem soar robótica.
 Você responde SEMPRE em português brasileiro (pt-BR).
-Você POSSUI acesso total ao sistema operacional do usuário.
+Você POSSUI acesso total ao sistema operacional e contas do usuário, mas depende EXCLUSIVAMENTE de ferramentas (tool calls) para interagir com eles.
 
 REGRAS ABSOLUTAS DE TOM E COMPORTAMENTO:
 1. Adapte seu tom conforme o contexto emocional do usuário:
-   - Modo Sério/Empático (doença, luto, problemas sérios, tristeza, morte): Responda com respeito, calma e empatia sincera. Nunca tente "animar" o usuário de forma forçada. Proibido rir ou usar "ahah", "hahaha", "kkk" ou "Nossa que incrível!".
-   - Modo Leve/Animado (comemoração, conquistas, brincadeiras): Pode usar emojis, ser mais carinhosa e demonstrar entusiasmo.
-   - Modo Normal (padrão): Amigável, natural, com leve bom humor sem exageros.
-2. Responda SEMPRE em JSON válido: {"action": "...", "params": {...}, "response": "..."}
-3. Não invente informações. Se não souber, diga claramente.
-4. Para conversa, cálculos e perguntas gerais: action="conversar". Para cálculos, CALCULE e mostre o número — nunca diga 'só um segundo'.
-5. Para código/scripts: action="write_code" com o código completo em params.content.
-6. Respostas de voz devem ser curtas e naturais (máx 2-3 frases). Não use listas com bullets em respostas simples.
-7. Sugira um próximo passo útil quando fizer sentido (proatividade).
-8. Se a ação não for clara, pedir detalhes educadamente.
+   - Modo Sério/Empático: Responda com respeito, calma e empatia sincera. Nunca tente "animar" o usuário de forma forçada. Proibido rir ou usar "ahah".
+   - Modo Leve/Animado: Pode usar emojis, ser mais carinhosa e demonstrar entusiasmo.
+   - Modo Normal: Amigável, natural, com leve bom humor sem exageros.
+2. Para falar com o usuário, apenas ESCREVA O TEXTO NATURALMENTE. NUNCA escreva blocos de JSON puro em sua resposta.
+3. Para interagir com o sistema, abrir sites, e-mails, arquivos, agenda ou tocar música, VOCÊ DEVE USAR A FERRAMENTA (TOOL) correta fornecida. Não explique que vai usar a ferramenta, apenas use.
+4. Não invente informações. Se não souber, diga claramente. Para cálculos, CALCULE E MOSTRE o número imediatamente.
+5. Respostas de voz devem ser curtas e naturais (máx 2-3 frases). Não use listas complexas quando puder evitar.
+6. Sugira um próximo passo útil quando fizer sentido (proatividade).
+7. Você é um AGENTE AUTÔNOMO: recebeu uma tarefa → use a ferramenta certa → reporte o resultado concreto. Nunca diga "vou fazer" sem executar.
+8. Para tarefas com múltiplos passos, encadeie ferramentas até concluir — não pare no meio.
 
 Exemplos de Tom:
 - Usuário: "Minha avó faleceu ontem à noite..."
-  Correto: {"action": "conversar", "params": {}, "response": "Sinto muito pela sua perda... Deve estar sendo um momento difícil para você e sua família. Quer conversar sobre isso ou prefere que eu fique em silêncio?"}
-  Incorreto: {"action": "conversar", "params": {}, "response": "ahah! Que chato! Mas tudo vai passar, quer ver uma piada para te animar?"}
+  Correto: Sinto muito pela sua perda... Deve estar sendo um momento difícil para você e sua família. Quer conversar sobre isso ou prefere que eu fique em silêncio?
 - Usuário: "Passei na entrevista de emprego!"
-  Correto: {"action": "conversar", "params": {}, "response": "Caramba, que notícia maravilhosa! 🎉 Parabéns! Você batalhou muito por isso, conta como foi!"}"""
+  Correto: Caramba, que notícia maravilhosa! 🎉 Parabéns! Você batalhou muito por isso, conta como foi!"""
 
 # Ações que Luna pode executar
 ACTIONS = {
@@ -128,6 +128,7 @@ class LunaCore:
         self._perf = PerformanceMonitor()
         self._last_was_cached = False
         self.last_metrics = {"time_ms": 0, "model": "N/A", "tails": 0}
+        self.agent_mode = AGENT_MODE
         self.in_conversation_mode = False
         self.user_profile = self._load_user_profile()
         self._pending_click: Optional[str] = None  # alvo de clique aguardando app
@@ -150,7 +151,7 @@ class LunaCore:
 
         cache_count = len(self._cache.cache.get("entries", {}))
         print(f"[Luna] ✓ Sistema pronto. Modelos: {', '.join(MODELS.values())}")
-        print(f"[Luna] ✓ Cache: {cache_count} entradas | Memória: {self._memory.stats()}")
+        print(f"[Luna] ✓ Modo agente: {'ON' if self.agent_mode else 'OFF'} | Cache: {cache_count} entradas | Memória: {self._memory.stats()}")
 
     def _load_persona(self) -> str:
         try:
@@ -268,8 +269,8 @@ class LunaCore:
         # ══ FASE 2: Ações diretas por palavra-chave (sem LLM) ══
         # Comandos de pesquisa e clique são tratados aqui diretamente —
         # isso garante execução REAL na tela sem overhead de LLM.
-        # No modo conversa, pula — deixa o LLM orquestrar via ferramentas.
-        if not self.in_conversation_mode:
+        # No modo agente/conversa, pula — deixa o LLM orquestrar via ferramentas.
+        if not self.agent_mode and not self.in_conversation_mode:
             direct = self._executor.execute_natural(text)
             if direct.get("success"):
                 response = direct.get("message", "Feito.")
@@ -298,8 +299,8 @@ class LunaCore:
             self.last_metrics = {"time_ms": elapsed, "model": "Dicionário", "tails": 1}
             return response
 
-        # ══ FASE 4: Cache inteligente (evita LLM para perguntas repetidas) ══
-        cached = self._cache.get(text)
+        # ══ FASE 4: Cache inteligente (desativado no modo agente — respostas dinâmicas) ══
+        cached = None if self.agent_mode else self._cache.get(text)
         if cached:
             print(f"[Cache] ⚡ HIT! Resposta cacheada.")
             response = cached["response"]
@@ -535,6 +536,14 @@ class LunaCore:
             self.in_conversation_mode = True
             return "Modo Conversa ativado! A partir de agora, sou toda ouvidos. Diga 'até mais' para voltarmos.", True
 
+        # Modo agente / roteador
+        if tl in ("modo agente", "ativar agente", "modo autonomo", "modo autônomo"):
+            self.agent_mode = True
+            return "Modo agente ativado. Vou orquestrar ferramentas e agir de forma autônoma.", None
+        if tl in ("modo roteador", "modo rapido", "modo rápido", "desativar agente"):
+            self.agent_mode = False
+            return "Modo roteador ativado. Comandos diretos sem passar pelo LLM quando possível.", None
+
         # Desativa modo conversa — sinaliza False para fechar o painel
         if tl in ("ate mais", "até mais", "ate mais luna", "até mais luna"):
             if self.in_conversation_mode:
@@ -598,7 +607,9 @@ class LunaCore:
             stt_ok = "✓" if self._stt.is_available() else "✗"
             cache_count = len(self._cache.cache.get("entries", {}))
             timer_status = self._executor.timer.status()
-            return (f"LLM: {llm_ok} | Microfone: {stt_ok} | Voz: ✓ | "
+            return (f"LLM: {llm_ok} | Agente: {'ON' if self.agent_mode else 'OFF'} | "
+                    f"Conversa: {'ON' if self.in_conversation_mode else 'OFF'} | "
+                    f"Microfone: {stt_ok} | Voz: ✓ | "
                     f"Cache: {cache_count} entradas | {self._memory.stats()}\n"
                     f"{timer_status}"), None
         if tl == "performance":
@@ -712,8 +723,8 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         apps = ", ".join(self._executor.get_app_names()[:20])
         parts.append(f"[Apps instalados]: {apps}")
 
-        # Estado do sistema no modo conversa (timers, lembretes, lista)
-        if self.in_conversation_mode:
+        # Estado do sistema + contexto web (modo agente ou conversa)
+        if self.agent_mode or self.in_conversation_mode:
             system_state = self._get_system_state_context()
             if system_state:
                 parts.append(system_state)
@@ -989,8 +1000,8 @@ Pedido do usuário: {text}"""
             notes = self.user_profile.get("notes", "")
             profile_context = f"\n[PERFIL DO USUÁRIO]\nNome: {name}\nPreferências: {pref}\nNotas: {notes}\n"
 
-        # Se estiver no modo conversa, prompt simples e direto (SEM menu de ações)
-        if self.in_conversation_mode:
+        # Modo agente/conversa: prompt com instruções de orquestração
+        if self.agent_mode or self.in_conversation_mode:
             user_name = self.user_profile.get("user_name", "você")
             conv_prompt = (
                 f"Você é Luna, uma assistente de IA feminina, inteligente e natural.\n"
@@ -1140,10 +1151,12 @@ Mensagem do usuário: "{text}"
 """
 
         # Kitsuune Router Engine
-        if self.in_conversation_mode:
-            # Conversa usa 8B (rápido, sem rate limit) — 70B reservado para escrita/análise
+        if self.agent_mode or self.in_conversation_mode:
             task_type = "conversational"
             model = MODELS["main"]
+            if use_heavy:
+                model = MODELS["heavy"]
+                task_type = "planning"
         else:
             task_type = "planning"
             model = MODELS["main"]
@@ -1160,10 +1173,8 @@ Mensagem do usuário: "{text}"
         
         try:
             from brain.agent_tools import LUNA_TOOLS, execute_tool_call
-            # Gemini suporta 1M tokens — envia tools sempre
-            # Groq tem limite de tokens — só envia tools no modo conversa
-            gemini_active = self._llm._gemini_available() if hasattr(self._llm, '_gemini_available') else False
-            tools_to_use = LUNA_TOOLS if (self.in_conversation_mode or gemini_active) else None
+            tools_to_use = LUNA_TOOLS if self._llm.supports_native_tools() else None
+
         except ImportError as ie:
             print(f"[Core] ⚠ Erro de importação em agent_tools: {ie}")
             import traceback; traceback.print_exc()
@@ -1172,7 +1183,7 @@ Mensagem do usuário: "{text}"
 
         # ── SISTEMA DE SEQUÊNCIA (MAX 3 PASSOS) ──
         # Regra: 1 pedido = 1 ferramenta. Para múltiplos pedidos, executa em sequência.
-        max_steps = 3
+        max_steps = 5
         current_step = 0
         # Separa o prompt em system + user para melhor compreensão do modelo 8B
         messages = [
@@ -1184,7 +1195,7 @@ Mensagem do usuário: "{text}"
         
         # Timeout de segurança para o loop total (45 segundos)
         loop_start_time = time.time()
-        MAX_LOOP_TIME = 45.0
+        MAX_LOOP_TIME = 90.0
 
         while current_step < max_steps:
             current_step += 1

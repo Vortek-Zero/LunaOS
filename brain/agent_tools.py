@@ -1041,6 +1041,3 @@ def execute_tool_call(executor, tool_call) -> str:
     except Exception as e:
         logger.exception("Erro interno em execute_tool_call")
         return f"FALHOU: Erro interno: {str(e)}"
-    except Exception as e:
-        logger.exception("Erro interno em execute_tool_call")
-        return f"FALHOU: Erro interno: {str(e)}"
