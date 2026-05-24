@@ -27,17 +27,133 @@ from brain.dictionary import get_dictionary
 from vision.screen import get_vision
 from performance_cache import SmartCache, PerformanceMonitor
 from output_parser import OutputParser
-from config import AGENT_MODE
 
 
 # ── Personalidade da Luna ─────────────────────────────────────
 PERSONALITY_FILE = Path(__file__).parent / "personality.json"
 USER_PROFILE_FILE = Path(__file__).parent / "user_profile.json"
 
+# Comandos locais — não disparam fact-check web nem extração de memória
+_LOCAL_ACTION_KEYWORDS = (
+    "print", "screenshot", "captura", "tira um print", "tira print",
+    "timer", "toca", "abre", "fecha", "clica", "digita", "whatsapp",
+    "manda", "envia", "pesquisa", "busca", "lista", "lembret", "nota",
+    "luz", "volume", "workspace", "mata", "processo", "brilho", "copia",
+    "clipboard", "arquivo", "pasta", "screenshot", "print da tela",
+)
+
+
+def _is_local_action(text: str) -> bool:
+    tl = text.lower()
+    return any(k in tl for k in _LOCAL_ACTION_KEYWORDS)
+
+
+def _tool_progress_label(name: str, raw_args) -> str:
+    """Rótulo amigável para UI durante execução de ferramentas."""
+    try:
+        args = json.loads(raw_args) if isinstance(raw_args, str) else (raw_args or {})
+    except Exception:
+        args = {}
+    labels = {
+        "open_app": lambda a: f"Abrindo {a.get('app_name', 'aplicativo')}...",
+        "run_bash_command": lambda a: f"Executando: {(a.get('command') or '')[:48]}...",
+        "run_terminal_command": lambda a: f"Terminal: {(a.get('command') or '')[:48]}...",
+        "open_url": lambda a: f"Abrindo {a.get('url', 'link')}...",
+        "search_web": lambda a: f"Pesquisando: {a.get('query', '')[:40]}...",
+        "see_screen": lambda a: "Analisando a tela...",
+        "click_on_screen": lambda a: f"Clicando em '{a.get('target', '...')}'...",
+        "click_web_result": lambda a: f"Abrindo {a.get('index', 0) + 1}º resultado web...",
+        "desktop_type": lambda a: "Digitando na tela...",
+        "desktop_hotkey": lambda a: f"Atalho: {a.get('keys', '')}...",
+        "filesystem": lambda a: f"Arquivos: {a.get('action', '')}...",
+        "whatsapp_action": lambda a: f"WhatsApp: {a.get('action', '')}...",
+        "system_control": lambda a: f"Sistema: {a.get('action', '')}...",
+        "control_window": lambda a: f"Janela: {a.get('action', '')}...",
+        "kill_process": lambda a: f"Encerrando {a.get('name') or a.get('pid', 'processo')}...",
+    }
+    fn = labels.get(name)
+    if fn:
+        return fn(args)
+    return f"Executando {name.replace('_', ' ')}..."
+
+
+def _sanitize_user_response(text: str) -> str:
+    """Remove JSON/tool_calls vazados pelo LLM — nunca mostrar ao usuário."""
+    if not text:
+        return text
+    t = text.strip()
+
+    if "tool_calls" in t.lower() or '"action"' in t:
+        # Nunca mostrar vazamento de ferramentas/JSON de ação
+        if re.search(r'"tool_calls"\s*:', t) or re.search(r'^\s*\{\s*"action"', t):
+            inner = re.search(r'"response"\s*:\s*"([^"]*)"', t)
+            if inner:
+                return _sanitize_user_response(inner.group(1))
+            return ""
+
+    if t.startswith("{"):
+        try:
+            data = json.loads(t)
+            if isinstance(data, dict):
+                if data.get("response"):
+                    return _sanitize_user_response(str(data["response"]))
+                if data.get("tool_calls") or data.get("action"):
+                    return ""
+        except json.JSONDecodeError:
+            pass
+
+    t = re.sub(r"```(?:json)?\s*\{.*?\}\s*```", "", t, flags=re.DOTALL).strip()
+    return t.strip() or "Pronto."
+
+
+def _extract_tool_calls_from_text(raw: str) -> list:
+    """Recupera tool_calls quando o modelo vaza JSON no texto em vez de usar a API nativa."""
+    if not raw or "tool_calls" not in raw:
+        return []
+    try:
+        m = re.search(r"\{.*\"tool_calls\".*\}", raw, re.DOTALL)
+        if m:
+            data = json.loads(m.group())
+            calls = data.get("tool_calls") or []
+            normalized = []
+            for tc in calls:
+                fn = tc.get("function") or {}
+                name = fn.get("name")
+                if name:
+                    normalized.append({
+                        "id": tc.get("id", f"parsed_{int(time.time())}"),
+                        "type": "function",
+                        "function": {"name": name, "arguments": fn.get("arguments", "{}")},
+                    })
+            if normalized:
+                return normalized
+    except Exception:
+        pass
+    # Fallback regex quando JSON está malformado
+    names = re.findall(r'"name"\s*:\s*"(\w+)"', raw)
+    if not names:
+        return []
+    args_m = re.search(r'"arguments"\s*:\s*"(\{.*?\})"', raw)
+    args = args_m.group(1).replace('\\"', '"') if args_m else "{}"
+    return [{
+        "id": f"parsed_{int(time.time())}",
+        "type": "function",
+        "function": {"name": names[0], "arguments": args},
+    }]
+
+def _agent_result(base: dict, tools_executed: int = 0) -> dict:
+    """Normaliza retorno do agente; evita re-execução legacy após ferramentas."""
+    out = dict(base)
+    out["tools_executed"] = tools_executed
+    if tools_executed > 0:
+        out["action"] = "conversar"
+    return out
+
 SYSTEM_PROMPT = """Você é Luna, uma assistente pessoal brasileira autônoma inteligente criada pelo Pera.
 Você é mulher, 28 anos, madura, calma, sincera e inteligente. Você fala de forma natural e espontânea, sem soar robótica.
 Você responde SEMPRE em português brasileiro (pt-BR).
 Você POSSUI acesso total ao sistema operacional e contas do usuário, mas depende EXCLUSIVAMENTE de ferramentas (tool calls) para interagir com eles.
+Quando o usuário conversa com você, trate como uma conversa natural — você já sabe que está no modo conversa e age como agente autônomo.
 
 REGRAS ABSOLUTAS DE TOM E COMPORTAMENTO:
 1. Adapte seu tom conforme o contexto emocional do usuário:
@@ -51,6 +167,21 @@ REGRAS ABSOLUTAS DE TOM E COMPORTAMENTO:
 6. Sugira um próximo passo útil quando fizer sentido (proatividade).
 7. Você é um AGENTE AUTÔNOMO: recebeu uma tarefa → use a ferramenta certa → reporte o resultado concreto. Nunca diga "vou fazer" sem executar.
 8. Para tarefas com múltiplos passos, encadeie ferramentas até concluir — não pare no meio.
+9. PLANEJAMENTO: Se o usuário pedir várias coisas na mesma frase ("e", "depois", ","), identifique TODOS os passos e execute TODOS antes de responder.
+10. Se uma ferramenta falhar, TENTE DE NOVO com abordagem diferente até concluir.
+11. NUNCA envie JSON ou nomes de ferramentas na resposta — fale como humana.
+12. Aprenda com o que funcionou: memória persistente e histórico; evite ignorar a segunda ordem.
+
+ROTEAMENTO DE FERRAMENTAS (obrigatório):
+- "abre/abrir/inicia [app]" → open_app (firefox, spotify, terminal, vscode...) — NUNCA click_on_screen para apps
+- "abre [site.com]" ou URL → open_url
+- "pesquisa/busca/procura [X]" → search_web (abre Google) ou read_webpage se pedir conteúdo de URL
+- "mata/fecha/encerra [app/processo]" → kill_process(name=...)
+- "no terminal/comando shell" → run_terminal_command ou run_bash_command(visible=true)
+- "clica em [botão/link na tela]" → click_on_screen ou click_web_result para resultados de busca
+- "primeiro/segundo resultado (web)" → click_web_result — NUNCA só OCR; prefere abrir URL ou teclado
+- "o que tem na tela" → see_screen
+- Múltiplos pedidos na mesma frase → execute TODOS em sequência, uma ferramenta por vez
 
 Exemplos de Tom:
 - Usuário: "Minha avó faleceu ontem à noite..."
@@ -128,7 +259,6 @@ class LunaCore:
         self._perf = PerformanceMonitor()
         self._last_was_cached = False
         self.last_metrics = {"time_ms": 0, "model": "N/A", "tails": 0}
-        self.agent_mode = AGENT_MODE
         self.in_conversation_mode = False
         self.user_profile = self._load_user_profile()
         self._pending_click: Optional[str] = None  # alvo de clique aguardando app
@@ -138,6 +268,9 @@ class LunaCore:
 
         # Estado
         self.processing = False
+        self.current_action: Optional[str] = None
+        self._progress_callback = None
+        self._expected_tool_steps = 1
         self._lock = threading.Lock()
         self._dialog: dict = {}   # estado do diálogo guiado atual
 
@@ -151,7 +284,7 @@ class LunaCore:
 
         cache_count = len(self._cache.cache.get("entries", {}))
         print(f"[Luna] ✓ Sistema pronto. Modelos: {', '.join(MODELS.values())}")
-        print(f"[Luna] ✓ Modo agente: {'ON' if self.agent_mode else 'OFF'} | Cache: {cache_count} entradas | Memória: {self._memory.stats()}")
+        print(f"[Luna] ✓ Cache: {cache_count} entradas | Memória: {self._memory.stats()}")
 
     def _load_persona(self) -> str:
         try:
@@ -187,10 +320,21 @@ class LunaCore:
 
     # ── Processamento principal ───────────────────────────────
 
-    def process(self, text: str) -> str:
+    def _emit_progress(self, event_type: str, **data) -> None:
+        """Emite evento de progresso para SSE/UI (thinking, tool_start, tool_done)."""
+        label = data.get("label") or data.get("name") or event_type
+        self.current_action = label
+        if self._progress_callback:
+            try:
+                self._progress_callback({"type": event_type, "label": label, **data})
+            except Exception:
+                pass
+
+    def process(self, text: str, progress_callback=None) -> str:
         """
         Processa uma entrada do usuário e retorna a resposta.
         Pipeline: texto → intenção → plano → ações → resposta
+        progress_callback: fn(dict) para eventos em tempo real (SSE/desktop).
         """
         if not text or not text.strip():
             return ""
@@ -209,6 +353,8 @@ class LunaCore:
 
         with self._lock:
             self.processing = True
+            self._progress_callback = progress_callback
+            self._emit_progress("thinking", label="Pensando...")
             try:
                 return self._run_pipeline(text)
             except Exception as e:
@@ -217,13 +363,15 @@ class LunaCore:
                 return "Ocorreu um erro interno. Tente novamente."
             finally:
                 self.processing = False
+                self.current_action = None
+                self._progress_callback = None
 
     def _run_pipeline(self, text: str) -> str:
         """Pipeline completo de processamento. Fases numeradas para clareza."""
         self._last_was_cached = False
         timer_start = self._perf.start_timer()
 
-        # ══ FASE -1: Diálogo guiado (coleta de dados passo a passo) ══
+        # ══ FASE -1: Diálogo guiado (formulários multi-turno — ainda usa LLM no fim) ══
         if hasattr(self, '_dialog') and self._dialog:
             result = self._dialog_step(text)
             if result:
@@ -231,25 +379,17 @@ class LunaCore:
                 self.last_metrics = {"time_ms": elapsed, "model": "Dialog", "tails": 0}
                 return result
 
-        # ══ FASE 0: Comandos internos (sem LLM, instantâneo) ══
-        # Resolve clique pendente: usuário respondeu com o nome do app
+        # ══ Clique pendente → agente (não executa OCR sem pensar) ══
         if self._pending_click:
             target = self._pending_click
             self._pending_click = None
-            app_name = text.strip()
-            # Foca o app e clica
-            import subprocess as _sp
-            try:
-                _sp.Popen(["wmctrl", "-a", app_name], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
-                import time; time.sleep(0.4)
-            except Exception:
-                pass
-            result = self._executor.click_text(target)
-            msg = result.get("message", f"Clicando em '{target}' no app '{app_name}'.")
-            elapsed = self._perf.end_timer(timer_start, "request_times")
-            self.last_metrics = {"time_ms": elapsed, "model": "Bypass", "tails": 1, "conv": None}
-            return msg
+            text = (
+                f"[Clique pendente] Elemento: «{target}». "
+                f"O usuário indicou app/janela: «{text.strip()}». "
+                f"Use focus_window e click_on_screen para concluir."
+            )
 
+        # ══ Meta/admin local (sem ação no PC — só dados da Luna) ══
         internal, conv_signal = self._handle_internal_command(text)
         if internal is not None:
             elapsed = self._perf.end_timer(timer_start, "request_times")
@@ -257,7 +397,7 @@ class LunaCore:
                                  "conv": conv_signal}
             return internal
 
-        # ══ FASE 1: Escritor Engine (pipeline criativo com streaming) ══
+        # ══ FASE 1: Escritor (usa LLM dedicado) ══
         if self._writer.is_writing_request(text):
             print(f"[Router] FASE 1 — Escritor Engine ativado! Modelo: {self._writing_model}")
             response = self._run_writer_stream(text)
@@ -266,41 +406,10 @@ class LunaCore:
             self.last_metrics = {"time_ms": elapsed, "model": "Escritor", "tails": 4}
             return response
 
-        # ══ FASE 2: Ações diretas por palavra-chave (sem LLM) ══
-        # Comandos de pesquisa e clique são tratados aqui diretamente —
-        # isso garante execução REAL na tela sem overhead de LLM.
-        # No modo agente/conversa, pula — deixa o LLM orquestrar via ferramentas.
-        if not self.agent_mode and not self.in_conversation_mode:
-            direct = self._executor.execute_natural(text)
-            if direct.get("success"):
-                response = direct.get("message", "Feito.")
-                self._memory.add_exchange(text, response)
-                elapsed = self._perf.end_timer(timer_start, "request_times")
-                self.last_metrics = {"time_ms": elapsed, "model": "Executor Direto", "tails": 1,
-                                     "conv": self.in_conversation_mode}
-                return response
+        # ══ FASE 2: (desativada) ══
 
-        # ══ FASE 3: Dicionário local (sem LLM) ══
-        word = self._dictionary.is_dict_request(text)
-        if word:
-            print(f"[Router] FASE 3 — Dicionário: '{word}'")
-            response = self._dictionary.lookup(word)
-            # Se a API falhou (retornou fallback), usa modelo 0.5B para definir
-            if "Não encontrei" in response or "dicionário online" in response:
-                from config import MODELS
-                prompt = (
-                    f"Defina a palavra '{word}' em português de forma direta e concisa: "
-                    f"significado, classe gramatical e um exemplo de uso. Máximo 3 linhas."
-                )
-                response = self._llm.generate(prompt, task_type="command", model=MODELS["fast"])
-                response = re.sub(r'\{.*?\}', '', response, flags=re.DOTALL).strip() or response
-            self._memory.add_exchange(text, response)
-            elapsed = self._perf.end_timer(timer_start, "request_times")
-            self.last_metrics = {"time_ms": elapsed, "model": "Dicionário", "tails": 1}
-            return response
-
-        # ══ FASE 4: Cache inteligente (desativado no modo agente — respostas dinâmicas) ══
-        cached = None if self.agent_mode else self._cache.get(text)
+        # ══ FASE 4: Cache desativado ══
+        cached = None
         if cached:
             print(f"[Cache] ⚡ HIT! Resposta cacheada.")
             response = cached["response"]
@@ -312,34 +421,31 @@ class LunaCore:
             return response
         self._perf.record_cache_event(hit=False)
 
-        # ══ FASE 5: Contexto + Roteamento de Modelo + LLM ══
+        # ══ FASE 5: Agente — toda ação no PC passa pelo LLM + ferramentas ══
+        if not self._llm.is_ready():
+            elapsed = self._perf.end_timer(timer_start, "request_times")
+            self.last_metrics = {"time_ms": elapsed, "model": "offline", "tails": 0, "conv": None}
+            return (
+                "Não consigo agir agora: o modelo de IA não está disponível. "
+                "Verifique Ollama (localhost:11434) ou a chave Groq no .env."
+            )
+
+        if not self.in_conversation_mode:
+            self.in_conversation_mode = True
+            print("[Router] Modo conversa — agente com ferramentas.")
         context = self._build_context(text)
         model_tier = self._classify_model_tier(text)
-        print(f"[Router] FASE 5 — Modelo selecionado: {model_tier}")
+        print(f"[Router] FASE 5 — Modelo: {model_tier['name']}")
 
         model_timer = self._perf.start_timer()
         llm_result = self._call_llm(text, context, **model_tier["flags"])
         self._perf.end_timer(model_timer, "model_times")
 
-        # Validar confiança da resposta
-        confidence = self._parser.detect_confidence(llm_result.get("response", ""))
-        print(f"[Parser] Confiança: {confidence.value}")
-
-        # Executar ação
-        action_result = self._execute_action(llm_result, text)
-
-        # Finalizar resposta
         llm_result["_user_text"] = text
-        response = self._finalize_response(llm_result, action_result)
-        self._memory.add_exchange(text, response)
 
-        # Cache apenas para conversa com alta confiança (e que não seja um fallback de erro)
-        action = llm_result.get("action", "conversar")
-        is_fallback = "desculpe" in response.lower() and "entendi" in response.lower()
-        is_raw_json = response.strip().startswith("{") and response.strip().endswith("}")
-        if action == "conversar" and response and len(response) > 10 and not is_fallback and not is_raw_json:
-            cache_confidence = 0.9 if confidence.value == "high" else 0.6
-            self._cache.set(text, response, confidence=cache_confidence)
+        response = self._finalize_response(llm_result)
+        response = _sanitize_user_response(response)
+        self._memory.add_exchange(text, response)
 
         elapsed = self._perf.end_timer(timer_start, "request_times")
         print(f"[Perf] Total: {elapsed:.0f}ms")
@@ -370,33 +476,14 @@ class LunaCore:
         is_dev_request = len(text) > 40 and any(
             w in tl for w in ["crie", "faça", "desenvolva", "programe", "escreva", "construa"]
         )
-        if not self.in_conversation_mode and (
+        if (
             any(w in tl for w in heavy_kw) or
             (is_dev_request and any(w in tl for w in heavy_dev_kw))
         ):
             return {"name": MODELS["heavy"], "tails": 4,
                     "flags": {"use_fast": False, "use_heavy": True, "use_basic": False}}
 
-        # 2 Caudas Rápidas (0.5B): ações de UI simples
-        fast_kw = ["pesquise", "busque", "clique", "clica", "digite", "digita",
-                   "ver a tela", "olhe a tela", "abra o site"]
-        if any(w in tl for w in fast_kw) and not self.in_conversation_mode:
-            return {"name": MODELS["fast"], "tails": 2,
-                    "flags": {"use_fast": True, "use_heavy": False, "use_basic": False}}
-
-        # 2 Caudas Básicas (0.5B): consultas factuais leves
-        basic_kw = ["quem é", "quem foi", "o que é", "onde fica", "quando foi",
-                    "história de", "wikipedia", "britanica"]
-        if any(w in tl for w in basic_kw) and not self.in_conversation_mode:
-            return {"name": MODELS.get("basic", "qwen2.5:0.5b"), "tails": 2,
-                    "flags": {"use_fast": False, "use_heavy": False, "use_basic": True}}
-
-        # Modo Conversa — Usa 8B para ser rápido e sem rate limit
-        if self.in_conversation_mode:
-            return {"name": MODELS["main"], "tails": 3,
-                    "flags": {"use_fast": False, "use_heavy": False, "use_basic": False}}
-
-        # 3 Caudas (3B): chat padrão equilibrado
+        # 3 Caudas (3B): conversa e agente — padrão equilibrado
         return {"name": MODELS["main"], "tails": 3,
                 "flags": {"use_fast": False, "use_heavy": False, "use_basic": False}}
 
@@ -496,138 +583,76 @@ class LunaCore:
 
     # ── Etapas do pipeline ────────────────────────────────────
 
+    def _reset_sticky_state(self) -> None:
+        """Limpa estado que vaza entre mensagens/sessões."""
+        self._dialog = {}
+        self._pending_click = None
+        if hasattr(self._executor, "web_manager"):
+            self._executor.web_manager.last_search_query = ""
+
     def _handle_internal_command(self, text: str) -> tuple[Optional[str], Optional[bool]]:
         """
-        Comandos que não precisam do LLM.
-        Retorna (resposta, conv_signal) onde conv_signal:
-          True  → abrir painel de conversa
-          False → fechar painel de conversa
-          None  → sem mudança de modo
+        Apenas meta/admin da Luna (sem manipular PC).
+        Abrir apps, cliques, timers, web etc. → FASE 5 (agente + LLM).
         """
         tl = text.lower().strip()
 
         if tl in ("sair", "exit", "tchau"):
             return "Até logo!", None
 
-        # ── Clique inteligente — intercepta antes do LLM ──────
-        import re as _re, unicodedata as _ud
-        def _n(s):
-            return ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn').lower()
-
-        _click_pat = _re.match(
-            r'^(?:clique|clica|clicando|pressiona|seleciona|selecione|escolhe|escolha|abre|entra|entre)\s+'
-            r'(?:em\s+|no\s+|na\s+|nos\s+|nas\s+|o\s+|a\s+|os\s+|as\s+)?(.+)',
-            _n(tl)
-        )
-        if _click_pat:
-            from actions.executor import _resolve_click
-            result = _resolve_click(_click_pat.group(1).strip(), _n(tl), self._executor)
-            if result:
-                return result.get("message", "Clique executado."), None
-
-        # Modo Joy — jogos com IA
-        _joy_triggers = ("vamos nos divertir", "quero jogar", "bora jogar", "modo joy",
-                         "vamos jogar", "jogar com você", "jogar com a luna")
-        if any(tl == t or tl.startswith(t) for t in _joy_triggers):
-            return "🎮 Modo Joy ativado! Abrindo a interface de jogos... Acesse /joy no navegador ou clique em 'Joy' no menu!", None
-
-        # Modo Conversa — ativa painel lateral
         if tl in ("vamos conversar", "conversar", "bora conversar"):
             self.in_conversation_mode = True
-            return "Modo Conversa ativado! A partir de agora, sou toda ouvidos. Diga 'até mais' para voltarmos.", True
+            return "Pode falar, estou aqui. Diga 'até mais' quando quiser encerrar.", True
 
-        # Modo agente / roteador
-        if tl in ("modo agente", "ativar agente", "modo autonomo", "modo autônomo"):
-            self.agent_mode = True
-            return "Modo agente ativado. Vou orquestrar ferramentas e agir de forma autônoma.", None
-        if tl in ("modo roteador", "modo rapido", "modo rápido", "desativar agente"):
-            self.agent_mode = False
-            return "Modo roteador ativado. Comandos diretos sem passar pelo LLM quando possível.", None
-
-        # Desativa modo conversa — sinaliza False para fechar o painel
         if tl in ("ate mais", "até mais", "ate mais luna", "até mais luna"):
             if self.in_conversation_mode:
                 self.in_conversation_mode = False
-                return "Modo Conversa desativado. Voltando ao fluxo de roteamento padrão.", False
+                return "Até logo! Quando quiser conversar de novo, é só falar.", False
             return "Até logo!", None
-
-        if tl == "apps":
-            names = self._executor.get_app_names()
-            return "Apps disponíveis: " + ", ".join(names[:15]), None
-
-        if tl in ("o que você pode fazer", "o que vc pode fazer", "o que sabe fazer", "funções", "ajuda"):
-            return (
-                "Eu posso:\n\n"
-                "• ⏱ Timers e alarmes — 'timer de 10 minutos', 'alarme às 14h'\n"
-                "• 🛒 Lista de compras — 'adiciona leite na lista', 'ver lista'\n"
-                "• 🔔 Lembretes — 'me lembra de tomar remédio às 20h'\n"
-                "• 📝 Notas rápidas — 'anota: reunião às 15h', 'ver minhas notas'\n"
-                "• 🎵 Música — 'toca música', 'próxima', 'volume 70'\n"
-                "• 🌤 Clima — 'como está o tempo?', 'vai chover hoje?'\n"
-                "• 🪟 Janelas — 'fecha essa janela', 'workspace 2', 'maximiza'\n"
-                "• 📋 Clipboard — 'o que está na área de transferência?'\n"
-                "• 🎯 Foco/Pomodoro — 'modo foco por 25 minutos'\n"
-                "• ✍️ Textos criativos — 'escreva uma história sobre...'\n"
-                "• 💻 Código — 'crie um script python que...'\n"
-                "• 🔍 Dicionário — 'o que significa efêmero?'\n"
-                "• 🖥 Tela — 'o que você está vendo?', 'tira um print'\n"
-                "• 🌐 Web — 'pesquise sobre Python', 'abra o youtube.com'\n"
-                "\n📌 Dica: use 'python luna_terminal.py' para ver TODOS os comandos."
-            ), None
 
         if tl == "memoria":
             return self._memory.stats(), None
-        if tl in ("limpar", "limpa memoria"):
+        if tl in ("limpar", "limpa memoria", "limpa memória"):
             self._memory.clear_history()
+            self._reset_sticky_state()
             return "Histórico da conversa apagado.", None
-
-        # Atalhos para módulos novos (evita cair na FASE 2 desnecessariamente)
-        if tl in ("timers", "timers ativos", "timer ativo"):
-            return self._executor.timer.status(), None
-        if tl in ("lembretes", "meus lembretes"):
-            return self._executor.reminders.list_reminders(), None
-
-        # Inicia diálogo guiado de lembrete quando não há dados suficientes
-        _reminder_triggers = ["adicionar lembrete", "adiciona lembrete", "novo lembrete",
-                               "criar lembrete", "cria lembrete", "quero um lembrete"]
-        if any(t in tl for t in _reminder_triggers):
-            # Verifica se já tem hora no texto — se sim, deixa o executor resolver
-            import re as _re
-            if not _re.search(r'\d{1,2}[h:]\d{0,2}', tl):
-                return self._start_dialog("reminder"), None
-        if tl in ("lista", "lista de compras", "ver lista"):
-            return self._executor.shopping.format_list(), None
-        if tl in ("notas", "minhas notas", "ver notas"):
-            return self._executor.notes.list_notes(), None
-        if tl in ("foco", "status do foco"):
-            return self._executor.focus.status(), None
+        if tl in ("limpa cache", "limpar cache", "clear cache"):
+            n = self._cache.clear_all()
+            return f"Cache limpo — {n} entradas removidas.", None
+        if tl in ("limpa tudo", "reset luna", "resetar luna", "limpar tudo"):
+            cache_n = self._cache.clear_all()
+            mem_msg = self._memory.clear_all()
+            self._clear_search_cache()
+            self._reset_sticky_state()
+            return f"Reset completo. Cache: {cache_n} entradas. {mem_msg}", None
+        if tl in ("limpa fatos", "limpar fatos", "limpa memoria persistente"):
+            n = self._memory.clear_facts()
+            return f"{n} fatos persistentes removidos.", None
 
         if tl == "status":
             llm_ok = "✓" if self._llm.is_ready() else "✗"
             stt_ok = "✓" if self._stt.is_available() else "✗"
             cache_count = len(self._cache.cache.get("entries", {}))
-            timer_status = self._executor.timer.status()
-            return (f"LLM: {llm_ok} | Agente: {'ON' if self.agent_mode else 'OFF'} | "
-                    f"Conversa: {'ON' if self.in_conversation_mode else 'OFF'} | "
-                    f"Microfone: {stt_ok} | Voz: ✓ | "
-                    f"Cache: {cache_count} entradas | {self._memory.stats()}\n"
-                    f"{timer_status}"), None
+            try:
+                from brain.agent_tools import LUNA_TOOLS
+                n_tools = len(LUNA_TOOLS)
+            except Exception:
+                n_tools = "?"
+            return (
+                f"LLM: {llm_ok} | Ferramentas: {n_tools} | "
+                f"Conversa: {'ON' if self.in_conversation_mode else 'OFF'} | "
+                f"Microfone: {stt_ok} | Cache: {cache_count} | {self._memory.stats()}"
+            ), None
+
         if tl == "performance":
             avg_req = self._perf.get_average_time("request_times")
             avg_mdl = self._perf.get_average_time("model_times")
             hits = self._perf.metrics.get("cache_hits", 0)
             misses = self._perf.metrics.get("cache_misses", 0)
-            return (f"Tempo médio: {avg_req:.0f}ms | Modelo: {avg_mdl:.0f}ms | "
-                    f"Cache hits: {hits} | misses: {misses}"), None
-
-        # ── Briefing diário ───────────────────────────────────
-        _briefing_triggers = [
-            "o que temos pra hoje", "o que temos para hoje",
-            "briefing do dia", "resumo do dia", "como está o dia",
-            "o que tem hoje", "me dá um resumo do dia",
-        ]
-        if any(t in tl for t in _briefing_triggers):
-            return self._daily_briefing(), None
+            return (
+                f"Tempo médio: {avg_req:.0f}ms | Modelo: {avg_mdl:.0f}ms | "
+                f"Cache hits: {hits} | misses: {misses}"
+            ), None
 
         return None, None
 
@@ -694,63 +719,71 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         return response or "Não consegui gerar o briefing agora. Tente novamente."
 
     def _build_context(self, text: str) -> str:
-        """Monta contexto histórico + visual para o prompt."""
+        """Monta contexto enxuto — memória + estado; vision/web só quando pedido."""
         parts = []
 
-        # Memória
         mem_ctx = self._memory.get_context_for_prompt(text)
         if mem_ctx:
+            if len(mem_ctx) > 2800:
+                mem_ctx = mem_ctx[:2800] + "\n[... memória truncada]"
             parts.append(mem_ctx)
 
-        # Contexto leve de tela em TODAS as requisições (janela ativa + janelas abertas, ~5ms)
-        quick_ctx = self._vision.get_quick_context()
-        if quick_ctx:
-            parts.append(f"[Tela atual] {quick_ctx}")
-
-        # Screenshot + OCR completo (apenas se o usuário pediu explicitamente)
-        vision_triggers = ["tela", "vendo", "enxerga", "print", "screen", "vê", "monitor", "o que está aberto", "imagem", "gráfico", "video", "vídeo"]
-        if any(w in text.lower() for w in vision_triggers):
+        vision_triggers = [
+            "tela", "vendo", "enxerga", "print", "screen", "vê", "monitor",
+            "o que está aberto", "imagem", "gráfico", "video", "vídeo",
+        ]
+        wants_vision = any(w in text.lower() for w in vision_triggers)
+        is_screenshot_only = bool(re.search(
+            r'^\s*(?:luna[, ]+)?(?:tira(?:\s+um)?|faz(?:\s+um)?)\s+print',
+            text.lower(),
+        ))
+        if wants_vision and not is_screenshot_only:
             desc = self._vision.capture_and_describe()
             if desc:
-                parts.append(f"[Captura de tela (Estrutura/Janelas)]\n{desc}")
-            
-            # Groq Vision extra description
+                parts.append(f"[Captura de tela]\n{desc[:1500]}")
             vision_desc = self._vision.describe_with_groq_vision(text)
-            if vision_desc and not "falhou" in vision_desc and not "ausente" in vision_desc:
-                parts.append(f"[Visão Computacional do Groq Llama 3.2 Vision]\n{vision_desc}")
+            if vision_desc and "falhou" not in vision_desc and "ausente" not in vision_desc:
+                parts.append(f"[Visão]\n{vision_desc[:1500]}")
 
-        # Apps disponíveis
-        apps = ", ".join(self._executor.get_app_names()[:20])
-        parts.append(f"[Apps instalados]: {apps}")
+        system_state = self._get_system_state_context()
+        if system_state:
+            parts.append(system_state)
 
-        # Estado do sistema + contexto web (modo agente ou conversa)
-        if self.agent_mode or self.in_conversation_mode:
-            system_state = self._get_system_state_context()
-            if system_state:
-                parts.append(system_state)
-
-            # URL Parsing (Jina AI)
-            import re
-            urls = re.findall(r'(https?://[^\s]+)', text)
-            for url in urls[:1]:  # Pega o primeiro link da mensagem
-                print(f"[Core] Lendo conteúdo da URL: {url}")
-                page_content = self._executor.web_manager.read_page(url)
-                if page_content:
-                    parts.append(
-                        f"[CONTEÚDO DA URL: {url}]\n"
-                        f"Use esse texto para responder sobre o site ou link:\n"
-                        f"{page_content[:6000]}"  # Extrai até 6000 caracteres pro LLM
-                    )
-
-            search_data = self._quick_fact_check(text)
-            if search_data:
+        urls = re.findall(r'(https?://[^\s]+)', text)
+        for url in urls[:1]:
+            print(f"[Core] Lendo conteúdo da URL: {url}")
+            page_content = self._executor.web_manager.read_page(url)
+            if page_content:
                 parts.append(
-                    "[FACT CHECK AUTOMÁTICO (Tavily/Web)]\n"
-                    "Use as informações abaixo para complementar/verificar sua resposta:\n"
-                    f"{search_data}"
+                    f"[CONTEÚDO DA URL: {url}]\n{page_content[:4000]}"
                 )
 
+        # Pesquisa web automática só quando o usuário pede informação factual externa
+        web_info_kw = (
+            "pesquisa", "pesquise", "busca", "busque", "notícia", "noticia",
+            "quem é", "quem e", "o que é", "o que e", "quando foi", "onde fica",
+            "preço de", "preco de", "cotação", "cotacao", "clima", "tempo hoje",
+        )
+        if any(kw in text.lower() for kw in web_info_kw) and not _is_local_action(text):
+            search_data = self._quick_fact_check(text)
+            if search_data:
+                parts.append(f"[Pesquisa web]\n{search_data[:2000]}")
+
         return "\n\n".join(parts)
+
+    def _clear_search_cache(self) -> None:
+        """Limpa cache SQLite de pesquisas rápidas (facts_cache.db)."""
+        import sqlite3
+        db_path = Path(__file__).parent / "brain" / "facts_cache.db"
+        if db_path.exists():
+            try:
+                conn = sqlite3.connect(db_path)
+                conn.execute("DELETE FROM cache")
+                conn.commit()
+                conn.close()
+                print("[Luna] Cache de pesquisa (facts_cache.db) limpo.")
+            except Exception as e:
+                print(f"[Luna] Erro ao limpar facts_cache: {e}")
 
     def _get_system_state_context(self) -> str:
         """Retorna estado atual do sistema (timers, lembretes, lista) para o contexto do LLM."""
@@ -911,6 +944,122 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         return result_text
 
 
+    def _filter_tools(self, prompt_text: str, context_text: str, all_tools: list) -> list:
+        """
+        Filtra dinamicamente a lista de ferramentas (LUNA_TOOLS) com base na intenção do usuário,
+        evitando desperdício de tokens nos modelos gratuitos (Gemini/OpenRouter) e contornando
+        o limite de TPM da Groq (6000 tokens).
+        """
+        if not all_tools:
+            return []
+            
+        p_lower = prompt_text.lower()
+        c_lower = context_text.lower() if context_text else ""
+        full_text = f"{p_lower} {c_lower}"
+        
+        # Lista de verbos/ações que indicam que o usuário quer uma interação
+        action_keywords = [
+            "abre", "abrir", "inicia", "iniciar", "pesquisa", "pesquisar", "busca", "buscar", 
+            "procura", "procurar", "clica", "clicar", "digita", "digitar", "roda", "rodar", 
+            "executa", "executar", "comando", "terminal", "mostra", "mostrar", "veja", "ver", 
+            "olha", "olhar", "clique", "spotify", "toca", "tocar", "musica", "música", 
+            "playlist", "pausa", "parar", "luz", "lâmpada", "lampada", "desliga", "liga", 
+            "temperatura", "clima", "tempo", "chove", "chuva", "previsão", "previsao", 
+            "timer", "cronometro", "cronômetro", "minutos", "segundos", "lembrete", "lembrar", 
+            "lembra", "anota", "anotar", "bloco", "nota", "compras", "compra", "mercado", 
+            "planilha", "excel", "pdf", "briefing", "resumo", "hoje", "print", "screenshot", 
+            "tela", "copia", "copiar", "colar", "email", "gmail", "agenda", "compromisso", 
+            "evento", "drive", "pasta", "upload", "baixar", "download", "arquivo", 
+            "escreva", "escrever", "crie", "criar", "desenvolva", "desenvolver", 
+            "programe", "programar", "codigo", "código", "browser", "navegador", 
+            "site", "url", "http", "www.", "janela", "maximize", "minimize", "fechar",
+            "clipboard", "copie", "foco", "pomodoro"
+        ]
+        
+        # Se não houver absolutamente nenhuma keyword de ação, assumimos conversa pura
+        has_action = any(kw in full_text for kw in action_keywords)
+        if not has_action:
+            # Se for curto e sem ação, retorna lista vazia (sem ferramentas)
+            # Poupa 7000 tokens por chat para Gemini/OpenRouter/Groq!
+            if len(p_lower.split()) < 10 or any(p_lower.startswith(w) for w in ["oi", "olá", "como", "tudo", "quem"]):
+                print("[Core Router] 🧠 Intenção Conversacional Pura detectada. Omitindo todas as ferramentas (Economia de ~6500 tokens).")
+                return []
+                
+        # Base de ferramentas essenciais para ações em desktop (sempre presentes se houver ação)
+        base_tool_names = {
+            "open_app",
+            "open_url",
+            "search_web",
+            "see_screen",
+            "click_on_screen",
+            "run_bash_command",
+            "run_terminal_command"
+        }
+        
+        # Mapeamento de keywords para ferramentas especializadas
+        specialized_mappings = [
+            # Spotify
+            (["spotify", "toca", "tocar", "musica", "música", "playlist", "pausa", "parar"], ["control_spotify"]),
+            # Luzes
+            (["luz", "lâmpada", "lampada", "sala", "iluminação"], ["control_lights"]),
+            # Clima
+            (["tempo", "clima", "chuva", "temperatura", "chove", "previsão", "previsao"], ["get_weather"]),
+            # Timer e Alarmes
+            (["timer", "cronometro", "cronômetro", "segundos"], ["set_timer"]),
+            # Lembretes
+            (["lembra", "lembrete", "avisa", "avisar"], ["manage_reminder"]),
+            # Notas
+            (["nota", "anota", "bloco", "anotação", "anotacao"], ["manage_notes"]),
+            # Lista de Compras
+            (["compra", "mercado", "compras", "lista de compra"], ["manage_shopping_list"]),
+            # Foco / Pomodoro
+            (["foco", "pomodoro", "estudar", "concentrar"], ["manage_focus"]),
+            # Briefing
+            (["briefing", "resumo", "hoje", "dia"], ["get_daily_briefing"]),
+            # Planilhas e Documentos
+            (["excel", "planilha", "xls"], ["create_excel"]),
+            (["pdf"], ["create_pdf_drive"]),
+            # Gmail / Email
+            (["gmail", "email", "mande", "enviar", "envie", "assunto", "corpo", "destinatario", "destinatário"], 
+             ["google_query", "google_send_email", "google_search_emails", "google_read_email", 
+              "google_reply_email", "google_forward_email", "google_mark_read", "google_delete_email", "google_list_files"]),
+            # Calendar / Agenda
+            (["agenda", "calendar", "compromisso", "evento", "data", "calendario", "calendário"], 
+             ["google_query", "google_create_event", "google_edit_event", "google_delete_event", "google_events_by_date"]),
+            # Google Drive / Arquivos em nuvem
+            (["drive", "upload", "baixar", "pasta", "nuvem"], 
+             ["google_drive_upload", "google_drive_list", "google_drive_search", "google_drive_create_folder", "google_drive_delete"]),
+            # Screenshots
+            (["print", "screenshot", "captura"], ["take_screenshot"]),
+            # Clipboard
+            (["copia", "copiar", "colar", "clipboard", "área de transferência", "area de transferencia"], ["clipboard_action"]),
+            # Filesystem local
+            (["arquivo", "txt", "ler", "salvar", "escrever", "escreva", "crie um arquivo", "pasta local", "workspace"], 
+             ["read_file", "save_file", "filesystem", "google_list_files"]),
+            # Window control
+            (["janela", "maximize", "minimize", "workspace", "fechar janela"], ["control_window"]),
+            # Browser task complexa
+            (["browser", "navegador", "site", "url", "automatize", "clique no link", "clique no resultado"], ["run_browser_task", "click_web_result", "read_webpage"])
+        ]
+        
+        selected_tool_names = set(base_tool_names)
+        
+        # Varre os mapeamentos e adiciona ferramentas extras se bater com a palavra-chave
+        for keywords, tools in specialized_mappings:
+            if any(kw in full_text for kw in keywords):
+                selected_tool_names.update(tools)
+                
+        # Filtra a lista de ferramentas real com base nos nomes selecionados
+        filtered = [t for t in all_tools if t.get("function", {}).get("name", "") in selected_tool_names]
+        
+        # Exibe métricas de otimização
+        import json
+        savings = len(all_tools) - len(filtered)
+        print(f"[Core Router] 🔧 Otimização de Ferramentas: {len(filtered)} ativas (omitidas {savings}). Reduziu tokens de tools de ~6200 para ~{len(json.dumps(filtered)) // 4}!")
+        
+        return filtered
+
+
     def _call_llm(self, text: str, context: str, use_fast: bool = False, use_heavy: bool = False, use_basic: bool = False) -> dict:
         """
         Chama o LLM e parseia a resposta JSON. Se for tarefa de código maciço, usa streaming no disco.
@@ -918,7 +1067,7 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         """
         # Verifica se é estritamente uma solicitação de programação
         # (Desativado no modo papo para evitar que a palavra "jogo" ou "site" ative o código acidentalmente)
-        is_coding_file = use_heavy and not self.in_conversation_mode and any(w in text.lower() for w in ["código", "programe", "script", "desenvolva", "crie um arquivo", "html", "javascript", "python", "css", "aplicativo", "jogo", "site"])
+        is_coding_file = use_heavy and any(w in text.lower() for w in ["código", "programe", "script", "desenvolva", "crie um arquivo", "html", "javascript", "python", "css", "aplicativo", "jogo", "site"])
 
         if is_coding_file:
             print("[Router] Bypass de JSON Ativado: Redirecionando saída bruta para o disco via Stream!")
@@ -989,191 +1138,53 @@ Pedido do usuário: {text}"""
                 return {"action": "conversar", "params": {}, "response": "Houve um problema de permissão e o arquivo não abriu para a escrita do stream."}
 
 
-        # ── Fluxo Normal JSON (Conversa e Ações) ──
-        actions_desc = "\n".join(f"- {k}: {v}" for k, v in ACTIONS.items())
-        
-        # Injeta perfil do usuário
+        # ── Fluxo Normal (Conversa e Ações via ferramentas) ──
         profile_context = ""
         if self.user_profile:
             name = self.user_profile.get("user_name", "Usuário")
             pref = self.user_profile.get("preferences", "")
             notes = self.user_profile.get("notes", "")
-            profile_context = f"\n[PERFIL DO USUÁRIO]\nNome: {name}\nPreferências: {pref}\nNotas: {notes}\n"
+            profile_context = f"\n[PERFIL]\nNome: {name}\nPreferências: {pref}\nNotas: {notes}\n"
 
-        # Modo agente/conversa: prompt com instruções de orquestração
-        if self.agent_mode or self.in_conversation_mode:
-            user_name = self.user_profile.get("user_name", "você")
-            conv_prompt = (
-                f"Você é Luna, uma assistente de IA feminina, inteligente e natural.\n"
-                f"Você NÃO é '{user_name}' — '{user_name}' é o usuário.\n"
-                f"Você tem acesso direto às funções do sistema através das ferramentas 'run_luna_command', 'google_query', 'google_send_email', 'google_create_event' e 'crew_run'.\n"
-                f"\n"
-                f"🚨 AVISO CRÍTICO DE INTEGRAÇÃO DO GOOGLE:\n"
-                f"- A integração com o Google (Calendar e Gmail) está TOTALMENTE ATIVA, configurada e autenticada com sucesso! Você já tem as credenciais necessárias. NUNCA diga ao usuário que precisa adicionar 'credentials.json' ou 'token.json'.\n"
-                f"- Se o usuário pedir para listar e-mails ou compromissos, use 'google_query'.\n"
-                f"- Se o usuário pedir para enviar um e-mail, use 'google_send_email'.\n"
-                f"- Se o usuário pedir para marcar/criar um compromisso ou evento na agenda, use 'google_create_event'.\n"
-                f"\n"
-                f"REGRAS ABSOLUTAS DE COMPORTAMENTO:\n"
-                f"1. NUNCA exiba nomes de comandos ou ferramentas (run_luna_command, google_query etc) na fala. Fale como humana.\n"
-                f"2. NUNCA use luna-lights a não ser que o usuário fale explicitamente 'luz', 'lâmpada', 'sala', 'iluminação'.\n"
-                f"3. Quando o resultado de uma ferramenta tiver a informação pedida (ex: o conteúdo de uma nota, e-mail ou agenda), LEIA para o usuário na sua resposta.\n"
-                f"4. NUNCA pergunte o que fazer se já souber o que o usuário quer. Execute e informe.\n"
-                f"5. REGRA CRÍTICA: Se pedir cálculo, calcule agora. Se pedir informação salva, leia ela.\n"
-                f"6. REGRA DE TOM: Adapte seu tom ao contexto emocional do usuário. Se for triste, doente ou luto, seja calma, respeitosa e empática. Se for feliz, comemore moderadamente. Nunca use 'ahah!', 'hahaha', 'kkk' ou rir de situações sérias ou normais.\n"
-                f"\n"
-                f"Comandos disponíveis via 'run_luna_command' (APENAS quando solicitado explicitamente):\n"
-                f"- Música/playlist: luna-spotify\n"
-                f"- LUZ DA SALA (só quando pedirem luz/lâmpada/sala): luna-lights\n"
-                f"- Pesquisa web: luna-search\n"
-                f"- Abrir apps: luna-app\n"
-                f"- Timers, notas, lembretes, clima, lista de compras: luna-router\n"
-                f"\n"
-                f"Ferramentas Google dedicadas (preferencial para Google Workspace):\n"
-                f"- google_query: Ler calendário ('calendar') ou e-mails ('gmail')\n"
-                f"- google_send_email: Enviar e-mails (com ou sem anexos da pasta Luna-programming)\n"
-                f"- google_create_event: Criar eventos/compromissos na agenda\n"
-                f"- google_edit_event: Editar compromissos existentes\n"
-                f"- google_delete_event: Deletar compromissos\n"
-                f"- google_events_by_date: Buscar compromissos por data (YYYY-MM-DD)\n"
-                f"- google_search_emails: Pesquisar emails usando a busca do Gmail\n"
-                f"- google_read_email: Ler o conteúdo completo de um e-mail específico pelo ID\n"
-                f"- google_reply_email: Responder a um e-mail específico\n"
-                f"- google_forward_email: Encaminhar um e-mail para alguém\n"
-                f"- google_mark_read / google_delete_email: Marcar como lido ou lixeira\n"
-                f"- google_list_files: Listar arquivos da pasta Luna-programming para anexar/subir\n"
-                f"- google_drive_upload: Enviar qualquer arquivo do workspace/sistema para o Google Drive com link compartilhável\n"
-                f"- google_drive_list: Listar seus arquivos salvos no Google Drive\n"
-                f"- google_drive_search: Pesquisar arquivos no Google Drive\n"
-                f"- google_drive_create_folder: Criar uma pasta no Google Drive\n"
-                f"- google_drive_delete: Deletar/Mover para lixeira arquivo ou pasta no Google Drive pelo ID\n"
-                f"- create_excel: Criar uma planilha Excel a partir de dados (JSON)\n"
-                f"- create_pdf_drive: Gerar um PDF exportado via Google Drive\n"
-                f"- read_file: Ler/extrair o texto de arquivos locais (.txt, .csv, .xlsx, .pdf)\n"
-                f"- save_file: Salvar dados/conteúdo em arquivos locais no workspace\n"
-                f"- get_system_status: Verificar status de hardware do sistema\n"
-                f"- get_running_processes: Listar processos em execução com maior consumo\n"
-                f"- run_bash_command: Executar comandos no terminal bash com segurança\n"
-                f"- save_home_info: Salvar informação sobre a casa (wifi, chaves, rotinas, receitas)\n"
-                f"- search_home_info: Buscar informações salvas sobre a casa\n"
-                f"{profile_context}\n"
-                f"Histórico recente:\n{context}\n\n"
-                f"Mensagem de {user_name}: \"{text}\"\n"
-            )
-            prompt = conv_prompt
-        else:
-            prompt = f"""Você é Luna, a assistente autônoma inteligente criada pelo Pera.
-Personalidade: natural, precisa, proativa — fala como uma pessoa real, não como um robô.
+        user_name = self.user_profile.get("user_name", "você")
+        prompt = (
+            f"Você é Luna, assistente pessoal autônoma.\n"
+            f"'{user_name}' é o usuário — você NÃO é o usuário.\n"
+            f"Use ferramentas (tool calls) para agir no PC: apps, web, terminal, arquivos, Google.\n"
+            f"NUNCA responda com JSON — só texto natural em português.\n"
+            f"Google Calendar/Gmail já estão autenticados — use google_* quando pedirem agenda/e-mail.\n"
+            f"{profile_context}\n"
+            f"Histórico recente:\n{context}\n\n"
+            f"Mensagem de {user_name}: \"{text}\"\n"
+        )
 
-{profile_context}
+        try:
+            from brain.planner import format_plan, is_multi_step, step_count
+            plan_block = format_plan(text)
+            if plan_block:
+                prompt += f"\n\n{plan_block}\n"
+                self._expected_tool_steps = step_count(text)
+            else:
+                self._expected_tool_steps = 1
+        except ImportError:
+            self._expected_tool_steps = 1
 
-Você possui ferramentas de ação no sistema ('run_luna_command'), ferramentas Google dedicadas ('google_query', 'google_send_email', 'google_create_event', 'google_edit_event', 'google_delete_event', 'google_events_by_date', 'google_search_emails', 'google_read_email', 'google_reply_email', 'google_forward_email', 'google_mark_read', 'google_delete_email', 'google_list_files', 'google_drive_upload', 'google_drive_list', 'google_drive_search', 'google_drive_create_folder', 'google_drive_delete'), ferramentas de documentos ('create_excel', 'create_pdf_drive', 'read_file', 'save_file'), ferramentas de sistema ('get_system_status', 'get_running_processes', 'run_bash_command') e ferramentas de memória da casa ('save_home_info', 'search_home_info').
-
-🚨 INTEGRACÃO GOOGLE ATIVA 🚨
-A integração com o Google (Gmail, Calendar e Drive) está TOTALMENTE ATIVA, configurada e autenticada! Você já possui as credenciais necessárias. Nunca diga que precisa de credentials.json ou token.json. Use as ferramentas do Google diretamente!
-
-📜 MANUAL DE ORQUESTRAÇÃO 📜
-
-Use a ferramenta certa para o trabalho:
-
-[FERRAMENTAS GOOGLE DEDICADAS] (SEMPRE que for interagir com Gmail, Google Calendar ou Google Drive):
-  ▸ google_query → Buscar compromissos da agenda ou e-mails não lidos.
-  ▸ google_send_email → Enviar e-mails via Gmail (com ou sem anexos da pasta Luna-programming).
-  ▸ google_create_event → Criar um novo compromisso na agenda Google.
-  ▸ google_edit_event → Editar compromisso na agenda.
-  ▸ google_delete_event → Deletar compromisso.
-  ▸ google_events_by_date → Ver agenda de um dia específico.
-  ▸ google_search_emails → Buscar e-mails antigos/específicos.
-  ▸ google_read_email → Ler conteúdo completo de um email específico pelo ID.
-  ▸ google_reply_email → Responder a um email específico pelo ID.
-  ▸ google_forward_email → Encaminhar email pelo ID.
-  ▸ google_mark_read → Marcar email como lido.
-  ▸ google_delete_email → Deletar email (lixeira).
-  ▸ google_list_files → Listar arquivos da pasta Luna-programming (imagens, códigos, textos) para que você saiba o nome exato a ser anexado ou enviado ao Drive.
-  ▸ google_drive_upload → Enviar um arquivo do workspace/sistema para o Google Drive e gerar um link compartilhável público.
-  ▸ google_drive_list → Listar arquivos salvos no seu Google Drive.
-  ▸ google_drive_search → Buscar arquivos no Google Drive por trecho do nome.
-  ▸ google_drive_create_folder → Criar uma pasta no Google Drive.
-  ▸ google_drive_delete → Excluir/Mover para lixeira arquivo ou pasta no Drive por ID.
-  
-[DOCUMENTOS & PLANILHAS] (para manipular planilhas, PDFs e arquivos locais):
-  ▸ create_excel → Criar uma planilha Excel (.xlsx) a partir de uma lista de dados/objetos JSON.
-  ▸ create_pdf_drive → Criar um documento PDF exportado e compartilhado via Google Drive.
-  ▸ read_file → Ler arquivos do workspace (.txt, .csv, .xlsx, .pdf).
-  ▸ save_file → Salvar arquivos locais de texto no workspace.
-  
-[FERRAMENTAS DE SISTEMA] (para monitoramento e terminal):
-  ▸ get_system_status → Verificar uso de CPU, memória RAM e espaço em disco.
-  ▸ get_running_processes → Listar os processos mais pesados que estão rodando.
-  ▸ run_bash_command → Executar um comando síncrono seguro no terminal bash.
-  
-[MEMÓRIA DA CASA] (para lembrar e buscar informações do lar):
-  ▸ save_home_info → Salvar uma informação sobre a casa (wifi, chaves, rotinas, receitas).
-  ▸ search_home_info → Buscar informações já salvas sobre a casa.
-
-
-[LUNA-SPOTIFY] (via run_luna_command) → Tocar música/playlist/artista.
-  Use quando: o usuário pedir música, playlist, artista, "toca", "coloca".
-  Ex: luna-spotify "the weeknd"
-
-[LUNA-LIGHTS] (via run_luna_command) → Controlar a LUZ FÍSICA da sala.
-  Use SOMENTE quando o usuário mencionar: "luz", "lâmpada", "sala", "iluminação", "acende", "apaga".
-  NUNCA use para pesquisa, notas, música, web ou qualquer outro pedido.
-
-[LUNA-SEARCH] (via run_luna_command) → Pesquisar algo na web e ABRIR o browser com os resultados.
-  Use quando: o usuário pedir para pesquisar, buscar, googlar, procurar algo.
-
-[LUNA-APP] (via run_luna_command) → Abrir um programa instalado.
-  Ex: luna-app firefox
-
-[LUNA-ROUTER] (via run_luna_command) → Funções nativas do sistema. Associe intenções aos subcomandos certos:
-  ▸ TIMER: contagem regressiva, cronometrar, avisar depois de X tempo.
-  ▸ LEMBRETE: horários absolutos ou datas do sistema (sem ser na agenda Google).
-  ▸ NOTAS: anotar informações locais, recuperar o que foi salvo localmente.
-  ▸ LISTA DE COMPRAS: itens de mercado locais.
-  ▸ CLIMA: temperatura, previsão do tempo.
-
-[LUNA-BROWSER] (via run_luna_command) → Agente autônomo para automações web complexas em URLs específicas (formulários, logins programáticos).
-
-[LUNA-CLICK] (via run_luna_command) → Clica em elemento na TELA REAL do usuário via OCR + xdotool.
-
-REGRAS ABSOLUTAS:
-1. NUNCA mencione nomes de comandos ou ferramentas na fala (luna-router, google_query etc). Fale naturalmente.
-2. Se usar ferramentas e receber dados de volta (notas, lista, e-mails), INCLUA esse conteúdo na sua resposta.
-3. NUNCA pergunte o que fazer se souber a intenção. Execute e informe o resultado.
-4. Para conversa, cálculo ou pergunta geral, responda SEM usar ferramenta.
-5. Para tarefas múltiplas, use a ferramenta VÁRIAS VEZES em sequência.
-6. ADAPTE SEU TOM: Adapte seu tom ao contexto emocional do usuário. Se for triste, doente ou luto, seja calma, respeitosa e empática. Se for feliz, comemore moderadamente. Nunca use 'ahah!', 'hahaha' ou rir em situações sérias ou normais. Seja madura, sincera e empática.
-
-{context}
-
-Mensagem do usuário: "{text}"
-"""
-
-        # Kitsuune Router Engine
-        if self.agent_mode or self.in_conversation_mode:
-            task_type = "conversational"
-            model = MODELS["main"]
-            if use_heavy:
-                model = MODELS["heavy"]
-                task_type = "planning"
-        else:
+        # Kitsuune Router Engine — conversa/agente
+        task_type = "conversational"
+        model = MODELS["main"]
+        if use_heavy:
+            model = MODELS["heavy"]
             task_type = "planning"
-            model = MODELS["main"]
-            if use_fast:
-                model = MODELS["fast"]
-                task_type = "command"
-            elif use_basic:
-                model = MODELS.get("basic", "llama3.2:1b")
-                task_type = "planning"
-            elif use_heavy:
-                model = MODELS["heavy"]
 
         print(f"[LLM] Usando modelo: {model} (Task: {task_type})")
         
         try:
-            from brain.agent_tools import LUNA_TOOLS, execute_tool_call
-            tools_to_use = LUNA_TOOLS if self._llm.supports_native_tools() else None
+            from brain.agent_tools import (
+                LUNA_TOOLS, execute_tool_call, tool_call_id,
+                tool_call_signature, tool_call_name, is_tool_success,
+            )
+            raw_tools = LUNA_TOOLS if self._llm.supports_native_tools() else None
+            tools_to_use = self._filter_tools(text, context, raw_tools) if raw_tools else None
 
         except ImportError as ie:
             print(f"[Core] ⚠ Erro de importação em agent_tools: {ie}")
@@ -1181,21 +1192,20 @@ Mensagem do usuário: "{text}"
             tools_to_use = None
             execute_tool_call = None
 
-        # ── SISTEMA DE SEQUÊNCIA (MAX 3 PASSOS) ──
-        # Regra: 1 pedido = 1 ferramenta. Para múltiplos pedidos, executa em sequência.
-        max_steps = 5
+        # ── SISTEMA DE SEQUÊNCIA — executa até concluir ou esgotar tentativas ──
+        max_steps = 8
         current_step = 0
         # Separa o prompt em system + user para melhor compreensão do modelo 8B
         messages = [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": prompt}
         ]
-        executed_commands = set()  # evita repetir o mesmo comando
-        tools_executed = 0  # quantas ferramentas foram chamadas com sucesso
-        
-        # Timeout de segurança para o loop total (45 segundos)
+        executed_commands = set()
+        tools_executed = 0
+        last_step_had_failure = False
+        expected_steps = getattr(self, "_expected_tool_steps", 1)
         loop_start_time = time.time()
-        MAX_LOOP_TIME = 90.0
+        MAX_LOOP_TIME = 120.0
 
         while current_step < max_steps:
             current_step += 1
@@ -1213,10 +1223,16 @@ Mensagem do usuário: "{text}"
                 messages=messages,
             )
             
-            # Detecta se é uma resposta com ferramentas (independente do shape do objeto)
+            # Detecta tool_calls (API nativa ou JSON vazado no texto)
             is_tool_call = False
             tool_calls = None
             assistant_msg = None
+
+            if isinstance(raw, str):
+                parsed_calls = _extract_tool_calls_from_text(raw)
+                if parsed_calls:
+                    print(f"[Router] 🔧 tool_calls extraídos do texto ({len(parsed_calls)} chamadas)")
+                    raw = {"tool_calls": parsed_calls, "message": None}
 
             if isinstance(raw, dict):
                 tool_calls = raw.get("tool_calls")
@@ -1226,6 +1242,7 @@ Mensagem do usuário: "{text}"
 
             if is_tool_call:
                 print(f"[Router] 🛠️ O Agente decidiu orquestrar ferramentas! (Passo {current_step}/{max_steps})")
+                last_step_had_failure = False
                 
                 # Normaliza a mensagem do assistente para o histórico
                 msg_dict = {"role": "assistant", "content": ""}
@@ -1254,75 +1271,133 @@ Mensagem do usuário: "{text}"
                 
                 messages.append(msg_dict)
                 
-                all_done = True  # assume que todos terminaram com sucesso
+                all_done = True
                 for tc in raw["tool_calls"]:
-                    import json as _json
-                    # Deduplicação robusta: usa hash do JSON raw completo
-                    raw_args_str = getattr(tc.function, "arguments", "") if hasattr(tc, "function") else ""
-                    cmd_sig = raw_args_str  # fallback: usa o JSON inteiro como chave
-                    try:
-                        parsed_args = _json.loads(raw_args_str)
-                        cmd_sig = parsed_args.get("command", raw_args_str)
-                    except Exception:
-                        pass
+                    tc_id = tool_call_id(tc)
+                    sig = tool_call_signature(tc)
 
-                    # Ignora comandos repetidos
-                    if cmd_sig and cmd_sig in executed_commands:
-                        print(f"[Router] ⚠ Comando duplicado ignorado: {cmd_sig}")
+                    if sig in executed_commands:
+                        print(f"[Router] ⚠ Ferramenta duplicada ignorada: {sig[:80]}")
                         messages.append({
                             "role": "tool",
-                            "tool_call_id": tc.id,
-                            "content": "IGNORADO: Este comando já foi executado nesta sequência."
+                            "tool_call_id": tc_id,
+                            "name": tool_call_name(tc),
+                            "content": "IGNORADO: Esta ferramenta já foi executada nesta sequência.",
                         })
                         continue
 
+                    raw_args = (
+                        tc.function.arguments if hasattr(tc, "function")
+                        else tc.get("function", {}).get("arguments", "{}")
+                    )
+                    tc_name = tool_call_name(tc)
+                    label = _tool_progress_label(tc_name, raw_args)
+                    self._emit_progress("tool_start", name=tc_name, label=label)
+
                     tool_res = execute_tool_call(self._executor, tc)
-                    if cmd_sig:
-                        executed_commands.add(cmd_sig)
+                    executed_commands.add(sig)
+
+                    self._emit_progress(
+                        "tool_done",
+                        name=tc_name,
+                        label=label,
+                        ok=is_tool_success(tool_res),
+                    )
 
                     messages.append({
                         "role": "tool",
-                        "tool_call_id": tc.id,
-                        "content": str(tool_res)
+                        "tool_call_id": tc_id,
+                        "name": tc_name,
+                        "content": str(tool_res),
                     })
 
-                    if str(tool_res).startswith("SUCESSO"):
+                    if is_tool_success(tool_res):
                         tools_executed += 1
                     else:
                         all_done = False
+                        last_step_had_failure = True
+                        print(f"[Router] ⚠ Ferramenta falhou: {tc_name} → {str(tool_res)[:120]}")
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                f"A ferramenta '{tc_name}' falhou: {str(tool_res)[:200]}. "
+                                "Tente outra abordagem (open_app, run_terminal_command, kill_process, open_url). "
+                                "Não desista até concluir o pedido do usuário."
+                            ),
+                        })
 
-                # Encerra se todos os comandos desse passo foram SUCESSO
-                if all_done and tools_executed > 0:
-                    print("[Router] ✓ Ferramentas executadas com sucesso. Gerando resposta final...")
-                    break
+                if all_done and tools_executed > 0 and not last_step_had_failure:
+                    if expected_steps > 1 and tools_executed < expected_steps:
+                        print(
+                            f"[Router] ↻ Plano incompleto ({tools_executed}/{expected_steps}) — continuando..."
+                        )
+                        messages.append({
+                            "role": "user",
+                            "content": (
+                                f"Você executou {tools_executed} de {expected_steps} passos do plano. "
+                                "Continue com as ferramentas até completar TODOS os passos antes de responder."
+                            ),
+                        })
+                    else:
+                        print("[Router] ✓ Ferramentas OK — sintetizando resposta...")
+                        break
+                if last_step_had_failure:
+                    print("[Router] ↻ Falha detectada — nova tentativa...")
             else:
                 # Retorno final sem ferramentas
                 if current_step > 1:
                     print("[Router] 🛠️ Gerando resposta final após ferramentas...")
 
                 if isinstance(raw, dict) and "response" in raw:
-                    return {"action": "conversar", "params": {}, "response": raw["response"]}
+                    return _agent_result(
+                        {"action": "conversar", "params": {}, "response": _sanitize_user_response(raw["response"])},
+                        tools_executed,
+                    )
 
                 if isinstance(raw, str):
                     parsed_final = self._parse_llm_response(raw, text)
                     if parsed_final.get("action") == "fallback":
-                        return {"action": "conversar", "params": {}, "response": raw}
-                    return parsed_final
+                        return _agent_result(
+                            {"action": "conversar", "params": {}, "response": _sanitize_user_response(raw)},
+                            tools_executed,
+                        )
+                    parsed_final["response"] = _sanitize_user_response(parsed_final.get("response", ""))
+                    return _agent_result(parsed_final, tools_executed)
 
-                return {"action": "conversar", "params": {}, "response": str(raw)}
+                return _agent_result(
+                    {"action": "conversar", "params": {}, "response": _sanitize_user_response(str(raw))},
+                    tools_executed,
+                )
 
         # Gera resposta final com base no histórico de ferramentas
         print("[Router] 🛠️ Gerando resposta final após ferramentas...")
+        messages.append({
+            "role": "user",
+            "content": (
+                "Resuma o que você fez em português natural (2-3 frases). "
+                "PROIBIDO: JSON, tool_calls, action, params ou nomes de ferramentas."
+            ),
+        })
         raw_final = self._llm.generate(prompt="", task_type=task_type, model=model,
                                         tools=None, messages=messages)
         if isinstance(raw_final, dict) and "response" in raw_final:
-            return {"action": "conversar", "params": {}, "response": raw_final["response"]}
+            return _agent_result(
+                {"action": "conversar", "params": {}, "response": _sanitize_user_response(raw_final["response"])},
+                tools_executed,
+            )
         if isinstance(raw_final, str):
             parsed = self._parse_llm_response(raw_final, text)
             if parsed.get("action") != "fallback":
-                return parsed
-            return {"action": "conversar", "params": {}, "response": raw_final}
-        return {"action": "conversar", "params": {}, "response": str(raw_final)}
+                parsed["response"] = _sanitize_user_response(parsed.get("response", ""))
+                return _agent_result(parsed, tools_executed)
+            return _agent_result(
+                {"action": "conversar", "params": {}, "response": _sanitize_user_response(raw_final)},
+                tools_executed,
+            )
+        return _agent_result(
+            {"action": "conversar", "params": {}, "response": _sanitize_user_response(str(raw_final))},
+            tools_executed,
+        )
 
     def _parse_llm_response(self, raw: str, user_text: str = "") -> dict:
         """Parseia JSON da resposta do LLM com múltiplas tentativas."""
@@ -1348,6 +1423,7 @@ Mensagem do usuário: "{text}"
                 # Valida estrutura mínima
                 if "action" in data and "response" in data:
                     data.setdefault("params", {})
+                    data["action"] = "conversar"
                     return data
                 # JSON com action mas sem response — gera response padrão
                 if "action" in data and "action" != "conversar":
@@ -1382,295 +1458,23 @@ Mensagem do usuário: "{text}"
             "response": "Desculpe, não entendi. Pode reformular?"
         }
 
-    def _execute_action(self, llm_result: dict, original_text: str = "") -> Optional[dict]:
-        """Executa a ação indicada pelo LLM."""
+    def _finalize_response(self, llm_result: dict) -> str:
+        """Resposta final sanitizada — ações já foram executadas via ferramentas."""
+        base_response = llm_result.get("response", "") or ""
         action = llm_result.get("action", "conversar")
-        params = llm_result.get("params", {})
+        user_text = llm_result.get("_user_text", "")
+        tools_ran = llm_result.get("tools_executed", 0) > 0
 
-        print(f"[Luna] Ação: {action} | Params: {params}")
+        if (
+            action == "conversar"
+            and base_response
+            and not tools_ran
+            and not _is_local_action(user_text)
+            and len(user_text.strip()) >= 20
+        ):
+            self._auto_extract_facts(user_text, base_response)
 
-        try:
-            if action == "open_app":
-                app = params.get("app", "")
-                best = self._executor.find_best_app(app) or app
-                prev_window = self._vision.get_active_window()
-                result = self._executor.open_app(best)
-                if result.get("success"):
-                    feedback = self._vision.verify_action_result(f"abrir {best}", prev_window)
-                    result["feedback"] = feedback
-                return result
-
-            elif action == "open_url":
-                return self._executor.open_url(params.get("url", ""))
-
-            elif action == "search_web":
-                return self._executor.search_web(params.get("query", ""))
-
-            elif action == "ui_click":
-                target = params.get("target", "")
-                x, y = params.get("x"), params.get("y")
-                prev_window = self._vision.get_active_window()
-                if x is not None and y is not None:
-                    result = self._executor.click_at(int(x), int(y))
-                else:
-                    # Tenta resolução inteligente (ordinais, tipos, texto literal)
-                    from actions.executor import _resolve_click
-                    import unicodedata as _ud
-                    def _n(s):
-                        return ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn').lower()
-                    result = _resolve_click(target, _n(target), self._executor) or self._executor.click_text(target)
-                if result.get("success"):
-                    result["feedback"] = self._vision.verify_action_result(f"clicar em {target}", prev_window)
-                return result
-
-            elif action == "ui_type":
-                return self._executor.type_text(params.get("text", ""))
-
-            elif action == "ui_key":
-                return self._executor.press_key(params.get("key", ""))
-
-            elif action == "ui_scroll":
-                return self._executor.scroll(params.get("direction", "down"))
-
-            elif action == "see_screen":
-                desc = self._vision.capture_and_describe()
-                return {"success": True, "screen_desc": desc}
-
-            elif action == "write_code":
-                filename = params.get("filename", "script.txt")
-                content = params.get("content", "")
-                return self._executor.write_code(filename, content)
-
-            elif action == "write_text":
-                msg = self._run_writer_stream(original_text)
-                return {"success": True, "message": msg}
-
-            elif action == "conversar":
-                return {"success": True}
-
-            elif action == "run_luna_command":
-                # Roteamento de comandos do modo conversa para o executor
-                command = params.get("command", "")
-                argument = params.get("argument", params.get("query", params.get("app", "")))
-                full_cmd = f"{command} {argument}".strip() if argument else command
-                result = self._executor.execute_natural(full_cmd)
-                if result.get("success"):
-                    return result
-                # Tenta como texto natural
-                return self._executor.execute_natural(original_text) or {"success": True}
-
-            elif action == "controlar_luz":
-                state = params.get("state", "")
-                from actions.lights import handle as _lights_handle
-                result = _lights_handle(state)
-                return {"success": True, "message": result} if result else {"success": False}
-
-            elif action == "google_query":
-                service = params.get("service")
-                max_results = params.get("max_results", 5)
-                from actions.google_services import get_google
-                gm = get_google()
-                if service == "calendar":
-                    res = gm.get_calendar_events(max_results)
-                elif service == "gmail":
-                    res = gm.get_unread_emails(max_results)
-                else:
-                    res = f"Serviço desconhecido '{service}'"
-                return {"success": True, "message": res}
-
-            elif action == "google_send_email":
-                from actions.google_services import get_google
-                res = get_google().send_email(
-                    params.get("to"), params.get("subject"), params.get("body"),
-                    params.get("attachments", ""))
-                return {"success": True, "message": res}
-
-            elif action == "google_create_event":
-                from actions.google_services import get_google
-                res = get_google().create_calendar_event(
-                    params.get("summary"), params.get("start_time"),
-                    params.get("end_time"), params.get("description", ""),
-                    params.get("location", ""), params.get("attendees", ""))
-                return {"success": True, "message": res}
-
-            elif action == "google_edit_event":
-                from actions.google_services import get_google
-                res = get_google().edit_calendar_event(
-                    params.get("event_id"), params.get("summary"),
-                    params.get("start_time"), params.get("end_time"),
-                    params.get("description"), params.get("location"))
-                return {"success": True, "message": res}
-
-            elif action == "google_delete_event":
-                from actions.google_services import get_google
-                res = get_google().delete_calendar_event(params.get("event_id"))
-                return {"success": True, "message": res}
-
-            elif action == "google_events_by_date":
-                from actions.google_services import get_google
-                res = get_google().get_events_by_date(params.get("date"), params.get("max_results", 20))
-                return {"success": True, "message": res}
-
-            elif action == "google_search_emails":
-                from actions.google_services import get_google
-                res = get_google().search_emails(params.get("query"), params.get("max_results", 5))
-                return {"success": True, "message": res}
-
-            elif action == "google_read_email":
-                from actions.google_services import get_google
-                res = get_google().read_email(params.get("message_id"))
-                return {"success": True, "message": res}
-
-            elif action == "google_reply_email":
-                from actions.google_services import get_google
-                res = get_google().reply_email(params.get("message_id"), params.get("body"))
-                return {"success": True, "message": res}
-
-            elif action == "google_forward_email":
-                from actions.google_services import get_google
-                res = get_google().forward_email(
-                    params.get("message_id"), params.get("to"), params.get("extra_text", ""))
-                return {"success": True, "message": res}
-
-            elif action == "google_mark_read":
-                from actions.google_services import get_google
-                res = get_google().mark_as_read(params.get("message_id"))
-                return {"success": True, "message": res}
-
-            elif action == "google_delete_email":
-                from actions.google_services import get_google
-                res = get_google().delete_email(params.get("message_id"))
-                return {"success": True, "message": res}
-
-            elif action == "google_list_files":
-                from actions.google_services import get_google
-                res = get_google().list_workspace_files(params.get("pattern", "*"))
-                return {"success": True, "message": res}
-
-            elif action == "google_drive_upload":
-                from actions.google_services import get_google
-                res = get_google().google_drive_upload(params.get("filepath_or_name"), params.get("folder_id"))
-                return {"success": True, "message": res}
-
-            elif action == "google_drive_list":
-                from actions.google_services import get_google
-                res = get_google().google_drive_list(params.get("max_results", 10))
-                return {"success": True, "message": res}
-
-            elif action == "google_drive_search":
-                from actions.google_services import get_google
-                res = get_google().google_drive_search(params.get("query"), params.get("max_results", 10))
-                return {"success": True, "message": res}
-
-            elif action == "google_drive_create_folder":
-                from actions.google_services import get_google
-                res = get_google().google_drive_create_folder(params.get("folder_name"), params.get("parent_id"))
-                return {"success": True, "message": res}
-
-            elif action == "google_drive_delete":
-                from actions.google_services import get_google
-                res = get_google().google_drive_delete(params.get("file_id"))
-                return {"success": True, "message": res}
-
-            elif action == "create_excel":
-                from actions.document_services import get_doc_services
-                res = get_doc_services().create_excel(params.get("data"), params.get("filename"))
-                return {"success": True, "message": res}
-
-            elif action == "create_pdf_drive":
-                from actions.document_services import get_doc_services
-                res = get_doc_services().create_pdf_drive(params.get("content"), params.get("title"))
-                return {"success": True, "message": res}
-
-            elif action == "read_file":
-                from actions.document_services import get_doc_services
-                res = get_doc_services().read_file(params.get("filepath_or_name"))
-                return {"success": True, "message": res}
-
-            elif action == "save_file":
-                from actions.document_services import get_doc_services
-                res = get_doc_services().save_file(params.get("content"), params.get("filepath_or_name"))
-                return {"success": True, "message": res}
-
-            elif action == "get_system_status":
-                from actions.system_tools import get_system_tools
-                res = get_system_tools().get_system_status()
-                return {"success": True, "message": res}
-
-            elif action == "get_running_processes":
-                from actions.system_tools import get_system_tools
-                res = get_system_tools().get_running_processes(params.get("limit", 10))
-                return {"success": True, "message": res}
-
-            elif action == "run_bash_command":
-                from actions.system_tools import get_system_tools
-                res = get_system_tools().run_bash_command(params.get("command"))
-                return {"success": True, "message": res}
-
-            elif action == "save_home_info":
-                from brain.memory import get_memory
-                rag = get_memory().rag
-                if rag:
-                    res = rag.remember_home_info(params.get("text", ""), params.get("category", "geral"))
-                    return {"success": True, "message": res}
-                return {"success": False, "message": "RAG não está disponível."}
-
-            elif action == "search_home_info":
-                from brain.memory import get_memory
-                rag = get_memory().rag
-                if rag:
-                    res = rag.retrieve_home_info(params.get("query", ""))
-                    return {"success": True, "message": res if res else "Nenhuma informação encontrada."}
-                return {"success": False, "message": "RAG não está disponível."}
-
-        except Exception as e:
-            print(f"[Luna] Erro ao executar ação '{action}': {e}")
-            return {"success": False, "message": str(e)}
-
-        return None
-
-    def _finalize_response(self, llm_result: dict, action_result: Optional[dict]) -> str:
-        """Ajusta a resposta com base no resultado da ação."""
-        base_response = llm_result.get("response", "")
-        action = llm_result.get("action", "conversar")
-
-        # Erro na ação
-        if action_result and not action_result.get("success", True):
-            msg = action_result.get("message", "")
-            if msg and action != "conversar":
-                return f"{base_response} (Aviso: {msg})"
-
-        # Feedback pós-ação de UI (janela mudou, etc.)
-        if action_result and action_result.get("feedback"):
-            base_response = f"{base_response}\n{action_result['feedback']}"
-
-        # Sucesso no Modo Escritor lançado via LLM
-        if action == "write_text" and action_result and action_result.get("success"):
-            return action_result.get("message", base_response)
-
-        # Sucesso nas ações do Google
-        if action and action.startswith("google_") and action_result and action_result.get("success"):
-            google_msg = action_result.get("message", "")
-            if google_msg:
-                return f"{base_response}\n\n{google_msg}" if base_response else google_msg
-
-        # Descrição de tela
-        if action == "see_screen" and action_result:
-            desc = action_result.get("screen_desc", "")
-            if desc:
-                return f"{base_response}\n\n{desc}"
-
-        # Sucesso em outras ações genéricas (sistema, documentos, RAG, etc.) que retornam uma mensagem de resultado
-        if action_result and action_result.get("success"):
-            action_msg = action_result.get("message", "")
-            if action_msg and action not in ["conversar", "write_text", "see_screen"] and not action.startswith("google_"):
-                return f"{base_response}\n\n{action_msg}" if base_response else action_msg
-
-        # Auto-extração de fatos da conversa
-        if action == "conversar" and base_response:
-            self._auto_extract_facts(llm_result.get("_user_text", ""), base_response)
-
-        return base_response or "Entendido."
+        return _sanitize_user_response(base_response) or "Entendido."
 
     def _auto_extract_facts(self, user_text: str, response: str) -> None:
         """Extrai fatos memoráveis via LLM em thread background."""

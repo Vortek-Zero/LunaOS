@@ -125,6 +125,41 @@ class WindowManager:
             return "Janela movida para direita."
         return "hyprctl não disponível."
 
+    def list_windows(self) -> str:
+        from vision.screen import get_vision
+        wins = get_vision().list_windows()
+        if not wins:
+            return "Nenhuma janela visível detectada."
+        lines = ["Janelas abertas:"]
+        for i, w in enumerate(wins[:25], 1):
+            lines.append(f"  {i}. {w}")
+        return "\n".join(lines)
+
+    def focus_window(self, title: str) -> str:
+        if not title:
+            return "FALHOU: informe o título da janela."
+        if shutil.which("wmctrl"):
+            code, _ = _run(["wmctrl", "-a", title])
+            if code == 0:
+                return f"Janela focada: {title}"
+        if shutil.which("xdotool"):
+            code, _ = _run(["xdotool", "search", "--name", title, "windowactivate"])
+            if code == 0:
+                return f"Janela focada: {title}"
+        if self._has_hyprctl:
+            ok, clients = self._hypr("clients", "-j")
+            if ok:
+                import json
+                try:
+                    for c in json.loads(clients):
+                        if title.lower() in c.get("title", "").lower():
+                            addr = c.get("address", "")
+                            self._dispatch("focuswindow", f"address:{addr}")
+                            return f"Janela focada: {c.get('title')}"
+                except Exception:
+                    pass
+        return f"FALHOU: janela '{title}' não encontrada."
+
     # ── Interface natural ──────────────────────────────────────
 
     def handle(self, text: str) -> Optional[str]:

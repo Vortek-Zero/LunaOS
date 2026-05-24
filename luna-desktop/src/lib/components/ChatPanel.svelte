@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { ChatMessage } from '$lib/stores/luna.svelte';
 
-  let { messages = [], isTyping = false } = $props<{
+  let { messages = [], isTyping = false, currentAction = '' } = $props<{
     messages: ChatMessage[];
     isTyping: boolean;
+    currentAction?: string;
   }>();
 
   let chatContainer: HTMLDivElement;
@@ -101,6 +102,9 @@
         <span class="tdot"></span>
         <span class="tdot"></span>
         <span class="tdot"></span>
+        {#if currentAction}
+          <span class="action-label">{currentAction}</span>
+        {/if}
       </div>
     </div>
   {/if}
@@ -266,6 +270,14 @@
     display: flex;
     gap: 6px;
     align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .action-label {
+    margin-left: 6px;
+    font-size: 0.82rem;
+    color: rgba(110, 198, 255, 0.9);
+    font-weight: 500;
   }
 
   .tdot {

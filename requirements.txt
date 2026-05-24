@@ -19,6 +19,7 @@ mistralai
 faster-whisper
 pytesseract
 Pillow
+mss
 langchain-groq
 langchain-community
 langchain-core

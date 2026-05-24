@@ -124,6 +124,8 @@ class StatusResponse(BaseModel):
     memory_facts: int
     memory_history: int
     writing_model: str
+    processing: bool = False
+    current_action: str = ""
 
 class ModelRequest(BaseModel):
     mode: str  # "medium" or "high"
@@ -565,6 +567,8 @@ async def status(_key: str = Depends(verify_api_key)):
         memory_facts=len(luna._memory.facts),
         memory_history=len(luna._memory.history) // 2,
         writing_model=luna.get_model_mode(),
+        processing=luna.processing,
+        current_action=getattr(luna, "current_action", None) or "",
     )
 
 
@@ -642,8 +646,8 @@ async def clear_cache(_key: str = Depends(verify_api_key)):
     """Limpa cache expirado."""
     luna = get_luna()
     if hasattr(luna, '_cache') and luna._cache:
-        removed = luna._cache.clear_expired()
-        return {"success": True, "removed": removed}
+        removed = luna._cache.clear_all()
+        return {"success": True, "removed": removed, "message": f"{removed} entradas removidas do cache."}
     return {"message": "Cache não ativo."}
 
 
@@ -680,6 +684,7 @@ async def create_session_endpoint(req: SessionRequest, _key: str = Depends(verif
     # Troca sessão ativa na memória
     luna = get_luna()
     luna._memory.switch_session(req.session_id)
+    luna._reset_sticky_state()
     return {"success": True, "session_id": req.session_id}
 
 
@@ -723,6 +728,7 @@ async def switch_session_endpoint(req: SessionRequest, _key: str = Depends(verif
     db.create_session(req.session_id)  # garante que existe
     luna = get_luna()
     luna._memory.switch_session(req.session_id)
+    luna._reset_sticky_state()
     return {"success": True, "active_session": req.session_id}
 
 
@@ -943,30 +949,32 @@ async def chat_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
         import queue as _queue
         q = _queue.Queue()
 
+        def progress_cb(event: dict):
+            q.put(("progress", event))
+
         def run():
             try:
-                # Usa process normal mas intercepta via monkey-patch temporário
-                result = luna.process(message)
+                result = luna.process(message, progress_callback=progress_cb)
                 q.put(("done", result))
             except Exception as e:
                 q.put(("error", str(e)))
 
-        # Roda em thread para não bloquear
         import threading
         t = threading.Thread(target=run, daemon=True)
         t.start()
 
-        # Polling da fila com yield para SSE
+        import json as _json
         while True:
             await asyncio.sleep(0.05)
             try:
                 kind, data = q.get_nowait()
+                if kind == "progress":
+                    yield f"data: {_json.dumps(data, ensure_ascii=False)}\n\n"
+                    continue
                 if kind == "done":
-                    # Envia resposta completa de uma vez
-                    import json as _json
-                    yield f"data: {_json.dumps({'text': data, 'done': True})}\n\n"
+                    yield f"data: {_json.dumps({'type': 'done', 'text': data}, ensure_ascii=False)}\n\n"
                 else:
-                    yield f"data: {_json.dumps({'error': data})}\n\n"
+                    yield f"data: {_json.dumps({'type': 'error', 'content': data}, ensure_ascii=False)}\n\n"
                 break
             except _queue.Empty:
                 if not t.is_alive():

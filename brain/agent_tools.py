@@ -2,6 +2,7 @@
 import json
 import re
 import logging
+import time
 
 logger = logging.getLogger("luna.agent_tools")
 
@@ -9,46 +10,6 @@ from actions.google_services import get_google
 
 
 LUNA_TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "run_luna_command",
-            "description": (
-                "Executa UMA ação no sistema da Luna. Chame uma vez por intenção. "
-                "Comandos disponíveis:\n"
-                "luna-spotify <busca|next|prev|pause|play|volume N> — música\n"
-                "luna-lights <on|off> — luz física da sala\n"
-                "luna-search <query> — pesquisa na web\n"
-                "luna-app <nome> — abre aplicativo\n"
-                "luna-click <alvo> — clica em elemento na tela ou no browser. "
-                "  Use para: 'clica no primeiro link', 'clica no segundo resultado', "
-                "  'clica no vídeo', 'clica no botão X', 'clica em Entrar'. "
-                "  Exemplos: luna-click 'primeiro link', luna-click 'segundo resultado', "
-                "  luna-click 'terceiro vídeo', luna-click 'botão pesquisar', luna-click 'Entrar'\n"
-                "luna-browser <tarefa ou URL> — agente autônomo para tarefas complexas no browser "
-                "  (preencher formulários, navegar por múltiplas páginas, fazer login)\n"
-                "luna-router <ação> — funções do sistema: timer, lembrete, notas, lista de compras, clima"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {
-                        "type": "string",
-                        "description": (
-                            "Comando completo. Exemplos: "
-                            "'luna-spotify the weeknd', 'luna-lights off', "
-                            "'luna-search python tutorial', 'luna-app firefox', "
-                            "'luna-click primeiro link', 'luna-click segundo resultado', "
-                            "'luna-click terceiro vídeo', 'luna-click botão enviar', "
-                            "'luna-browser abra o youtube e pesquise lofi music', "
-                            "'luna-router timer de 10 minutos'"
-                        )
-                    }
-                },
-                "required": ["command"]
-            }
-        }
-    },
     {
         "type": "function",
         "function": {
@@ -580,16 +541,545 @@ LUNA_TOOLS = [
         "type": "function",
         "function": {
             "name": "run_bash_command",
-            "description": "Executa um comando síncrono no terminal bash. Use apenas para comandos seguros e úteis.",
+            "description": "Executa comando no shell. Use visible=true para abrir terminal GNOME/zsh (apps, pacman, etc.). Use visible=false para capturar saída silenciosa.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "O comando de terminal completo a ser executado."
+                        "description": "Comando completo (ex: 'firefox', 'pacman -Qs neovim')."
+                    },
+                    "visible": {
+                        "type": "boolean",
+                        "description": "true = abre terminal zsh visível no GNOME. false = headless (padrão).",
+                        "default": False
                     }
                 },
                 "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_terminal_command",
+            "description": "Abre terminal GNOME com zsh e executa o comando (usuário vê a saída). Ideal para abrir apps, instalar pacotes, rodar scripts.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Comando a rodar no terminal visível."
+                    }
+                },
+                "required": ["command"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_weather",
+            "description": "Consulta clima e previsão do tempo. Use para perguntas sobre tempo, temperatura ou chuva.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "city": {
+                        "type": "string",
+                        "description": "Cidade opcional (ex: 'São Paulo'). Vazio = localização automática."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_timer",
+            "description": "Cria, consulta ou cancela timers de contagem regressiva.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["start", "status", "cancel"],
+                        "description": "start=iniciar, status=ver ativos, cancel=cancelar todos."
+                    },
+                    "minutes": {"type": "integer", "description": "Minutos (para action=start)."},
+                    "seconds": {"type": "integer", "description": "Segundos extras (para action=start)."},
+                    "name": {"type": "string", "description": "Nome do timer (ex: 'macarrão')."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_reminder",
+            "description": "Gerencia lembretes com horário. Use para 'me lembra de... às 20h'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "list", "cancel"]},
+                    "message": {"type": "string", "description": "Texto do lembrete."},
+                    "when": {"type": "string", "description": "Quando lembrar em linguagem natural (ex: 'às 20h', 'em 2 horas', 'amanhã às 9h')."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_notes",
+            "description": "Anotações rápidas persistentes: criar, listar, buscar ou apagar.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "list", "search", "delete"]},
+                    "content": {"type": "string", "description": "Texto da nota (add)."},
+                    "query": {"type": "string", "description": "Termo de busca (search)."},
+                    "index": {"type": "integer", "description": "Número da nota (delete)."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_shopping_list",
+            "description": "Lista de compras: adicionar, remover, listar ou limpar itens.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["add", "remove", "list", "clear"]},
+                    "item": {"type": "string", "description": "Item da lista (add/remove)."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_focus",
+            "description": "Modo foco / Pomodoro: iniciar sessão, cancelar ou ver status.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["start", "break", "cancel", "status"]},
+                    "minutes": {"type": "integer", "description": "Duração em minutos (start/break). Padrão: 25."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_daily_briefing",
+            "description": (
+                "Briefing do dia: clima (SP + Itapecerica), lembretes de hoje, notas recentes "
+                "e resumo natural. Use para 'o que temos pra hoje', 'briefing', 'resumo do dia'."
+            ),
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_browser_task",
+            "description": (
+                "Automatiza tarefa complexa no navegador (browser-use): navegar, pesquisar, "
+                "preencher formulários. Use quando open_url/search_web/click_web_result não bastarem."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "Tarefa em linguagem natural ou URL inicial."
+                    }
+                },
+                "required": ["task"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "take_screenshot",
+            "description": "Salva captura de tela em arquivo e retorna o caminho.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Caminho opcional do arquivo PNG."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_window",
+            "description": "Controla janelas do desktop: fechar, minimizar, maximizar ou trocar workspace.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["close", "minimize", "maximize", "fullscreen", "workspace"],
+                    },
+                    "workspace": {"type": "integer", "description": "Número do workspace (1-10) quando action=workspace."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "clipboard_action",
+            "description": "Lê ou escreve na área de transferência do sistema.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["read", "write"]},
+                    "text": {"type": "string", "description": "Texto para copiar (write)."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "see_screen",
+            "description": "Captura e descreve o que está na tela do usuário (OCR + contexto visual).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "focus": {
+                        "type": "string",
+                        "description": "Opcional: o que procurar na tela (ex: 'botão enviar', 'primeiro link')."
+                    }
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_url",
+            "description": "Abre uma URL no navegador padrão.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL completa ou domínio (ex: youtube.com)."}
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": (
+                "Pesquisa na web via Google e abre no navegador. "
+                "Use para 'pesquisa/busca/procura [X]'. NÃO use click_on_screen para pesquisar."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Termo de pesquisa."}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_webpage",
+            "description": "Lê e extrai o conteúdo textual de uma página web (URL).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {"type": "string", "description": "URL da página."}
+                },
+                "required": ["url"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_spotify",
+            "description": "Controla música no Spotify: tocar, pausar, pular, volume ou buscar artista/música.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["play", "pause", "next", "prev", "status", "volume", "search"],
+                    },
+                    "query": {"type": "string", "description": "Música/artista (search) ou nível 0-100 (volume)."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_lights",
+            "description": "Liga ou desliga a luz física da sala.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "state": {"type": "string", "enum": ["on", "off"]}
+                },
+                "required": ["state"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_memory",
+            "description": "Busca fatos salvos sobre o usuário e conversas anteriores na memória da Luna.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "O que lembrar/buscar."}
+                },
+                "required": ["query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "click_on_screen",
+            "description": (
+                "Clica em botão ou texto visível em apps/janelas locais (OCR). "
+                "NÃO use para resultados do Google — use click_web_result."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {"type": "string", "description": "Texto ou descrição do elemento."}
+                },
+                "required": ["target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "click_web_result",
+            "description": (
+                "Abre ou clica no N-ésimo resultado de uma pesquisa web (Google). "
+                "Use para 'clica no primeiro resultado', 'abre o segundo link da busca'. "
+                "Preferir sobre click_on_screen. index=0 é o primeiro."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "index": {
+                        "type": "integer",
+                        "description": "0=primeiro, 1=segundo resultado. Padrão 0.",
+                        "default": 0,
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Termo buscado (opcional; usa última pesquisa se vazio).",
+                    },
+                },
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_app",
+            "description": (
+                "Abre aplicativo instalado pelo nome (firefox, spotify, terminal, vscode, discord). "
+                "Use para 'abre/abrir/inicia [app]'. NUNCA use click_on_screen para abrir apps."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "app_name": {"type": "string", "description": "Nome do app (ex: firefox, spotify, terminal)."}
+                },
+                "required": ["app_name"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "filesystem",
+            "description": (
+                "Gerencia arquivos e pastas do PC (home do usuário). "
+                "Ações: list, read, write, mkdir, move, delete, stat, search."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["list", "read", "write", "mkdir", "move", "delete", "stat", "search"],
+                    },
+                    "path": {"type": "string", "description": "Caminho (~, ~/Documents, etc.)"},
+                    "content": {"type": "string", "description": "Conteúdo (write)."},
+                    "destination": {"type": "string", "description": "Destino (move)."},
+                    "query": {"type": "string", "description": "Busca por nome (search)."},
+                    "pattern": {"type": "string", "description": "Glob para list (ex: *.py)."},
+                    "append": {"type": "boolean", "description": "Anexar ao arquivo (write)."},
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_type",
+            "description": "Digita texto no app/janela focada (como se você estivesse digitando).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "Texto a digitar."}
+                },
+                "required": ["text"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "desktop_hotkey",
+            "description": "Pressiona tecla ou atalho (enter, ctrl+c, alt+Tab, super, f11, etc.).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "keys": {"type": "string", "description": "Atalho (ex: 'ctrl+s', 'alt+Tab', 'Return')."}
+                },
+                "required": ["keys"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_windows",
+            "description": "Lista janelas abertas no desktop.",
+            "parameters": {"type": "object", "properties": {}}
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "focus_window",
+            "description": "Foca/traz para frente uma janela pelo título parcial.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string", "description": "Parte do título (ex: 'Firefox', 'WhatsApp')."}
+                },
+                "required": ["title"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_media",
+            "description": "Controla qualquer player de mídia (Spotify, VLC, browser) via playerctl — sem API key.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["play", "pause", "next", "prev", "stop", "status", "volume_up", "volume_down", "volume", "mute"],
+                    },
+                    "level": {"type": "integer", "description": "Volume 0-100 (action=volume)."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "kill_process",
+            "description": (
+                "Encerra/mata processo por nome ou PID. "
+                "Use para 'mata/fecha/encerra firefox', 'para o spotify'."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pid": {"type": "integer"},
+                    "name": {"type": "string", "description": "Nome do processo (ex: firefox)."}
+                }
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "send_notification",
+            "description": "Envia notificação desktop ao usuário.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "message": {"type": "string"}
+                },
+                "required": ["title", "message"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "system_control",
+            "description": "Controles de hardware/rede locais: brilho, rede, screenshot.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {
+                        "type": "string",
+                        "enum": ["brightness", "network", "screenshot"],
+                    },
+                    "level": {"type": "integer", "description": "Brilho 1-100."},
+                    "path": {"type": "string", "description": "Caminho do screenshot."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "whatsapp_action",
+            "description": (
+                "WhatsApp sem API key: abrir app ou enviar mensagem via automação de tela. "
+                "Opcional: WHATSAPP_BRIDGE_URL no .env para bridge local."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["open", "send", "status"]},
+                    "contact": {"type": "string", "description": "Nome ou número (send)."},
+                    "message": {"type": "string", "description": "Texto da mensagem (send)."}
+                },
+                "required": ["action"]
             }
         }
     },
@@ -652,6 +1142,49 @@ _SPOTIFY_CONTROLS = {
     "status": "status", "o que toca": "status", "que música": "status",
     "volume": "volume",
 }
+
+
+def _format_result(result: str) -> str:
+    """Padroniza retorno para o loop do agente (SUCESSO:/FALHOU:)."""
+    text = str(result).strip()
+    if not text:
+        return "FALHOU: Resultado vazio."
+    upper = text.upper()
+    if upper.startswith("SUCESSO:") or upper.startswith("FALHOU:"):
+        return text
+    if upper.startswith("FALHOU") or text.lower().startswith("erro"):
+        return text if upper.startswith("FALHOU") else f"FALHOU: {text}"
+    return f"SUCESSO: {text}"
+
+
+def is_tool_success(result: str) -> bool:
+    return not str(result).strip().upper().startswith("FALHOU")
+
+
+def tool_call_id(tool_call) -> str:
+    if isinstance(tool_call, dict):
+        return tool_call.get("id") or f"call_{int(time.time() * 1000)}"
+    return getattr(tool_call, "id", None) or f"call_{int(time.time() * 1000)}"
+
+
+def tool_call_name(tool_call) -> str:
+    if isinstance(tool_call, dict):
+        return tool_call.get("function", {}).get("name", "")
+    return getattr(tool_call.function, "name", "")
+
+
+def tool_call_args(tool_call) -> dict:
+    if isinstance(tool_call, dict):
+        raw = tool_call.get("function", {}).get("arguments", {})
+    else:
+        raw = tool_call.function.arguments
+    return _parse_arguments(raw)
+
+
+def tool_call_signature(tool_call) -> str:
+    name = tool_call_name(tool_call)
+    args = tool_call_args(tool_call)
+    return f"{name}:{json.dumps(args, sort_keys=True, ensure_ascii=False)}"
 
 
 def _is_blocked(cmd: str) -> bool:
@@ -728,120 +1261,7 @@ def execute_tool_call(executor, tool_call) -> str:
             name = tool_call.function.name
             raw_args = tool_call.function.arguments
 
-        if name == "run_luna_command":
-            args = _parse_arguments(raw_args)
-            cmd = args.get("command", "").strip()
-
-            if not cmd:
-                return "FALHOU: Comando vazio recebido."
-
-            if _is_blocked(cmd):
-                logger.warning("Comando bloqueado por segurança: %s", cmd)
-                return f"FALHOU: Comando bloqueado por política de segurança."
-
-            logger.info("Executando: %s", cmd)
-            cmd_lower = cmd.lower()
-
-            # Existing command handling (spotify, lights, search, app, router, click, browser)
-            if cmd_lower.startswith("luna-spotify"):
-                query = cmd[12:].strip().strip('"\'')
-                if not query:
-                    return "FALHOU: luna-spotify precisa de uma música ou artista."
-                result = _handle_spotify(executor, query)
-                return f"SUCESSO: {result}"
-
-            elif cmd_lower.startswith("luna-lights"):
-                state = cmd[11:].strip().strip('"\'').lower()
-                if state not in ("on", "off"):
-                    return "FALHOU: luna-lights aceita apenas 'on' ou 'off'."
-                action = "acender luzes" if state == "on" else "apagar luzes"
-                res = executor.lights.handle(action)
-                return f"SUCESSO: {res or 'Luzes atualizadas.'}"
-
-            elif cmd_lower.startswith("luna-search"):
-                query = cmd[11:].strip().strip('"\'')
-                if not query:
-                    return "FALHOU: luna-search precisa de uma query."
-                # Usa execute_natural para garantir que o Firefox abra de verdade
-                # (testa o comando completo incluindo keyword de pesquisa)
-                res = executor.execute_natural(f"pesquisa {query}")
-                if isinstance(res, dict):
-                    if res.get("success"):
-                        return f"SUCESSO: Pesquisando '{query}' no Google."
-                    else:
-                        # Fallback direto via subprocess se o natural falhar
-                        import subprocess as _sub
-                        try:
-                            from urllib.parse import quote as _quote
-                            url = f"https://www.google.com/search?q={_quote(query)}"
-                            _sub.Popen(["firefox", url], stdout=_sub.DEVNULL, stderr=_sub.DEVNULL)
-                            return f"SUCESSO: Pesquisando '{query}' no Google."
-                        except Exception as e:
-                            try:
-                                import webbrowser as _wb
-                                _wb.open(url)
-                                return f"SUCESSO: Pesquisando '{query}' no Google."
-                            except Exception as e2:
-                                return f"FALHOU: Não foi possível abrir o browser: {e2}"
-                return f"SUCESSO: Pesquisando '{query}'."
-
-            elif cmd_lower.startswith("luna-app"):
-                app = cmd[8:].strip().strip('"\'')
-                if not app:
-                    return "FALHOU: luna-app precisa do nome do aplicativo."
-                # Se for URL, abre no browser em vez de tentar abrir como app
-                if app.startswith("http://") or app.startswith("https://") or app.startswith("www."):
-                    url = app if app.startswith("http") else f"https://{app}"
-                    res = executor.open_url(url)
-                    return f"SUCESSO: Abrindo {url}" if res.get("success") else f"FALHOU: {res.get('message')}"
-                res = executor.open_app(app)
-                if isinstance(res, dict):
-                    return f"SUCESSO: {res.get('message', 'App aberto.')}" if res.get("success") else f"FALHOU: {res.get('message', 'Erro ao abrir app.')}"
-                return f"SUCESSO: {res}"
-
-            elif cmd_lower.startswith("luna-router"):
-                query = cmd[11:].strip().strip('"\'')
-                if not query:
-                    return "FALHOU: luna-router precisa de uma ação."
-                res = executor.execute_natural(query)
-                if isinstance(res, dict):
-                    return f"SUCESSO: {res.get('message', 'Ação executada.')}" if res.get("success") else f"FALHOU: {res.get('message', str(res))}"
-                return f"SUCESSO: {res}"
-
-            elif cmd_lower.startswith("luna-click"):
-                target = cmd[10:].strip().strip('"\'')
-                if not target:
-                    return "FALHOU: luna-click precisa de um alvo."
-                try:
-                    # Usa execute_natural que roteia para _resolve_click
-                    # que usa APENAS OCR + xdotool na tela real (sem Playwright/Nightly)
-                    res = executor.execute_natural(f"clica em {target}")
-                    if isinstance(res, dict):
-                        if res.get("success"):
-                            return f"SUCESSO: {res.get('message', 'Clique executado.')}"
-                        # Fallback: click_text direto via xdotool
-                        fallback = executor.click_text(target)
-                        if fallback.get("success"):
-                            return f"SUCESSO: Clicou em '{target}'."
-                        return f"FALHOU: Não encontrei '{target}' na tela via OCR."
-                    return f"SUCESSO: Clique em '{target}' executado."
-                except Exception as e:
-                    return f"FALHOU: Erro no clique: {e}"
-
-            elif cmd_lower.startswith("luna-browser"):
-                task = cmd[12:].strip().strip('"\'')
-                if not task:
-                    return "FALHOU: luna-browser precisa de uma tarefa ou URL."
-                try:
-                    res = executor.browser_agent.run(task)
-                    return f"SUCESSO: {res}"
-                except Exception as e:
-                    return f"FALHOU: Erro no browser agent: {e}"
-
-            else:
-                logger.warning("Prefixo não reconhecido: %s", cmd)
-                return "FALHOU: Comando não reconhecido. Use: luna-spotify, luna-lights, luna-search, luna-app ou luna-router."
-        elif name == "google_query":
+        if name == "google_query":
             args = _parse_arguments(raw_args)
             service = args.get("service")
             max_results = args.get("max_results", 5)
@@ -1007,7 +1427,15 @@ def execute_tool_call(executor, tool_call) -> str:
             command = args.get("command")
             if not command:
                 return "FALHOU: command é obrigatório."
-            return get_system_tools().run_bash_command(command)
+            visible = bool(args.get("visible", False))
+            return get_system_tools().run_bash_command(command, visible=visible)
+        elif name == "run_terminal_command":
+            from actions.system_tools import get_system_tools
+            args = _parse_arguments(raw_args)
+            command = args.get("command")
+            if not command:
+                return "FALHOU: command é obrigatório."
+            return get_system_tools().run_terminal_command(command)
         elif name == "save_home_info":
             from brain.memory import get_memory
             args = _parse_arguments(raw_args)
@@ -1034,10 +1462,353 @@ def execute_tool_call(executor, tool_call) -> str:
             args = _parse_arguments(raw_args)
             task_desc = args.get("task_description", "")
             if not task_desc:
-                return "FALHOU: crew_run requires a task_description."
-            return run_crew_task(task_desc)
+                return _format_result("FALHOU: crew_run requires a task_description.")
+            return _format_result(run_crew_task(task_desc))
+        elif name == "get_weather":
+            from actions.weather import get_weather
+            args = _parse_arguments(raw_args)
+            return _format_result(get_weather().get_weather(args.get("city", "")))
+        elif name == "set_timer":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "start")
+            if action == "status":
+                return _format_result(executor.timer.status())
+            if action == "cancel":
+                for n in list(executor.timer.timers.keys()):
+                    executor.timer.cancel_timer(n)
+                return _format_result("Todos os timers foram cancelados.")
+            minutes = int(args.get("minutes") or 0)
+            seconds = int(args.get("seconds") or 0)
+            if minutes <= 0 and seconds <= 0:
+                return _format_result("FALHOU: Informe minutes ou seconds para iniciar o timer.")
+            name = args.get("name") or "Padrão"
+            executor.timer.add_timer(minutes * 60 + seconds, name)
+            return _format_result(f"Timer de {minutes}m {seconds}s iniciado: {name}.")
+        elif name == "manage_reminder":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "list")
+            if action == "list":
+                return _format_result(executor.reminders.list_reminders())
+            if action == "cancel":
+                msg = args.get("message", "")
+                if not msg:
+                    return _format_result("FALHOU: message é obrigatório para cancelar.")
+                return _format_result(executor.reminders.cancel(msg))
+            message = args.get("message", "").strip()
+            when_text = args.get("when", "").strip()
+            if not message or not when_text:
+                return _format_result("FALHOU: message e when são obrigatórios para add.")
+            when = executor.reminders.parse_datetime(when_text)
+            if not when:
+                return _format_result(f"FALHOU: Não entendi o horário '{when_text}'.")
+            return _format_result(executor.reminders.add(message, when))
+        elif name == "manage_notes":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "list")
+            if action == "add":
+                return _format_result(executor.notes.add(args.get("content", "")))
+            if action == "list":
+                return _format_result(executor.notes.list_notes())
+            if action == "search":
+                return _format_result(executor.notes.search(args.get("query", "")))
+            if action == "delete":
+                return _format_result(executor.notes.delete(int(args.get("index", 0))))
+            return _format_result("FALHOU: action inválida para manage_notes.")
+        elif name == "manage_shopping_list":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "list")
+            item = args.get("item", "").strip()
+            if action == "list":
+                return _format_result(executor.shopping.format_list())
+            if action == "clear":
+                return _format_result(executor.shopping.handle("limpa a lista"))
+            if action == "add":
+                if not item:
+                    return _format_result("FALHOU: item é obrigatório.")
+                return _format_result(executor.shopping.handle(f"adiciona {item}"))
+            if action == "remove":
+                if not item:
+                    return _format_result("FALHOU: item é obrigatório.")
+                return _format_result(executor.shopping.handle(f"remove {item}"))
+            return _format_result("FALHOU: action inválida para manage_shopping_list.")
+        elif name == "manage_focus":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "status")
+            minutes = int(args.get("minutes") or 25)
+            if action == "start":
+                return _format_result(executor.focus.start_focus(minutes))
+            if action == "break":
+                return _format_result(executor.focus.start_break(minutes))
+            if action == "cancel":
+                return _format_result(executor.focus.cancel())
+            return _format_result(executor.focus.status())
+        elif name == "control_window":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "")
+            if action == "close":
+                return _format_result(executor.wm.close_active())
+            if action == "minimize":
+                return _format_result(executor.wm.minimize_active())
+            if action == "maximize":
+                return _format_result(executor.wm.maximize_active())
+            if action == "fullscreen":
+                return _format_result(executor.wm.fullscreen())
+            if action == "workspace":
+                num = int(args.get("workspace") or 1)
+                return _format_result(executor.wm.go_to_workspace(num))
+            return _format_result("FALHOU: action inválida para control_window.")
+        elif name == "clipboard_action":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "read")
+            if action == "write":
+                text = args.get("text", "")
+                if not text:
+                    return _format_result("FALHOU: text é obrigatório para write.")
+                return _format_result(executor.clipboard.write(text))
+            return _format_result(executor.clipboard.get_current())
+        elif name == "see_screen":
+            from vision.screen import get_vision
+            args = _parse_arguments(raw_args)
+            vision = get_vision()
+            if not vision.capture():
+                return _format_result("FALHOU: Não consegui capturar a tela.")
+            focus = args.get("focus", "").strip()
+            prompt = focus or "Descreva o que está visível na tela do usuário."
+            desc = vision.describe_with_groq_vision(prompt)
+            if not desc or len(desc) < 15:
+                desc = vision.capture_and_describe()
+            if not desc:
+                return _format_result("FALHOU: Não consegui descrever a tela.")
+            return _format_result(desc[:8000])
+        elif name == "get_daily_briefing":
+            from luna_core import get_luna
+            return _format_result(get_luna()._daily_briefing())
+        elif name == "run_browser_task":
+            args = _parse_arguments(raw_args)
+            task = args.get("task", "").strip()
+            if not task:
+                return _format_result("FALHOU: task é obrigatória.")
+            try:
+                res = executor.browser_agent.run(task)
+                return _format_result(str(res))
+            except Exception as e:
+                return _format_result(f"FALHOU: browser task: {e}")
+        elif name == "take_screenshot":
+            from actions.system_tools import get_system_tools
+            args = _parse_arguments(raw_args)
+            path = args.get("path", "")
+            return _format_result(get_system_tools().take_screenshot(path or None))
+        elif name == "open_url":
+            args = _parse_arguments(raw_args)
+            url = args.get("url", "").strip()
+            if not url:
+                return _format_result("FALHOU: url é obrigatória.")
+            if not url.startswith("http"):
+                url = f"https://{url}"
+            res = executor.open_url(url)
+            if isinstance(res, dict) and res.get("success"):
+                return _format_result(res.get("message", f"Abrindo {url}"))
+            return _format_result(res.get("message", "FALHOU: não foi possível abrir a URL.") if isinstance(res, dict) else str(res))
+        elif name == "search_web":
+            args = _parse_arguments(raw_args)
+            query = args.get("query", "").strip()
+            if not query:
+                return _format_result("FALHOU: query é obrigatória.")
+            res = executor.web_manager.search_web(query)
+            if isinstance(res, dict) and res.get("success"):
+                return _format_result(f"Pesquisando '{query}' no navegador.")
+            return _format_result(res.get("message", "FALHOU: pesquisa web.") if isinstance(res, dict) else str(res))
+        elif name == "read_webpage":
+            args = _parse_arguments(raw_args)
+            url = args.get("url", "").strip()
+            if not url:
+                return _format_result("FALHOU: url é obrigatória.")
+            content = executor.web_manager.read_page(url)
+            if not content:
+                return _format_result("FALHOU: não foi possível ler a página.")
+            return _format_result(content[:8000])
+        elif name == "control_spotify":
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "search")
+            query = args.get("query", "")
+            try:
+                sp = executor.spotify
+                if action == "next":
+                    return _format_result(sp.next_track())
+                if action == "prev":
+                    return _format_result(sp.prev_track())
+                if action in ("pause", "stop"):
+                    return _format_result(sp.pause())
+                if action == "play":
+                    return _format_result(sp.play())
+                if action == "status":
+                    return _format_result(sp.now_playing())
+                if action == "volume":
+                    vol = int(query) if str(query).isdigit() else 70
+                    return _format_result(sp.set_volume(vol))
+                if action == "search":
+                    if not query:
+                        return _format_result("FALHOU: query é obrigatória para search.")
+                    return _format_result(_handle_spotify(executor, query))
+            except Exception as e:
+                return _format_result(f"FALHOU: Spotify: {e}")
+            return _format_result("FALHOU: action inválida para control_spotify.")
+        elif name == "control_lights":
+            args = _parse_arguments(raw_args)
+            state = args.get("state", "").lower()
+            if state not in ("on", "off"):
+                return _format_result("FALHOU: state deve ser 'on' ou 'off'.")
+            action = "acender luzes" if state == "on" else "apagar luzes"
+            res = executor.lights.handle(action)
+            return _format_result(res or "Luzes atualizadas.")
+        elif name == "search_memory":
+            from brain.memory import get_memory
+            args = _parse_arguments(raw_args)
+            query = args.get("query", "").strip()
+            if not query:
+                return _format_result("FALHOU: query é obrigatória.")
+            ctx = get_memory().get_context_for_prompt(query)
+            return _format_result(ctx or "Nenhuma memória relevante encontrada.")
+        elif name == "click_on_screen":
+            args = _parse_arguments(raw_args)
+            target = args.get("target", "").strip()
+            if not target:
+                return _format_result("FALHOU: target é obrigatório.")
+            from actions.web_nav import try_click_web_result, is_web_result_click
+            if is_web_result_click(target):
+                web_res = try_click_web_result(
+                    target,
+                    executor,
+                    search_query=getattr(executor.web_manager, "last_search_query", ""),
+                )
+                if web_res and web_res.get("success"):
+                    return _format_result(web_res.get("message", "OK"))
+            from actions.executor import _resolve_click
+            import unicodedata as _ud
+            norm = "".join(
+                c for c in _ud.normalize("NFD", target)
+                if _ud.category(c) != "Mn"
+            ).lower()
+            res = _resolve_click(target, norm, executor)
+            if isinstance(res, dict) and res.get("success"):
+                return _format_result(res.get("message", "Clique executado."))
+            fallback = executor.click_text(target)
+            if isinstance(fallback, dict) and fallback.get("success"):
+                return _format_result(f"Clicou em '{target}'.")
+            return _format_result(f"FALHOU: Não encontrei '{target}' na tela.")
+        elif name == "click_web_result":
+            from actions.web_nav import try_click_web_result
+            args = _parse_arguments(raw_args)
+            index = int(args.get("index", 0))
+            query = (args.get("query") or "").strip()
+            label = f"clica no {index + 1}º resultado"
+            if query:
+                label += f" de {query}"
+            web_res = try_click_web_result(
+                label,
+                executor,
+                search_query=query or getattr(executor.web_manager, "last_search_query", ""),
+            )
+            if web_res and web_res.get("success"):
+                return _format_result(web_res.get("message", "OK"))
+            return _format_result("FALHOU: não foi possível abrir o resultado da busca.")
+        elif name == "open_app":
+            args = _parse_arguments(raw_args)
+            app = args.get("app_name", "").strip()
+            if not app:
+                return _format_result("FALHOU: app_name é obrigatório.")
+            res = executor.open_app(app)
+            if isinstance(res, dict):
+                return _format_result(res.get("message", "App aberto.") if res.get("success") else res.get("message", "FALHOU"))
+            return _format_result(str(res))
+        elif name == "filesystem":
+            from actions.filesystem import get_filesystem
+            fs = get_filesystem()
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "list")
+            path = args.get("path", "~")
+            if action == "list":
+                return _format_result(fs.list_dir(path, args.get("pattern", "*")))
+            if action == "read":
+                return _format_result(fs.read_text(path))
+            if action == "write":
+                return _format_result(fs.write_text(path, args.get("content", ""), args.get("append", False)))
+            if action == "mkdir":
+                return _format_result(fs.mkdir(path))
+            if action == "move":
+                return _format_result(fs.move(path, args.get("destination", "")))
+            if action == "delete":
+                return _format_result(fs.delete(path))
+            if action == "stat":
+                return _format_result(fs.stat(path))
+            if action == "search":
+                return _format_result(fs.search(args.get("query", ""), path))
+            return _format_result("FALHOU: action inválida para filesystem.")
+        elif name == "desktop_type":
+            args = _parse_arguments(raw_args)
+            text = args.get("text", "")
+            if not text:
+                return _format_result("FALHOU: text é obrigatório.")
+            res = executor.type_text(text)
+            return _format_result(res.get("message", "Digitado.") if res.get("success") else res.get("message", "FALHOU"))
+        elif name == "desktop_hotkey":
+            args = _parse_arguments(raw_args)
+            keys = args.get("keys", "")
+            if not keys:
+                return _format_result("FALHOU: keys é obrigatório.")
+            res = executor.press_key(keys)
+            return _format_result(res.get("message", "Tecla pressionada.") if res.get("success") else res.get("message", "FALHOU"))
+        elif name == "list_windows":
+            return _format_result(executor.wm.list_windows())
+        elif name == "focus_window":
+            args = _parse_arguments(raw_args)
+            return _format_result(executor.wm.focus_window(args.get("title", "")))
+        elif name == "control_media":
+            from actions.media import get_media
+            args = _parse_arguments(raw_args)
+            action = args.get("action", "status")
+            media = get_media()
+            actions_map = {
+                "play": media.play, "pause": media.pause, "next": media.next_track,
+                "prev": media.prev_track, "stop": media.stop, "status": media.get_status,
+                "volume_up": media.volume_up, "volume_down": media.volume_down, "mute": media.mute,
+            }
+            if action == "volume":
+                return _format_result(media.set_volume(int(args.get("level", 50))))
+            fn = actions_map.get(action)
+            return _format_result(fn() if fn else "FALHOU: action inválida.")
+        elif name == "kill_process":
+            from actions.system_tools import get_system_tools
+            args = _parse_arguments(raw_args)
+            return _format_result(get_system_tools().kill_process(args.get("pid", 0), args.get("name", "")))
+        elif name == "send_notification":
+            from actions.system_tools import get_system_tools
+            args = _parse_arguments(raw_args)
+            return _format_result(get_system_tools().send_notification(args.get("title", "Luna"), args.get("message", "")))
+        elif name == "system_control":
+            from actions.system_tools import get_system_tools
+            args = _parse_arguments(raw_args)
+            st = get_system_tools()
+            action = args.get("action", "")
+            if action == "brightness":
+                return _format_result(st.set_brightness(int(args.get("level", 50))))
+            if action == "network":
+                return _format_result(st.get_network_status())
+            if action == "screenshot":
+                return _format_result(st.take_screenshot(args.get("path", "")))
+            return _format_result("FALHOU: action inválida para system_control.")
+        elif name == "whatsapp_action":
+            from actions.whatsapp import get_whatsapp
+            args = _parse_arguments(raw_args)
+            wa = get_whatsapp()
+            action = args.get("action", "status")
+            if action == "open":
+                return _format_result(wa.open_whatsapp())
+            if action == "send":
+                return _format_result(wa.send_message(args.get("contact", ""), args.get("message", "")))
+            return _format_result(wa.status())
         else:
-            return f"FALHOU: Ferramenta desconhecida: {name}"
+            return _format_result(f"FALHOU: Ferramenta desconhecida: {name}")
     except Exception as e:
         logger.exception("Erro interno em execute_tool_call")
-        return f"FALHOU: Erro interno: {str(e)}"
+        return _format_result(f"FALHOU: Erro interno: {str(e)}")

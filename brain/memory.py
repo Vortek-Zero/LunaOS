@@ -77,8 +77,19 @@ class Memory:
         return list(self.sessions.keys())
 
     def switch_session(self, session_id: str) -> None:
-        if session_id not in self.sessions:
-            self.sessions[session_id] = []
+        """Troca sessão e recarrega histórico do SQLite (fonte de verdade)."""
+        try:
+            from brain.chat_db import get_chat_db
+            db = get_chat_db()
+            db.create_session(session_id)
+            rows = db.get_history(session_id, last_n=MAX_HISTORY)
+            self.sessions[session_id] = [
+                {"role": m["role"], "text": m["text"], "ts": m.get("ts", "")}
+                for m in rows
+            ]
+        except Exception:
+            if session_id not in self.sessions:
+                self.sessions[session_id] = []
         self.current_session_id = session_id
         self._schedule_save()
 
@@ -134,6 +145,13 @@ class Memory:
         self._schedule_save()
 
     def get_history_text(self, last_n: int = 5) -> str:
+        try:
+            from brain.chat_db import get_chat_db
+            text = get_chat_db().get_history_text(self.current_session_id, last_n)
+            if text:
+                return text
+        except Exception:
+            pass
         recent = self.history[-(last_n * 2):]
         lines = []
         for msg in recent:
@@ -354,9 +372,29 @@ class Memory:
         self._save()
 
     def clear_history(self) -> None:
+        sid = self.current_session_id
         self.history = []
+        try:
+            from brain.chat_db import get_chat_db
+            get_chat_db().clear_session_history(sid)
+        except Exception:
+            pass
         self._dirty = True
         self._save()
+
+    def clear_facts(self) -> int:
+        count = len(self.facts)
+        self.facts = []
+        self._facts_index = {}
+        self._dirty = True
+        self._save()
+        return count
+
+    def clear_all(self) -> str:
+        """Limpa histórico de conversa e fatos persistentes."""
+        self.clear_history()
+        n = self.clear_facts()
+        return f"Memória zerada: {n} fatos removidos, histórico apagado."
 
     def stats(self) -> str:
         critical = len(self.recall_critical())

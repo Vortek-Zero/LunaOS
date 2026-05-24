@@ -85,19 +85,30 @@ _ELEMENT_INSTRUCTIONS = {
 
 def _resolve_click(raw_target: str, cmd_norm: str, executor) -> dict | None:
     """
-    Resolve o alvo do clique a partir de linguagem natural.
-    Usa APENAS OCR + xdotool na tela real do usuário.
-    O BrowserAgent (Playwright/Nightly) NÃO é usado aqui — só via luna-browser explícito.
-    
-    Casos tratados:
-      - "primeiro link" / "1º resultado" / "segundo vídeo"
-      - "botão de pesquisa" / "botão enviar"
-      - texto literal ("clica em Entrar")
+    Resolve clique em linguagem natural.
+    Ordem: web (URL/teclado/Playwright) → OCR na tela (último recurso).
     """
     import unicodedata as _ud
 
     def _norm(s):
         return ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn').lower()
+
+    full_cmd = f"{cmd_norm} {raw_target}".strip()
+
+    # ── Web: primeiro/segundo resultado, links de busca ──
+    try:
+        from actions.web_nav import try_click_web_result, is_web_result_click
+        if is_web_result_click(full_cmd) or is_web_result_click(raw_target):
+            web_res = try_click_web_result(
+                full_cmd,
+                executor,
+                search_query=getattr(executor.web_manager, "last_search_query", ""),
+            )
+            if web_res and web_res.get("success"):
+                return web_res
+            print("[WebNav] Métodos web falharam — tentando OCR como fallback...")
+    except Exception as e:
+        print(f"[WebNav] Erro: {e}")
 
     words = _norm(raw_target).split()
 
@@ -796,7 +807,7 @@ class ActionExecutor:
         # ── Click inteligente ──────────────────────────────────
         # Detecta qualquer forma de "clicar em algo" incluindo ordinais e tipos
         _click_m = re.match(
-            r"^(?:clique|clica|clicando|pressiona|abre|seleciona|selecione|escolhe|escolha|entra|entre)\s+"
+            r"^(?:clique|clica|clicando|pressiona|seleciona|selecione|escolhe|escolha|entra|entre)\s+"
             r"(?:em\s+|no\s+|na\s+|nos\s+|nas\s+|o\s+|a\s+|os\s+|as\s+)?(.+)",
             cmd_norm
         )

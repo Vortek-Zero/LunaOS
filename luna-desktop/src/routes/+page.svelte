@@ -20,6 +20,7 @@
     idle: 'Pronta para ajudar',
     listening: 'Ouvindo você...',
     thinking: 'Pensando...',
+    executing: 'Executando...',
     speaking: 'Falando...',
   };
 
@@ -95,14 +96,14 @@
         <Orb status={luna.status} audioLevel={luna.audioLevel} />
         {#if !orbMini}
           <p class="status-label" class:active={luna.status !== 'idle'}>
-            {statusLabels[luna.status]}
+            {luna.status === 'executing' && luna.currentAction ? luna.currentAction : statusLabels[luna.status]}
           </p>
         {/if}
       </div>
 
       <!-- Chat messages — only shown when there are messages -->
       {#if orbMini}
-        <ChatPanel messages={luna.messages} isTyping={luna.isTyping} />
+        <ChatPanel messages={luna.messages} isTyping={luna.isTyping} currentAction={luna.currentAction} />
       {/if}
 
       <footer class="footer">

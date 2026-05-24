@@ -155,8 +155,8 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # Modelos OpenRouter — fallback com modelos top quando Gemini indisponível
 OPENROUTER_MODELS = {
-    "heavy":     "google/gemini-2.5-flash-preview-05-20",  # tenta Gemini via OR primeiro
-    "main":      "google/gemini-2.5-flash-preview-05-20",
+    "heavy":     "google/gemini-2.5-flash",  # tenta Gemini via OR primeiro
+    "main":      "google/gemini-2.5-flash",
     "fast":      "google/gemini-2.0-flash-001",
     "fallback":  "meta-llama/llama-4-maverick",            # quando Gemini OR também falha
     "fallback2": "deepseek/deepseek-chat-v3-0324",
@@ -179,6 +179,9 @@ GROQ_MODELS = {
 # app.tavily.com — substitui Wikipedia + DuckDuckGo no fact-check
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
 
+# Groq Vision — modelo com suporte a imagem (403 = trocar ou deixar vazio para OCR-only)
+GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")
+
 # ── Spotify ───────────────────────────────────────────────────
 # developer.spotify.com/dashboard
 SPOTIPY_CLIENT_ID     = os.getenv("SPOTIPY_CLIENT_ID", "")
@@ -197,7 +200,8 @@ os.environ.setdefault("SPOTIPY_REDIRECT_URI", SPOTIPY_REDIRECT_URI)
 HOME_ASSISTANT_URL   = os.getenv("HOME_ASSISTANT_URL", "")
 HOME_ASSISTANT_TOKEN = os.getenv("HOME_ASSISTANT_TOKEN", "")
 
-# ── Agente / Admin ────────────────────────────────────────────
-# Modo agente: LLM orquestra ferramentas por padrão (sem bypass do executor direto)
-AGENT_MODE = os.getenv("LUNA_AGENT_MODE", "1").strip().lower() in ("1", "true", "yes")
+# ── Admin ─────────────────────────────────────────────────────
 ADMIN_PASSWORD = os.getenv("LUNA_ADMIN_PASSWORD", "")
+
+# WhatsApp bridge local opcional (whatsapp-web.js etc.) — sem API Meta
+WHATSAPP_BRIDGE_URL = os.getenv("WHATSAPP_BRIDGE_URL", "")

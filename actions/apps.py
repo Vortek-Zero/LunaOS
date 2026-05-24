@@ -86,11 +86,16 @@ class AppManager:
             return {"success": False, "message": f"App '{name}' está desativado."}
 
         try:
+            from actions.gnome import launch_app
             cmd = app["command"]
+            ok, msg = launch_app(name, fallback_cmd=cmd)
+            if ok:
+                print(f"[AppManager] {msg} (cmd: {cmd})")
+                return {"success": True, "message": msg}
             print(f"[AppManager] Abrindo: {cmd}")
             subprocess.Popen(
                 cmd, shell=True,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
             )
             return {"success": True, "message": f"Abrindo {name}"}
         except Exception as e:

@@ -1,17 +1,18 @@
-# Ambientes virtuais Python (não precisam de backup, são baixados via requirements.txt)
+.env
+.api_key
+token.json
+credentials.json
+__pycache__/
+*.py[cod]
+*.db-wal
+*.db-shm
 .venv/
 venv/
-
-# Cache e arquivos compilados do Python (gerados automaticamente)
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-
-# Pastas temporárias locais (não são arquivos úteis)
 temp/
-
-# Modelos de IA e arquivos pesados (>100MB) (bloqueados pelo limite do GitHub de 100MB)
+*.log
+brain/chroma_db/
+data/cache.json
+.DS_Store
 *.onnx
 *.bin
 voice/models/

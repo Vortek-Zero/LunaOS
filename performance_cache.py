@@ -49,14 +49,36 @@ class SmartCache:
             self._l1_cache[key] = entry
 
     def _load_cache(self) -> Dict:
-        """Carrega cache do arquivo"""
-        if self.cache_file.exists():
+        """Carrega cache do arquivo; repara JSON corrompido automaticamente."""
+        empty = {"entries": {}, "metadata": {"created": datetime.now().isoformat()}}
+        if not self.cache_file.exists():
+            return empty
+        try:
+            raw = self.cache_file.read_text(encoding="utf-8").strip()
+            if not raw:
+                return empty
+            return json.loads(raw)
+        except Exception as e:
+            print(f"[CACHE WARN] Erro ao carregar cache: {e} — resetando.")
             try:
-                with open(self.cache_file, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception as e:
-                print(f"[CACHE WARN] Erro ao carregar cache: {e}")
-        return {"entries": {}, "metadata": {"created": datetime.now().isoformat()}}
+                backup = self.cache_file.with_suffix(".json.bak")
+                self.cache_file.rename(backup)
+                print(f"[CACHE] Backup salvo em {backup}")
+            except Exception:
+                pass
+            return empty
+
+    def clear_all(self) -> int:
+        """Remove todas as entradas do cache (L1 + L2)."""
+        with self._lock:
+            count = len(self.cache.get("entries", {}))
+            self.cache = {"entries": {}, "metadata": {"created": datetime.now().isoformat()}}
+            self._l1_cache.clear()
+            self.hit_count.clear()
+            self.miss_count.clear()
+            self._dirty = False
+            self._save_cache()
+            return count
 
     def _save_cache(self) -> None:
         """Persiste cache em arquivo"""

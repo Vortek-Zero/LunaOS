@@ -86,15 +86,15 @@ except ImportError:
     }
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODELS = {
-        "heavy": "gemini-2.5-flash-preview-05-20",
-        "main":  "gemini-2.5-flash-preview-05-20",
-        "fast":  "gemini-2.5-flash-preview-05-20",
+        "heavy": "gemini-2.5-flash",
+        "main":  "gemini-2.5-flash",
+        "fast":  "gemini-2.5-flash",
     }
     OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
     OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
     OPENROUTER_MODELS = {
-        "heavy":     "google/gemini-2.5-flash-preview-05-20",
-        "main":      "google/gemini-2.5-flash-preview-05-20",
+        "heavy":     "google/gemini-2.5-flash",
+        "main":      "google/gemini-2.5-flash",
         "fast":      "google/gemini-2.0-flash-001",
         "fallback":  "meta-llama/llama-4-maverick",
         "fallback2": "deepseek/deepseek-chat-v3-0324",
@@ -398,21 +398,62 @@ class LLMWrapper:
         user_content = prompt or ""
 
         if messages:
-            for msg in messages[:-1]:  # tudo menos a última mensagem
+            for msg in messages[:-1]:
                 role = msg.get("role", "user")
                 content = msg.get("content") or ""
+
                 if role == "system":
                     system_instruction = content
                 elif role == "assistant":
-                    history.append({"role": "model", "parts": [content]})
+                    parts = []
+                    if content:
+                        parts.append(content)
+                    for tc in msg.get("tool_calls") or []:
+                        fn = tc.get("function", {}) if isinstance(tc, dict) else {}
+                        tc_name = fn.get("name", "")
+                        args_raw = fn.get("arguments", "{}")
+                        if isinstance(args_raw, str):
+                            try:
+                                args_dict = json.loads(args_raw) if args_raw else {}
+                            except json.JSONDecodeError:
+                                args_dict = {"raw": args_raw}
+                        else:
+                            args_dict = args_raw or {}
+                        if tc_name:
+                            parts.append({"function_call": {"name": tc_name, "args": args_dict}})
+                    if parts:
+                        history.append({"role": "model", "parts": parts})
                 elif role == "user":
-                    history.append({"role": "user", "parts": [content]})
+                    if content:
+                        history.append({"role": "user", "parts": [content]})
                 elif role == "tool":
-                    # Resultado de ferramenta — injeta como mensagem do modelo
-                    history.append({"role": "model", "parts": [f"[Resultado da ferramenta]: {content}"]})
-            # Última mensagem é o input atual
+                    fn_name = msg.get("name") or "tool"
+                    history.append({
+                        "role": "user",
+                        "parts": [{
+                            "function_response": {
+                                "name": fn_name,
+                                "response": {"result": content},
+                            }
+                        }],
+                    })
+            # Última mensagem — input atual ou continuação após ferramenta
             last = messages[-1]
-            user_content = last.get("content") or prompt or ""
+            last_role = last.get("role", "user")
+            if last_role == "tool":
+                fn_name = last.get("name") or "tool"
+                history.append({
+                    "role": "user",
+                    "parts": [{
+                        "function_response": {
+                            "name": fn_name,
+                            "response": {"result": last.get("content") or ""},
+                        }
+                    }],
+                })
+                user_content = "Responda ao usuário em português com base nos resultados das ferramentas."
+            else:
+                user_content = last.get("content") or prompt or ""
 
         try:
             cfg = genai.GenerationConfig(
@@ -675,6 +716,9 @@ class LLMWrapper:
     ) -> Optional[Union[str, Generator, dict]]:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
+        
+
+
         try:
             if stream:
                 return self._groq_stream(req_msgs, model, params, prompt=prompt, task_type=task_type)
@@ -700,6 +744,9 @@ class LLMWrapper:
         except Exception as e:
             err = str(e)
             if "429" in err or "413" in err or "rate_limit" in err.lower() or "rate limit" in err.lower():
+                if "413" in err and tools:
+                    print(f"[LLM] ⚠ Groq TPM Limit excedido com ferramentas. Tentando sem ferramentas (modo fallback seguro)...")
+                    return self._generate_groq(prompt, task_type, model, stream, messages, tools=None)
                 self._groq_rl_until = time.time() + 60
                 print(f"[LLM] ⚠ Groq rate limit — fallback Ollama por 60s")
             elif "401" in err or "authentication" in err.lower():

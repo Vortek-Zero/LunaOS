@@ -21,9 +21,10 @@ async function api(path: string, opts: RequestInit = {}) {
 }
 
 // ── Reactive State ──────────────────────────────────────
-let status = $state<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+let status = $state<'idle' | 'listening' | 'thinking' | 'executing' | 'speaking'>('idle');
 let messages = $state<ChatMessage[]>([]);
 let isTyping = $state(false);
+let currentAction = $state('');
 let audioLevel = $state(0);
 let connected = $state(false);
 let sessions = $state<any[]>([]);
@@ -38,23 +39,68 @@ function addMessage(sender: 'luna' | 'user', text: string) {
   messages.push({ id: uid(), sender, text, timestamp: Date.now() });
 }
 
-// ── Chat ────────────────────────────────────────────────
+// ── Chat (SSE — mostra pensando/executando em tempo real) ──
 async function sendMessage(text: string) {
   if (!text.trim()) return;
   addMessage('user', text);
   status = 'thinking';
   isTyping = true;
+  currentAction = 'Pensando...';
+
   try {
-    const data = await api('/api/chat', {
+  const res = await fetch(`${API}/api/chat/stream`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: text }),
     });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+    const reader = res.body?.getReader();
+    if (!reader) throw new Error('Stream indisponível');
+
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
+    let finalText = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        try {
+          const data = JSON.parse(line.slice(5).trim());
+          if (data.type === 'done') {
+            finalText = data.text || '';
+          } else if (data.type === 'error') {
+            throw new Error(data.content || 'Erro no stream');
+          } else if (data.type === 'thinking') {
+            status = 'thinking';
+            currentAction = data.label || 'Pensando...';
+          } else if (data.type === 'tool_start') {
+            status = 'executing';
+            currentAction = data.label || 'Executando...';
+          } else if (data.type === 'tool_done') {
+            currentAction = data.label || 'Concluindo...';
+          }
+        } catch (e) {
+          if (e instanceof SyntaxError) continue;
+          throw e;
+        }
+      }
+    }
+
     isTyping = false;
+    currentAction = '';
     status = 'speaking';
-    addMessage('luna', data.response || 'Sem resposta.');
+    addMessage('luna', finalText || 'Sem resposta.');
     setTimeout(() => { status = 'idle'; }, 2500);
   } catch {
     isTyping = false;
+    currentAction = '';
     status = 'idle';
     addMessage('luna', '⚠️ Erro de conexão. Verifique se o backend está rodando.');
   }
@@ -336,6 +382,7 @@ export function useLuna() {
     set status(v) { status = v; },
     get messages() { return messages; },
     get isTyping() { return isTyping; },
+    get currentAction() { return currentAction; },
     get audioLevel() { return audioLevel; },
     set audioLevel(v) { audioLevel = v; },
     get connected() { return connected; },

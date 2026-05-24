@@ -34,7 +34,7 @@ SCREENSHOT_PATH = str(TEMP_DIR / "luna_screen.png")
 class ScreenVision:
     def __init__(self):
         self.last_screenshot: Optional[str] = None
-        self._is_wayland = bool(os.environ.get("WAYLAND_DISPLAY")) and not os.environ.get("DISPLAY")
+        self._is_wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
         self._report_capabilities()
 
     def _report_capabilities(self) -> None:
@@ -48,18 +48,20 @@ class ScreenVision:
     # ── Captura de tela ────────────────────────────────────────
 
     def capture(self) -> bool:
-        """Captura screenshot. Ordem: mss → gnome-screenshot → scrot → grim → pyautogui → ImageMagick."""
+        """Captura screenshot. Ordem: mss → import (X11) → scrot → gnome-screenshot → grim → pyautogui."""
         if self._capture_mss():
             return True
-        if self._capture_gnome_screenshot():
+        if not self._is_wayland and self._capture_import_imagemagick():
             return True
         if self._capture_scrot():
             return True
-        if self._is_wayland and self._capture_grim():
+        if self._capture_gnome_screenshot():
+            return True
+        if self._capture_grim():
             return True
         if self._capture_pyautogui():
             return True
-        if self._capture_import_imagemagick():
+        if self._is_wayland and self._capture_import_imagemagick():
             return True
         print("[Vision] ✗ Nenhum método de captura funcionou.")
         return False
@@ -330,28 +332,32 @@ class ScreenVision:
         return self.describe()
 
     def describe_with_groq_vision(self, user_prompt: str = "Descreva detalhadamente o que está na tela.") -> str:
-        """Usa o Groq Llama 3.2 Vision para entender o screenshot em alto nível."""
+        """Usa Groq Vision para entender o screenshot; fallback OCR local."""
         if not self.last_screenshot or not Path(self.last_screenshot).exists():
             return ""
-        
+
         import base64
         import json
         import urllib.request
-        
+
         try:
-            from config import GROQ_API_KEY
+            from config import GROQ_API_KEY, GROQ_VISION_MODEL
         except ImportError:
             GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
-            
-        if not GROQ_API_KEY:
-            return "(Groq Vision API key ausente)"
+            GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "")
+
+        if not GROQ_API_KEY or not GROQ_VISION_MODEL:
+            ocr = self.read_text()
+            if ocr and len(ocr) > 20:
+                return f"(Visão via OCR local)\n{ocr[:1200]}"
+            return ""
 
         try:
             with open(self.last_screenshot, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
-                
+                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
+
             payload = {
-                "model": "llama-3.2-11b-vision-preview",
+                "model": GROQ_VISION_MODEL,
                 "messages": [
                     {
                         "role": "user",
@@ -361,31 +367,58 @@ class ScreenVision:
                                 "type": "image_url",
                                 "image_url": {
                                     "url": f"data:image/png;base64,{encoded_string}"
-                                }
-                            }
-                        ]
+                                },
+                            },
+                        ],
                     }
                 ],
                 "temperature": 0.1,
-                "max_tokens": 1024
+                "max_tokens": 1024,
             }
-            
+
             req = urllib.request.Request(
                 "https://api.groq.com/openai/v1/chat/completions",
                 data=json.dumps(payload).encode("utf-8"),
                 headers={
                     "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 },
-                method="POST"
+                method="POST",
             )
-            print("[Vision] Chamando Groq Vision (llama-3.2-11b-vision-preview)...")
+            print(f"[Vision] Chamando Groq Vision ({GROQ_VISION_MODEL})...")
             with urllib.request.urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode())
                 return data["choices"][0]["message"]["content"]
         except Exception as e:
             print(f"[Vision] Falha no Groq Vision: {e}")
-            return "(Groq Vision falhou)"
+
+        # Fallback gratuito: Gemini (google-generativeai)
+        try:
+            from config import GEMINI_API_KEY
+        except ImportError:
+            GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+        if GEMINI_API_KEY:
+            try:
+                import google.generativeai as genai
+                genai.configure(api_key=GEMINI_API_KEY)
+                model = genai.GenerativeModel("gemini-2.0-flash")
+                with open(self.last_screenshot, "rb") as f:
+                    img_bytes = f.read()
+                resp = model.generate_content([
+                    user_prompt,
+                    {"mime_type": "image/png", "data": img_bytes},
+                ])
+                text = getattr(resp, "text", "") or ""
+                if text.strip():
+                    print("[Vision] ✓ Gemini Vision")
+                    return text.strip()
+            except Exception as e2:
+                print(f"[Vision] Gemini Vision falhou: {e2}")
+
+        ocr = self.read_text()
+        if ocr and len(ocr) > 20:
+            return f"(Visão via OCR local)\n{ocr[:1200]}"
+        return ""
 
     def get_quick_context(self) -> str:
         """Contexto leve (sem screenshot/OCR) — janela ativa + janelas abertas. ~5ms."""

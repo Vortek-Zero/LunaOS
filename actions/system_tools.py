@@ -6,6 +6,7 @@ Fornece informações de hardware (CPU, RAM, Disco) e permite executar comandos 
 import subprocess
 import shutil
 import os
+from pathlib import Path
 from typing import Dict, Any, List
 
 import psutil
@@ -98,43 +99,137 @@ class SystemTools:
         except Exception as e:
             return f"FALHOU: Erro ao listar processos: {str(e)}"
 
-    def run_bash_command(self, command: str) -> str:
-        """
-        Executa um comando bash arbitrário de forma síncrona.
-        Apenas permite comandos que não estejam na lista de bloqueios de segurança.
-        """
-        # Validação de segurança
+    def _validate_command(self, command: str) -> Optional[str]:
         cmd_clean = command.strip()
+        if not cmd_clean:
+            return "FALHOU: comando vazio."
         cmd_lower = cmd_clean.lower()
-        
         for banned in BANNED_SUBSTRINGS:
             if banned in cmd_lower:
                 return f"FALHOU: O comando contém termos bloqueados por segurança ('{banned}'). Execução rejeitada."
-        
+        return None
+
+    def run_bash_command(self, command: str, visible: bool = False) -> str:
+        """
+        Executa comando no shell.
+        visible=True → abre terminal GNOME/zsh (usuário vê a saída).
+        visible=False → headless, retorna stdout/stderr para a Luna.
+        """
+        err = self._validate_command(command)
+        if err:
+            return err
+
+        if visible:
+            from actions.gnome import open_terminal_zsh
+            return open_terminal_zsh(command, title="Luna")
+
         try:
             res = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=15,
-                cwd="/home/pera"
+                timeout=30,
+                cwd=str(Path.home()),
             )
-            
+
             output = ""
             if res.stdout:
                 output += f"--- SAÍDA (stdout) ---\n{res.stdout.strip()}\n"
             if res.stderr:
                 output += f"--- ERROS (stderr) ---\n{res.stderr.strip()}\n"
-            
+
             if not output:
                 output = "Comando executado com sucesso (sem retorno/output)."
-                
+
             return output
         except subprocess.TimeoutExpired:
-            return "FALHOU: O comando expirou (timeout de 15 segundos)."
+            return "FALHOU: O comando expirou (timeout de 30 segundos)."
         except Exception as e:
             return f"FALHOU: Erro na execução: {str(e)}"
+
+    def run_terminal_command(self, command: str) -> str:
+        """Abre terminal visível (zsh) — atalho para run_bash_command(visible=True)."""
+        return self.run_bash_command(command, visible=True)
+
+    def kill_process(self, pid: int = 0, name: str = "") -> str:
+        try:
+            if pid:
+                proc = psutil.Process(pid)
+                proc.terminate()
+                proc.wait(timeout=3)
+                return f"Processo {pid} ({proc.name()}) encerrado."
+            if name:
+                killed = 0
+                for proc in psutil.process_iter(["pid", "name"]):
+                    if name.lower() in proc.info["name"].lower():
+                        proc.terminate()
+                        killed += 1
+                return f"{killed} processo(s) '{name}' encerrado(s)." if killed else f"Nenhum processo '{name}' encontrado."
+            return "FALHOU: informe pid ou name."
+        except psutil.NoSuchProcess:
+            return f"FALHOU: PID {pid} não existe."
+        except Exception as e:
+            return f"FALHOU: {e}"
+
+    def send_notification(self, title: str, message: str) -> str:
+        if not shutil.which("notify-send"):
+            return "FALHOU: notify-send não instalado."
+        try:
+            subprocess.run(["notify-send", title, message], check=True, timeout=3)
+            return f"Notificação enviada: {title}"
+        except Exception as e:
+            return f"FALHOU: {e}"
+
+    def get_network_status(self) -> str:
+        if shutil.which("nmcli"):
+            code, out = subprocess.getstatusoutput("nmcli -t -f ACTIVE,SSID,SIGNAL,SECURITY dev wifi")
+            if code == 0 and out.strip():
+                return "Wi-Fi:\n" + out.replace(":", " | ")
+            code, out = subprocess.getstatusoutput("nmcli dev status")
+            return out if code == 0 else "FALHOU: nmcli indisponível."
+        if shutil.which("ip"):
+            code, out = subprocess.getstatusoutput("ip -br addr")
+            return out if code == 0 else "FALHOU: ip indisponível."
+        return "FALHOU: ferramentas de rede não encontradas."
+
+    def set_brightness(self, level: int) -> str:
+        level = max(1, min(100, level))
+        if shutil.which("brightnessctl"):
+            code, out = subprocess.getstatusoutput(f"brightnessctl set {level}%")
+            return f"Brilho: {level}%" if code == 0 else f"FALHOU: {out}"
+        return "FALHOU: brightnessctl não instalado (pacman -S brightnessctl)."
+
+    def take_screenshot(self, path: str = "") -> str:
+        from datetime import datetime
+        dest = path or str(Path.home() / "Pictures" / f"luna_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        dest = str(Path(dest).expanduser())
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+
+        # Preferência: mss (vision) — funciona em X11 e Wayland
+        try:
+            from vision.screen import get_vision, SCREENSHOT_PATH
+            vision = get_vision()
+            if vision.capture():
+                import shutil as _sh
+                _sh.copy2(SCREENSHOT_PATH, dest)
+                return f"Screenshot salvo: {dest}"
+        except Exception:
+            pass
+
+        for cmd in [
+            ["import", "-window", "root", dest],
+            ["grim", dest],
+            ["scrot", dest],
+            ["gnome-screenshot", "-f", dest],
+        ]:
+            if shutil.which(cmd[0]):
+                try:
+                    subprocess.run(cmd, check=True, timeout=8)
+                    return f"Screenshot salvo: {dest}"
+                except Exception:
+                    continue
+        return "FALHOU: instale grim, scrot ou gnome-screenshot."
 
 
 # Singleton helper
