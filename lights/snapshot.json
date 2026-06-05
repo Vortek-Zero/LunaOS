@@ -1,0 +1,34 @@
+{
+    "timestamp": 1779235612.3047276,
+    "devices": [
+        {
+            "id": "eb64a81b56fb8003dexqdd",
+            "ip": "192.168.1.5",
+            "active": 2,
+            "encrypt": true,
+            "productKey": "keyjnuy4s3kre7m7",
+            "token": true,
+            "wf_cfg": true,
+            "name": "Latched hidden Switch Single pro",
+            "key": "Ek&~Ah`=4s}5.'Z#",
+            "mac": "a8:80:55:79:9f:8f",
+            "ability": 0,
+            "dev_type": "default",
+            "err": "",
+            "type": "default",
+            "dps": {
+                "dps": {
+                    "1": true,
+                    "9": 0,
+                    "38": "on",
+                    "42": "",
+                    "43": "",
+                    "44": "AAAK",
+                    "47": "flip"
+                }
+            },
+            "origin": "broadcast",
+            "ver": "3.4"
+        }
+    ]
+}

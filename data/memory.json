@@ -1,0 +1,253 @@
+{
+  "facts": [
+    {
+      "fact": "rode um comando divertido",
+      "category": "habitos|projeto",
+      "importance": 1.0,
+      "ts": "2026-05-24T00:21:40.160760"
+    },
+    {
+      "fact": "um comando divertido",
+      "category": "hardware|preferencias",
+      "importance": 0.95,
+      "ts": "2026-05-24T00:21:40.618382"
+    },
+    {
+      "fact": "rode o CMatrix",
+      "category": "sistema operacional|projeto",
+      "importance": 1.0,
+      "ts": "2026-05-24T00:22:49.030225"
+    },
+    {
+      "fact": "CMatrix é um sistema de computador",
+      "category": "hardware",
+      "importance": 0.95,
+      "ts": "2026-05-24T00:22:49.720997"
+    },
+    {
+      "fact": "o CMatrix é usado para navegação e controle de dispositivos",
+      "category": "habitos",
+      "importance": 0.7,
+      "ts": "2026-05-24T00:22:50.197357"
+    },
+    {
+      "fact": "musica",
+      "category": "projeto|habitos",
+      "importance": 1.0,
+      "ts": "2026-05-24T00:23:13.554202"
+    },
+    {
+      "fact": "divertir-se",
+      "category": "habitos",
+      "importance": 0.95,
+      "ts": "2026-05-24T00:23:13.940903"
+    },
+    {
+      "fact": "descrição clara do fato",
+      "category": "preferências|projeto|habitos",
+      "importance": 1.0,
+      "ts": "2026-05-24T01:07:08.835383"
+    },
+    {
+      "fact": "sistema operacional",
+      "category": "hardware|habitos",
+      "importance": 0.95,
+      "ts": "2026-05-24T01:07:09.376442"
+    },
+    {
+      "fact": "máquina de trabalho",
+      "category": "hardware|habitos",
+      "importance": 0.85,
+      "ts": "2026-05-24T01:07:09.788757"
+    },
+    {
+      "fact": "Firefox",
+      "category": "sistema operacional|hardware",
+      "importance": 1.0,
+      "ts": "2026-05-25T11:47:20.818532"
+    },
+    {
+      "fact": "terminal",
+      "category": "hardware|preferencias",
+      "importance": 1.0,
+      "ts": "2026-05-25T11:47:21.248403"
+    },
+    {
+      "fact": "YouTube",
+      "category": "sistema operacional|hardware",
+      "importance": 0.95,
+      "ts": "2026-05-25T11:47:21.660558"
+    },
+    {
+      "fact": "1155 do ET",
+      "category": "projeto|habitos",
+      "importance": 0.7,
+      "ts": "2026-05-25T11:47:22.050613"
+    },
+    {
+      "fact": "o botão de jogos",
+      "category": "hardware|preferencias",
+      "importance": 1.0,
+      "ts": "2026-05-25T11:50:41.053464"
+    },
+    {
+      "fact": "clicar no botão",
+      "category": "habitos",
+      "importance": 0.95,
+      "ts": "2026-05-25T11:50:41.454671"
+    },
+    {
+      "fact": "gaming",
+      "category": "projeto",
+      "importance": 0.85,
+      "ts": "2026-05-25T11:50:41.867011"
+    },
+    {
+      "fact": "Preço do Dólar",
+      "category": "sistema_operacional|preco",
+      "importance": 1.0,
+      "ts": "2026-05-25T13:38:58.922553"
+    },
+    {
+      "fact": "Preço do Oro",
+      "category": "sistema_operacional|preco",
+      "importance": 1.0,
+      "ts": "2026-05-25T13:38:59.572940"
+    },
+    {
+      "fact": "Custo por 1 Reais de Casa",
+      "category": "preco|habitos",
+      "importance": 0.95,
+      "ts": "2026-05-25T13:38:59.965249"
+    },
+    {
+      "fact": "Você pediu fazer o que estava pedindo sem PDF",
+      "category": "habitos|projeto",
+      "importance": 1.0,
+      "ts": "2026-05-25T13:39:18.488447"
+    },
+    {
+      "fact": "Não há fatos relevantes para extrair",
+      "category": "historia",
+      "importance": 0.95,
+      "ts": "2026-05-25T13:39:18.872863"
+    },
+    {
+      "fact": "o preço do dolar e euro",
+      "category": "sistema operacional|habitos",
+      "importance": 1.0,
+      "ts": "2026-05-25T13:40:07.079344"
+    },
+    {
+      "fact": "pesquisar o preço do dolar e euro",
+      "category": "hardware|preferências",
+      "importance": 0.95,
+      "ts": "2026-05-25T13:40:07.510398"
+    }
+  ],
+  "sessions": {
+    "default": [
+      {
+        "role": "user",
+        "text": "pesquise na barra de pesquisa do youtube \"1155 do ET\"",
+        "ts": "2026-05-25T11:49:03.815746"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, estou com o YouTube aberto no Firefox, mas não consegui encontrar uma forma de digitar na barra de pesquisa para procurar por \"1155 do ET\".",
+        "ts": "2026-05-25T11:49:03.815759"
+      },
+      {
+        "role": "user",
+        "text": "procure a barra sreach para digitar o que pedi",
+        "ts": "2026-05-25T11:49:47.428661"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, eu entendo que você quer que eu encontre a barra de pesquisa para digitar o que pediu. No entanto, mesmo com o YouTube aberto no Firefox, eu ainda não consigo interagir com a interface do navegador para digitar na barra de pesquisa.",
+        "ts": "2026-05-25T11:49:47.428681"
+      },
+      {
+        "role": "user",
+        "text": "então clique no botão Gaming",
+        "ts": "2026-05-25T11:50:27.095788"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, tentei clicar no botão \"Gaming\" como você pediu, mas não consegui. Tive um problema para identificar e interagir com ele.",
+        "ts": "2026-05-25T11:50:27.095875"
+      },
+      {
+        "role": "user",
+        "text": "abra o whatsapp e mande oi para Kelly",
+        "ts": "2026-05-25T11:51:33.428206"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, abri o WhatsApp e mandei um \"oi\" para a Kelly.",
+        "ts": "2026-05-25T11:51:33.428232"
+      },
+      {
+        "role": "user",
+        "text": "mande um texto de saudações para Kelly no Whatsapp",
+        "ts": "2026-05-25T13:37:12.422577"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, já enviei uma mensagem de saudação para a Kelly no WhatsApp! 😊",
+        "ts": "2026-05-25T13:37:12.422631"
+      },
+      {
+        "role": "user",
+        "text": "mande um email para miguelpera282@gmail.com (meu e mail principal) com dados msotrando o preço do dolar e do ouro e o custo por 1 5 e 10 em reais de casa valor. o necessario também é que tenha um pdf organizado",
+        "ts": "2026-05-25T13:38:43.155257"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, não consigo enviar e-mails com anexos de PDF diretamente. Posso te ajudar a encontrar as cotações do dólar e do ouro, e calcular os custos em reais, mas a organização em PDF e o envio por e-mail precisariam ser feitos por você.",
+        "ts": "2026-05-25T13:38:43.155270"
+      },
+      {
+        "role": "user",
+        "text": "faça o que pedi sem pdf então",
+        "ts": "2026-05-25T13:39:12.240607"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, entendi! Sem PDF, vamos lá:\n\nInfelizmente, não consigo te dar as cotações do dólar e do ouro em tempo real, nem calcular o custo de casas em reais, pois as ferramentas que eu usaria para buscar essas informações não estão funcionando no momento.\n\nSe quiser, posso tentar rodar o CMatrix para você se divertir um pouco! 😊",
+        "ts": "2026-05-25T13:39:12.240667"
+      },
+      {
+        "role": "user",
+        "text": "então primeiro pesquise o preço do dolar e euro",
+        "ts": "2026-05-25T13:39:59.775655"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, não consegui pesquisar o preço do dólar e do euro porque as ferramentas de busca na web não estão funcionando no momento.",
+        "ts": "2026-05-25T13:39:59.775676"
+      },
+      {
+        "role": "user",
+        "text": "atualizei seu sistema vejamos... tente enviar aquele e mail com pdf de novo",
+        "ts": "2026-05-25T13:44:19.665157"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, tentei enviar o e-mail novamente, mas parece que a ferramenta de envio de e-mail não está funcionando. 😞",
+        "ts": "2026-05-25T13:44:19.665191"
+      },
+      {
+        "role": "user",
+        "text": "abre o firefox no youtube",
+        "ts": "2026-05-26T11:09:28.588597"
+      },
+      {
+        "role": "assistant",
+        "text": "Pera, não consigo abrir o Firefox no YouTube agora porque as ferramentas que eu usaria para isso não estão funcionando no momento.",
+        "ts": "2026-05-26T11:09:28.588620"
+      }
+    ]
+  },
+  "current_session_id": "default"
+}

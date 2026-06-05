@@ -1,0 +1,122 @@
+{
+    "result": [
+        {
+            "active_time": 1778115777,
+            "biz_type": 18,
+            "category": "tdq",
+            "create_time": 1778115777,
+            "icon": "smart/icon/bay1624869296421wDFy/eebf0a3dfab3849d40ca574a593d9e2c.png",
+            "id": "eb64a81b56fb8003dexqdd",
+            "ip": "177.39.98.94",
+            "lat": "-23.74",
+            "local_key": "Ek&~Ah`=4s}5.'Z#",
+            "lon": "-46.8",
+            "model": "Latched hidden Switch Single pro",
+            "name": "Latched hidden Switch Single pro",
+            "online": true,
+            "owner_id": "297404386",
+            "product_id": "cdpnm80j9ba3iusz",
+            "product_name": "Latched hidden Switch Single pro",
+            "status": [
+                {
+                    "code": "switch_1",
+                    "value": false
+                },
+                {
+                    "code": "countdown_1",
+                    "value": 0
+                },
+                {
+                    "code": "relay_status",
+                    "value": "1"
+                },
+                {
+                    "code": "random_time",
+                    "value": ""
+                },
+                {
+                    "code": "cycle_time",
+                    "value": ""
+                },
+                {
+                    "code": "switch_inching",
+                    "value": "AAAK"
+                },
+                {
+                    "code": "switch_type",
+                    "value": "flip"
+                }
+            ],
+            "sub": false,
+            "time_zone": "-03:00",
+            "uid": "az1778115636910YqPbV",
+            "update_time": 1778116528,
+            "uuid": "c17c7eb258f499e4",
+            "mapping": {
+                "1": {
+                    "code": "switch_1",
+                    "type": "Boolean",
+                    "values": {}
+                },
+                "9": {
+                    "code": "countdown_1",
+                    "type": "Integer",
+                    "values": {
+                        "unit": "s",
+                        "min": 0,
+                        "max": 86400,
+                        "scale": 0,
+                        "step": 1
+                    }
+                },
+                "38": {
+                    "code": "relay_status",
+                    "type": "Enum",
+                    "values": {
+                        "range": [
+                            "0",
+                            "1",
+                            "2"
+                        ]
+                    }
+                },
+                "42": {
+                    "code": "random_time",
+                    "type": "String",
+                    "values": "{\"maxlen\":255}"
+                },
+                "43": {
+                    "code": "cycle_time",
+                    "type": "String",
+                    "values": "{\"maxlen\":255}"
+                },
+                "44": {
+                    "code": "switch_inching",
+                    "type": "String",
+                    "values": "{\"maxlen\":255}"
+                },
+                "47": {
+                    "code": "switch_type",
+                    "type": "Enum",
+                    "values": {
+                        "range": [
+                            "flip",
+                            "sync",
+                            "button"
+                        ]
+                    }
+                }
+            }
+        }
+    ],
+    "success": true,
+    "t": 1778118684733,
+    "tid": "412bc1b249b711f193342aca4d255c19",
+    "file": {
+        "name": "tuya-raw.json",
+        "description": "Full raw list of Tuya devices.",
+        "account": "ykux9pyc5qy7877era5e",
+        "date": "2026-05-06T22:51:26.109707",
+        "tinytuya": "1.18.0"
+    }
+}

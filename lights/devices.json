@@ -1,0 +1,73 @@
+[
+    {
+        "name": "Latched hidden Switch Single pro",
+        "id": "eb64a81b56fb8003dexqdd",
+        "key": "Ek&~Ah`=4s}5.'Z#",
+        "mac": "a8:80:55:79:9f:8f",
+        "uuid": "c17c7eb258f499e4",
+        "category": "tdq",
+        "product_name": "Latched hidden Switch Single pro",
+        "product_id": "cdpnm80j9ba3iusz",
+        "biz_type": 18,
+        "model": "Latched hidden Switch Single pro",
+        "sub": false,
+        "icon": "https://images.tuyaus.com/smart/icon/bay1624869296421wDFy/eebf0a3dfab3849d40ca574a593d9e2c.png",
+        "mapping": {
+            "1": {
+                "code": "switch_1",
+                "type": "Boolean",
+                "values": {}
+            },
+            "9": {
+                "code": "countdown_1",
+                "type": "Integer",
+                "values": {
+                    "unit": "s",
+                    "min": 0,
+                    "max": 86400,
+                    "scale": 0,
+                    "step": 1
+                }
+            },
+            "38": {
+                "code": "relay_status",
+                "type": "Enum",
+                "values": {
+                    "range": [
+                        "0",
+                        "1",
+                        "2"
+                    ]
+                }
+            },
+            "42": {
+                "code": "random_time",
+                "type": "String",
+                "values": "{\"maxlen\":255}"
+            },
+            "43": {
+                "code": "cycle_time",
+                "type": "String",
+                "values": "{\"maxlen\":255}"
+            },
+            "44": {
+                "code": "switch_inching",
+                "type": "String",
+                "values": "{\"maxlen\":255}"
+            },
+            "47": {
+                "code": "switch_type",
+                "type": "Enum",
+                "values": {
+                    "range": [
+                        "flip",
+                        "sync",
+                        "button"
+                    ]
+                }
+            }
+        },
+        "ip": "192.168.1.5",
+        "version": "3.4"
+    }
+]

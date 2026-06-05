@@ -1,0 +1,13 @@
+{
+  "devices": [
+    {
+      "id": "worker-principal",
+      "name": "PC B — Motor Luna",
+      "ip_address": "192.168.1.100",
+      "port": 8000,
+      "api_key": "luna-changeme",
+      "description": "Worker principal com GPU/CPU pesada"
+    }
+  ],
+  "active_device": "worker-principal"
+}
