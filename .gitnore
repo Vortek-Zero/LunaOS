@@ -1,0 +1,38 @@
+
+# Arquivos de ambiente e chaves (MUITO IMPORTANTE)
+.env
+.api_key
+
+# Ambientes virtuais Python
+.venv/
+venv/
+
+# Cache e arquivos compilados do Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Pastas de arquivos temporários e locais
+temp/
+brain/
+ssl/
+ Nina-folders/
+
+# Pastas de IDEs
+.vscode/
+.idea/
+
+# Arquivos de log e testes (se houver)
+*.log
+scratch.py
+test_*.py
+
+# Arquivos de dados de usuário/estado local
+rag_db.json
+devices.json
+apps.json
+playlists.json
+personality.json
+user_profile.json
+data/

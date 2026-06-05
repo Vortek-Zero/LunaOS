@@ -1,0 +1,71 @@
+{
+  "firefox": {
+    "command": "firefox",
+    "description": "Navegador Web",
+    "enabled": true
+  },
+  "spotify": {
+    "command": "flatpak run com.spotify.Client",
+    "description": "App de Música",
+    "enabled": true
+  },
+  "kitty": {
+    "command": "kitty",
+    "description": "Terminal Kitty",
+    "enabled": true
+  },
+  "terminal": {
+    "command": "gnome-terminal",
+    "description": "Terminal GNOME (zsh)",
+    "enabled": true
+  },
+  "gnome-terminal": {
+    "command": "gnome-terminal",
+    "description": "Terminal GNOME padrão",
+    "enabled": true
+  },
+  "nautilus": {
+    "command": "nautilus",
+    "description": "Gerenciador de arquivos GNOME",
+    "enabled": true
+  },
+  "Arquivos": {
+    "command": "dolphin",
+    "description": "App de gerenciamento de arquivos",
+    "enabled": true
+  },
+  "Visual Studio Code": {
+    "command": "code",
+    "description": "Editor de código",
+    "enabled": true
+  },
+  "chatgpt": {
+    "command": "firefox https://chat.openai.com",
+    "description": "ChatGPT", 
+    "enabled": true
+  },
+  "whatsapp": {
+    "command": "flatpak run io.github.mimbrero.WhatsAppDesktop",
+    "description": "WhatsApp Desktop",
+    "enabled": true
+  },
+  "telegram": {
+    "command": "telegram-desktop",
+    "description": "Telegram",
+    "enabled": true
+  },
+  "discord": {
+    "command": "discord",
+    "description": "Discord",
+    "enabled": true
+  },
+  "thunderbird": {
+    "command": "thunderbird",
+    "description": "Cliente de email",
+    "enabled": true
+  }
+}
+
+
+
+

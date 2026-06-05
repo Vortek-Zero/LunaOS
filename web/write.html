@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Luna — Modo Escrita</title>
+  <style>
+  body { background: #060610; color: #f0f0ff; font-family: Inter, system-ui, sans-serif; margin: 0; min-height: 100vh; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 24px; }
+  h1 { font-size: 1.4rem; margin-bottom: 8px; }
+  .sub { color: #8b8baa; margin-bottom: 24px; font-size: .9rem; }
+  .grid { display: grid; grid-template-columns: 280px 1fr; gap: 16px; min-height: 70vh; }
+  .panel { background: rgba(255,255,255,.04); border: 1px solid rgba(255,255,255,.08); border-radius: 16px; padding: 16px; }
+  .panel h2 { font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; color: #8b8baa; margin: 0 0 12px; }
+  .proj { padding: 10px 12px; border-radius: 10px; cursor: pointer; margin-bottom: 6px; border: 1px solid transparent; }
+  .proj:hover, .proj.active { background: rgba(139,92,246,.15); border-color: rgba(139,92,246,.3); }
+  textarea, input, select { width: 100%; background: rgba(0,0,0,.3); border: 1px solid rgba(255,255,255,.1); color: #f0f0ff; border-radius: 10px; padding: 10px; box-sizing: border-box; font: inherit; }
+  textarea { min-height: 320px; resize: vertical; line-height: 1.6; }
+  .row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  button { background: #8b5cf6; color: #fff; border: none; border-radius: 10px; padding: 10px 16px; cursor: pointer; font: inherit; }
+  button.secondary { background: rgba(255,255,255,.08); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .status { margin-top: 12px; color: #8b8baa; font-size: .85rem; min-height: 1.2em; }
+  @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Luna — Modo Escrita</h1>
+    <p class="sub">Projetos criativos com personagens, capítulos e streaming de texto.</p>
+    <div class="grid">
+      <aside class="panel">
+        <h2>Projetos</h2>
+        <div id="projects"></div>
+        <div class="row" style="margin-top:12px">
+          <input id="newTitle" placeholder="Novo projeto..." />
+        </div>
+        <button id="btnNew" style="width:100%;margin-top:8px">Criar projeto</button>
+      </aside>
+      <main class="panel">
+        <h2 id="projTitle">Selecione um projeto</h2>
+        <div class="row">
+          <select id="genre"><option>ficção</option><option>romance</option><option>thriller</option><option>fantasia</option><option>sci-fi</option></select>
+          <select id="style"><option>neutro</option><option>adolescente</option><option>adulto</option><option>literário</option></select>
+          <button id="btnSave" class="secondary" disabled>Salvar</button>
+          <button id="btnStream" disabled>Gerar capítulo</button>
+        </div>
+        <textarea id="editor" placeholder="Texto do projeto..." disabled></textarea>
+        <div class="status" id="status"></div>
+      </main>
+    </div>
+  </div>
+  <script>
+  let currentId = null;
+  const $ = id => document.getElementById(id);
+  const status = msg => { $('status').textContent = msg; };
+
+  async function api(path, opts = {}) {
+    const r = await fetch(path, { headers: { 'Content-Type': 'application/json' }, ...opts });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  }
+
+  async function loadProjects() {
+    const data = await api('/api/write/projects');
+    const box = $('projects');
+    box.innerHTML = '';
+    (data.projects || []).forEach(p => {
+      const el = document.createElement('div');
+      el.className = 'proj' + (p.id === currentId ? ' active' : '');
+      el.textContent = p.title || 'Sem título';
+      el.onclick = () => selectProject(p.id);
+      box.appendChild(el);
+    });
+  }
+
+  async function selectProject(id) {
+    currentId = id;
+    const data = await api('/api/write/project/' + id);
+    const p = data.project || data;
+    $('projTitle').textContent = p.title || 'Projeto';
+    $('editor').value = p.text || '';
+    $('genre').value = p.genre || 'ficção';
+    $('style').value = p.style || 'neutro';
+    $('editor').disabled = false;
+    $('btnSave').disabled = false;
+    $('btnStream').disabled = false;
+    await loadProjects();
+  }
+
+  $('btnNew').onclick = async () => {
+    const title = $('newTitle').value.trim();
+    if (!title) return status('Digite um título.');
+    const data = await api('/api/write/projects', { method: 'POST', body: JSON.stringify({ title }) });
+    $('newTitle').value = '';
+    await loadProjects();
+    if (data.project?.id) await selectProject(data.project.id);
+    status('Projeto criado.');
+  };
+
+  $('btnSave').onclick = async () => {
+    if (!currentId) return;
+    await api('/api/write/project/' + currentId, {
+      method: 'PUT',
+      body: JSON.stringify({ text: $('editor').value, genre: $('genre').value, style: $('style').value })
+    });
+    status('Salvo.');
+  };
+
+  $('btnStream').onclick = async () => {
+    if (!currentId) return;
+    $('btnStream').disabled = true;
+    status('Gerando...');
+    try {
+      const r = await fetch('/api/write/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project_id: currentId, prompt: 'Continue o texto de forma criativa.' })
+      });
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop();
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const chunk = JSON.parse(line.slice(6));
+              if (chunk.text) $('editor').value += chunk.text;
+            } catch (_) {}
+          }
+        }
+      }
+      status('Geração concluída.');
+    } catch (e) {
+      status('Erro: ' + e.message);
+    }
+    $('btnStream').disabled = false;
+  };
+
+  loadProjects().catch(e => status('Erro ao carregar: ' + e.message));
+  </script>
+</body>
+</html>
