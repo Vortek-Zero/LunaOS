@@ -1,0 +1,43 @@
+{
+  "documents": [
+    {
+      "id": "test_test_ia.org_1773628876",
+      "source": "test_ia.org",
+      "type": "test",
+      "created": "2026-03-15T23:41:16.076904",
+      "total_chunks": 1,
+      "total_tokens": 228,
+      "metadata": {
+        "language": "pt-BR"
+      }
+    },
+    {
+      "id": "test_test_ia.org_1773628889",
+      "source": "test_ia.org",
+      "type": "test",
+      "created": "2026-03-15T23:41:29.422039",
+      "total_chunks": 1,
+      "total_tokens": 228,
+      "metadata": {
+        "language": "pt-BR"
+      }
+    }
+  ],
+  "chunks": [
+    {
+      "id": "test_test_ia.org_1773628876_chunk_0",
+      "doc_id": "test_test_ia.org_1773628876",
+      "content": "A Inteligência Artificial (IA) é a capacidade de máquinas executarem tarefas que normalmente requerem inteligência humana. Essas tarefas incluem aprendizado visual, reconhecimento de fala, tomada de decisão e tradução de idiomas. Existem dois tipos principais de IA: IA Fraca (limitada a tarefas específicas) e IA Forte (geral, como a mente humana). A maioria dos sistemas atuais são considerados IA Fraca, como chatbots e assistentes de voz. O Machine Learning é um subcampo da IA que permite que sistemas aprendam com dados sem serem explicitamente programados. Redes neurais artificiais são estruturas inspiradas no cérebro humano usadas em muitos sistemas modernos de IA.",
+      "tokens": 228,
+      "chunk_num": 0
+    },
+    {
+      "id": "test_test_ia.org_1773628889_chunk_0",
+      "doc_id": "test_test_ia.org_1773628889",
+      "content": "A Inteligência Artificial (IA) é a capacidade de máquinas executarem tarefas que normalmente requerem inteligência humana. Essas tarefas incluem aprendizado visual, reconhecimento de fala, tomada de decisão e tradução de idiomas. Existem dois tipos principais de IA: IA Fraca (limitada a tarefas específicas) e IA Forte (geral, como a mente humana). A maioria dos sistemas atuais são considerados IA Fraca, como chatbots e assistentes de voz. O Machine Learning é um subcampo da IA que permite que sistemas aprendam com dados sem serem explicitamente programados. Redes neurais artificiais são estruturas inspiradas no cérebro humano usadas em muitos sistemas modernos de IA.",
+      "tokens": 228,
+      "chunk_num": 0
+    }
+  ],
+  "metadata": {}
+}
