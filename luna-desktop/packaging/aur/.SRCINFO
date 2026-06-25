@@ -1,0 +1,22 @@
+pkgbase = luna-desktop-git
+	pkgdesc = A modern and efficient desktop client for LunaOS
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/Vortek-Zero/LunaOS
+	arch = x86_64
+	license = MIT
+	makedepends = git
+	makedepends = nodejs
+	makedepends = npm
+	makedepends = cargo
+	makedepends = rust
+	depends = webkit2gtk-4.1
+	depends = openssl
+	depends = libappindicator-gtk3
+	depends = librsvg
+	provides = luna-desktop
+	conflicts = luna-desktop
+	source = LunaOS::git+https://github.com/Vortek-Zero/LunaOS.git
+	sha256sums = SKIP
+
+pkgname = luna-desktop-git
