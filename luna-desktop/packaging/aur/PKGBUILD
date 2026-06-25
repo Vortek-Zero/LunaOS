@@ -1,0 +1,46 @@
+# Maintainer: Pera <pera@example.com>
+pkgname=luna-desktop-git
+_pkgname=luna-desktop
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="A modern and efficient desktop client for LunaOS"
+arch=('x86_64')
+url="https://github.com/Vortek-Zero/LunaOS"
+license=('MIT')
+depends=('webkit2gtk-4.1' 'openssl' 'libappindicator-gtk3' 'librsvg')
+makedepends=('git' 'nodejs' 'npm' 'cargo' 'rust')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+source=("LunaOS::git+https://github.com/Vortek-Zero/LunaOS.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$srcdir/LunaOS"
+  printf "0.1.0.r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  cd "$srcdir/LunaOS/luna-desktop"
+  npm install
+}
+
+build() {
+  cd "$srcdir/LunaOS/luna-desktop"
+  # Build only the binary (no AppImage/deb/rpm bundling needed for AUR)
+  npm run tauri build -- --no-bundle
+}
+
+package() {
+  cd "$srcdir/LunaOS/luna-desktop"
+  # Install the compiled binary
+  install -Dm755 "src-tauri/target/release/luna-desktop" "$pkgdir/usr/bin/luna-desktop"
+
+  # Install desktop file
+  install -Dm644 "packaging/aur/luna-desktop.desktop" "$pkgdir/usr/share/applications/luna-desktop.desktop"
+
+  # Install icons
+  install -Dm644 "src-tauri/icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/luna-desktop.png"
+  install -Dm644 "src-tauri/icons/64x64.png" "$pkgdir/usr/share/icons/hicolor/64x64/apps/luna-desktop.png"
+  install -Dm644 "src-tauri/icons/32x32.png" "$pkgdir/usr/share/icons/hicolor/32x32/apps/luna-desktop.png"
+  install -Dm644 "src-tauri/icons/icon.png" "$pkgdir/usr/share/icons/hicolor/512x512/apps/luna-desktop.png"
+}
