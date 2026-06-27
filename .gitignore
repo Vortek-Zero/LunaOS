@@ -39,3 +39,10 @@ langgraph/
 openclaw/
 Terminal-assistent/
 Nina-folders/
+
+# AUR build artifacts
+luna-desktop/packaging/aur/pkg/
+luna-desktop/packaging/aur/*.zst
+luna-desktop/packaging/aur/src/
+luna-desktop/packaging/aur/LunaOS/
+luna-desktop/src-tauri/icons_backup/
