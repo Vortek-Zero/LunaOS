@@ -24,9 +24,17 @@ SAFETY_PATTERNS = [
             r"cortar meus? pulsos?",
             r"automutila",
             r"como me suicidar",
+            r"matarme",  # espanhol
             r"beber veneno para morrer",
             r"dar um fim na minha vida",
-            r"acabar com a minha vida"
+            r"acabar com a minha vida",
+            r"kill myself",
+            r"want to die",
+            r"commit suicide",
+            r"how to suicide",
+            r"self.harm",
+            r"cutting myself",
+            r"end my life",
         ],
         "response": SELF_HARM_RESPONSE
     },
@@ -44,7 +52,12 @@ SAFETY_PATTERNS = [
             r"como esfaquear",
             r"como atirar em (alguem|pessoas)",
             r"(fabricar|fazer|construir) (uma )?arma de fogo",
-            r"veneno caseiro para (pessoas|humanos|alguem)"
+            r"veneno caseiro para (pessoas|humanos|alguem)",
+            r"(make|build|create|recipe for).*bomb",
+            r"how to kill (someone|people|a person)",
+            r"how to (shoot|stab|assassinate)",
+            r"(make|build|create) (a )?(gun|weapon|explosive)",
+            r"molotov",
         ],
         "response": REFUSAL_RESPONSE
     },
@@ -52,7 +65,8 @@ SAFETY_PATTERNS = [
         "category": "drugs",
         "patterns": [
             r"(sintetizar|fazer|produzir|fabricar|receita de) (drogas?|metanfetamina|cocaina|crack|lsd|heroina|lança perfume)",
-            r"(traficar|comprar|vender) (drogas?|cocaina|crack|lsd|heroina|metanfetamina)"
+            r"(traficar|comprar|vender) (drogas?|cocaina|crack|lsd|heroina|metanfetamina)",
+            r"(synthesize|make|produce|manufacture).*(drugs|meth|cocaine|crack|lsd|heroin)",
         ],
         "response": REFUSAL_RESPONSE
     },
@@ -61,7 +75,10 @@ SAFETY_PATTERNS = [
         "patterns": [
             r"(hackear|invadir|derrubar|pichar).*(site|servidor|computador|sistema|rede|banco|wifi|vizinho|nasa|governo|contas?)",
             r"(criar|escrever|fazer).*(ransomware|malware|virus de computador|spyware|trojan)",
-            r"(roubar|clonar|gerar).*(cartoes?|senhas?|dados bancarios)"
+            r"(roubar|clonar|gerar).*(cartoes?|senhas?|dados bancarios)",
+            r"(hack|breach|take down|crack).*(site|server|computer|system|network|bank|government|account)",
+            r"(create|write|make).*(ransomware|malware|virus|spyware|trojan)",
+            r"(steal|clone|generate).*(credit.?cards?|passwords|banking.?data)",
         ],
         "response": REFUSAL_RESPONSE
     }
@@ -98,6 +115,10 @@ def check_safety(user_input: str) -> Optional[str]:
             
             # Executa a busca regex
             if re.search(norm_pattern, normalized, re.IGNORECASE):
+                return group["response"]
+            
+            # Also check raw text for patterns that might be bypassed via normalization
+            if re.search(pattern, user_input, re.IGNORECASE):
                 return group["response"]
 
     return None

@@ -1,5 +1,5 @@
 // Luna API client — full backend integration
-// Connects to the Python FastAPI server at localhost:5000
+// Connects to the Python FastAPI server at localhost:5050
 
 export interface ChatMessage {
   id: string;
@@ -8,7 +8,7 @@ export interface ChatMessage {
   timestamp: number;
 }
 
-const API = 'http://localhost:5000';
+const API = 'http://localhost:5050';
 
 // Helper: fetch with self-signed cert tolerance
 async function api(path: string, opts: RequestInit = {}) {
@@ -138,6 +138,70 @@ async function toggleMic() {
   }
 }
 
+// ── Mode System (Pensar, Analisar, Criar) ──────────────
+let currentMode = $state<'normal' | 'think' | 'analyze' | 'create'>('normal');
+
+function setMode(mode: 'normal' | 'think' | 'analyze' | 'create') {
+  currentMode = mode;
+  if (mode === 'think') {
+    addMessage('luna', '🤔 Modo **Pensar** ativado. Vou raciocinar passo a passo antes de responder.');
+  } else if (mode === 'analyze') {
+    addMessage('luna', '🔍 Modo **Analisar** ativado. Vou examinar telas, imagens e arquivos com atenção.');
+  } else if (mode === 'create') {
+    addMessage('luna', '✨ Modo **Criar** ativado. Vou usar toda minha inteligência para programar e gerar.');
+  }
+}
+
+async function sendWithMode(mode: string, text: string) {
+  if (mode === 'pensar') {
+    setMode('think');
+    await sendMessage(`[PENSAR] ${text}`);
+  } else if (mode === 'analisar') {
+    setMode('analyze');
+    await sendMessage(`[ANALISAR] ${text}`);
+  } else if (mode === 'criar') {
+    setMode('create');
+    addMessage('user', text);
+    status = 'thinking';
+    isTyping = true;
+    currentAction = 'Gerando...';
+    try {
+      if (text.toLowerCase().includes('imagem') || text.toLowerCase().includes('arte') || text.toLowerCase().includes('cria') || text.toLowerCase().includes('design')) {
+        const resp = await api('/api/code/chat', {
+          method: 'POST',
+          body: JSON.stringify({ message: `PROJETO VISUAL: ${text}`, current_code: '', session_id: 'create-mode' })
+        });
+        isTyping = false;
+        currentAction = '';
+        status = 'speaking';
+        addMessage('luna', resp?.explanation || 'Pronto.');
+        if (resp?.code) {
+          addMessage('luna', `\`\`\`html\n${resp.code.slice(0, 3000)}\n\`\`\``);
+        }
+      } else {
+        currentMode = 'create';
+        const resp = await api('/api/code/chat', {
+          method: 'POST',
+          body: JSON.stringify({ message: `PROJETO: ${text}`, current_code: '', session_id: 'create-mode' })
+        });
+        isTyping = false;
+        currentAction = '';
+        status = 'speaking';
+        addMessage('luna', resp?.explanation || 'Pronto.');
+        if (resp?.code) {
+          addMessage('luna', `\`\`\`html\n${resp.code.slice(0, 3000)}\n\`\`\``);
+        }
+      }
+      setTimeout(() => { status = 'idle'; }, 2500);
+    } catch {
+      isTyping = false;
+      currentAction = '';
+      status = 'idle';
+      addMessage('luna', '⚠️ Erro no modo Criar.');
+    }
+  }
+}
+
 // ── System Status ───────────────────────────────────────
 async function checkConnection() {
   try {
@@ -147,6 +211,10 @@ async function checkConnection() {
   } catch {
     connected = false;
   }
+}
+
+async function resetSystem() {
+  try { return await api('/api/system/reset', { method: 'DELETE' }); } catch { return null; }
 }
 
 async function fetchPerformance() {
@@ -389,10 +457,12 @@ export function useLuna() {
     get sessions() { return sessions; },
     get systemInfo() { return systemInfo; },
     get voiceEnabled() { return voiceEnabled; },
-    sendMessage, toggleMic, addMessage, checkConnection,
+    get currentMode() { return currentMode; },
+    sendMessage, toggleMic, addMessage, checkConnection, sendWithMode, setMode,
     fetchSessions, createSession, deleteSession, switchSession,
     mediaControl, getMemoryStats, getMemoryFacts, fetchPerformance,
     toggleVoiceInput, fetchSystemMetrics, fetchSystemFacts, deleteSystemFacts,
+    resetSystem,
     fetchSystemApps, openSystemApp, fetchLightsStatus, setLightsState,
     fetchSchedules, addSchedule, deleteSchedule, toggleSchedule,
     fetchControlSummary, fetchProcesses, killProcess, sendCodeChat,

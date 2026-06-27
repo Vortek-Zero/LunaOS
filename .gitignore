@@ -20,3 +20,22 @@ client_secret_*.json
 lights/tinytuya.json
 n8n_install/
 luna-desktop/src-tauri/target/
+config/ssl/
+
+# Browser profile cache (auto-generated, huge)
+data/browser_profile/
+
+# Backup files
+*.bak
+*~
+
+# Embedded/experimental repos (external)
+Agent-S/
+OpenJarvis/
+agno/
+claw-code/
+crewAI/
+langgraph/
+openclaw/
+Terminal-assistent/
+Nina-folders/

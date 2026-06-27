@@ -168,6 +168,11 @@ KEYWORDS = {
         ("cancela o foco",              "Cancela a sessão ativa"),
         ("foco  /  status do foco",     "Verifica status da sessão atual"),
     ],
+    "🔄 Atualizações": [
+        ("versao  /  versão",           "Mostra a versão atual do Luna"),
+        ("atualizar  /  update",        "Verifica se há nova versão no GitHub"),
+        ("testar atualização",          "Simula notificação de atualização"),
+    ],
     "🖥 Controle do Sistema": [
         ("abra [app]  /  abrir [app]", "Abre qualquer aplicativo instalado"),
         ("role para cima/baixo",        "Rola a tela atual"),
