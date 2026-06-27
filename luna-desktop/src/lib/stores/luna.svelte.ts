@@ -439,6 +439,12 @@ async function toggleVoiceInput() {
   try { const d = await api('/api/voice/input/toggle', { method: 'POST' }); voiceEnabled = d.enabled; } catch {}
 }
 
+async function speakMessage(text: string) {
+  try {
+    await api('/api/voice/speak', { method: 'POST', body: JSON.stringify({ message: text }) });
+  } catch {}
+}
+
 async function shutdownBackend() {
   try { await api('/api/shutdown', { method: 'POST' }); } catch {}
 }
@@ -458,7 +464,7 @@ export function useLuna() {
     get systemInfo() { return systemInfo; },
     get voiceEnabled() { return voiceEnabled; },
     get currentMode() { return currentMode; },
-    sendMessage, toggleMic, addMessage, checkConnection, sendWithMode, setMode,
+    sendMessage, toggleMic, addMessage, checkConnection, sendWithMode, setMode, speakMessage,
     fetchSessions, createSession, deleteSession, switchSession,
     mediaControl, getMemoryStats, getMemoryFacts, fetchPerformance,
     toggleVoiceInput, fetchSystemMetrics, fetchSystemFacts, deleteSystemFacts,

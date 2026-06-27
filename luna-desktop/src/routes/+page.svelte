@@ -24,9 +24,6 @@
   };
 
   $effect(() => { luna.checkConnection(); });
-  $effect(() => {
-    if (luna.messages.length === 0) luna.addMessage('luna', 'Sistemas online. Pronta para ajudar.');
-  });
 
   async function handleWindowAction(action: 'minimize' | 'maximize' | 'close') {
     try {
@@ -68,16 +65,29 @@
 
     {#if activeTab === 'chat'}
       <header class="header">
-        <div class="greeting">
-          <span class="greeting-sub">Olá, eu sou a</span>
-          <h1 class="greeting-title">LUNA</h1>
-          <p class="greeting-desc">Como posso te ajudar hoje?</p>
-        </div>
+        {#if luna.messages.length > 0}
+          <div class="greeting">
+            <span class="greeting-sub">Olá, eu sou a</span>
+            <h1 class="greeting-title">LUNA</h1>
+            <p class="greeting-desc">Como posso te ajudar hoje?</p>
+          </div>
+        {/if}
         <div class="header-right">
           <div class="conn-badge" class:connected={luna.connected}>
             <span class="conn-dot"></span>
             <span class="conn-label">{luna.connected ? 'Conectado' : 'Offline'}</span>
           </div>
+          <button
+            class="voice-badge glass-panel"
+            class:on={luna.voiceEnabled}
+            onclick={() => luna.toggleVoiceInput()}
+            title={luna.voiceEnabled ? 'Voz ativada' : 'Voz desativada'}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            </svg>
+          </button>
           <div class="mode-badge glass-panel">
             <img src="/logo.png" alt="Luna" style="width:18px;height:18px;object-fit:contain;margin-right:4px;" />
             <div class="mode-text">
@@ -90,7 +100,24 @@
       </header>
 
       <div class="chat-area">
-        <ChatPanel messages={luna.messages} isTyping={luna.isTyping} currentAction={luna.currentAction} />
+        {#if luna.messages.length === 0}
+          <div class="nexus-container">
+            <div class="nexus-orb">
+              <img src="/logo.png" alt="Luna" class="nexus-logo" />
+              <div class="nexus-ring r1"></div>
+              <div class="nexus-ring r2"></div>
+              <div class="nexus-ring r3"></div>
+            </div>
+            <h1 class="nexus-title">LUNA</h1>
+            <p class="nexus-sub">Sistemas online · Pronta para ajudar</p>
+            <div class="nexus-voice-status" class:on={luna.voiceEnabled}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+              <span>{luna.voiceEnabled ? 'Comando de voz ativo' : 'Comando de voz desativado'}</span>
+            </div>
+          </div>
+        {:else}
+          <ChatPanel messages={luna.messages} isTyping={luna.isTyping} currentAction={luna.currentAction} onSpeak={(t) => luna.speakMessage(t)} />
+        {/if}
       </div>
 
       <footer class="footer">
@@ -104,19 +131,24 @@
 
     {:else if activeTab === 'voice'}
       <div class="panel-view">
-        <div class="panel-header">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/></svg>
-          <h2>Voz</h2>
-        </div>
         <div class="panel-body center">
-          <div class="orb-placeholder">
-            <img src="/logo.png" alt="Luna" class="voice-logo" />
+          <div class="nexus-container" style="padding-bottom:0">
+            <div class="nexus-orb">
+              <img src="/logo.png" alt="Luna" class="nexus-logo" />
+              <div class="nexus-ring r1"></div>
+              <div class="nexus-ring r2"></div>
+              <div class="nexus-ring r3"></div>
+            </div>
+            <p class="status-label" class:active={luna.status !== 'idle'}>{statusLabels[luna.status]}</p>
+            <button class="big-mic-btn" class:recording={luna.status === 'listening'} onclick={() => luna.toggleMic()}>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+              {luna.status === 'listening' ? 'Parar' : 'Falar'}
+            </button>
+            <div class="nexus-voice-status" class:on={luna.voiceEnabled}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+              <span>{luna.voiceEnabled ? 'Comando de voz ativo' : 'Comando de voz desativado'}</span>
+            </div>
           </div>
-          <p class="status-label" class:active={luna.status !== 'idle'}>{statusLabels[luna.status]}</p>
-          <button class="big-mic-btn" class:recording={luna.status === 'listening'} onclick={() => luna.toggleMic()}>
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
-            {luna.status === 'listening' ? 'Parar' : 'Falar'}
-          </button>
         </div>
       </div>
 
@@ -221,6 +253,106 @@
   .conn-label { font-size:11px; font-weight:500; color:rgba(255,255,255,0.4); transition:color 0.3s; }
   .conn-badge.connected .conn-label { color:rgba(34,197,94,0.8); }
 
+  .voice-badge {
+    width: 36px; height: 36px;
+    border: none; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    color: rgba(255,255,255,0.25);
+    transition: all 0.3s;
+    font-size: 16px;
+  }
+  .voice-badge.on {
+    color: #22c55e;
+    background: rgba(34,197,94,0.1) !important;
+    border-color: rgba(34,197,94,0.2) !important;
+    box-shadow: 0 0 16px rgba(34,197,94,0.15);
+  }
+  .voice-badge.on svg { filter: drop-shadow(0 0 6px rgba(34,197,94,0.4)); }
+
+  /* ── Nexus (idle screen) ── */
+  .nexus-container {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    animation: fadeInUp 0.8s ease both;
+    padding-bottom: 10vh;
+  }
+  .nexus-orb {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .nexus-logo {
+    width: 72px;
+    height: 72px;
+    object-fit: contain;
+    border-radius: 50%;
+    z-index: 2;
+    animation: nexusPulse 3s ease-in-out infinite;
+    filter: drop-shadow(0 0 20px rgba(59,158,255,0.3));
+  }
+  .nexus-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1.5px solid rgba(59,158,255,0.15);
+    animation: nexusSpin 8s linear infinite;
+  }
+  .nexus-ring.r1 { width: 100px; height: 100px; }
+  .nexus-ring.r2 { width: 130px; height: 130px; animation-duration: 12s; animation-direction: reverse; border-color: rgba(139,92,246,0.12); }
+  .nexus-ring.r3 { width: 160px; height: 160px; animation-duration: 16s; border-color: rgba(34,197,94,0.08); }
+  .nexus-title {
+    font-family: 'Outfit', 'Inter', sans-serif;
+    font-size: 48px;
+    font-weight: 700;
+    background: linear-gradient(135deg, #6ec6ff 0%, #3b9eff 50%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    line-height: 1.1;
+    margin: 0;
+    letter-spacing: 0.05em;
+  }
+  .nexus-sub {
+    font-size: 14px;
+    color: rgba(148,163,184,0.5);
+    margin: 0;
+    font-weight: 400;
+  }
+  .nexus-voice-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 12px;
+    color: rgba(255,255,255,0.25);
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    transition: all 0.3s;
+  }
+  .nexus-voice-status.on {
+    color: rgba(34,197,94,0.7);
+    border-color: rgba(34,197,94,0.15);
+    background: rgba(34,197,94,0.05);
+  }
+  .nexus-voice-status.on svg { color: #22c55e; }
+
+  @keyframes nexusPulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.05); opacity: 0.85; }
+  }
+  @keyframes nexusSpin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
   .chat-area {
     flex: 1;
     overflow-y: auto;
@@ -233,22 +365,8 @@
   .footer { padding:0 40px 24px; flex-shrink:0; position:relative; z-index:10; }
 
   .panel-view { flex:1; display:flex; flex-direction:column; overflow:hidden; animation:fadeInUp 0.4s ease both; position:relative; z-index:1; }
-  .panel-header { display:flex; align-items:center; gap:10px; padding:16px 32px; flex-shrink:0; }
-  .panel-header h2 { font-size:18px; font-weight:600; color:rgba(255,255,255,0.8); }
-  .panel-header svg { color:var(--accent-blue); }
   .panel-body { flex:1; overflow-y:auto; padding:0 32px 32px; display:flex; flex-direction:column; gap:12px; }
   .panel-body.center { align-items:center; justify-content:center; }
-
-  .orb-placeholder {
-    width: 120px; height: 120px;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .voice-logo {
-    width: 100px; height: 100px;
-    object-fit: contain;
-    border-radius: 50%;
-    box-shadow: 0 0 30px rgba(59,158,255,0.3);
-  }
 
   .status-label { font-size:15px; font-weight:500; color:rgba(255,255,255,0.35); letter-spacing:0.03em; transition:all 0.4s; }
   .status-label.active { color:var(--accent-blue); text-shadow:0 0 20px rgba(59,158,255,0.3); }
