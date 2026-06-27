@@ -78,6 +78,10 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 async def verify_api_key(request: Request, api_key: Optional[str] = Depends(API_KEY_HEADER)):
+    # Conexões locais (Tauri Desktop, frontend local) não precisam de chave
+    host = request.client.host if request.client else ""
+    if host in ("127.0.0.1", "::1", "localhost"):
+        return api_key or "local"
     if not api_key or api_key != config.API_KEY:
         raise HTTPException(
             status_code=403,
