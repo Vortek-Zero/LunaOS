@@ -1,14 +1,16 @@
 <script lang="ts">
   import type { ChatMessage } from '$lib/stores/luna.svelte';
 
-  let { messages = [], isTyping = false, currentAction = '' } = $props<{
+  let { messages = [], isTyping = false, currentAction = '', onSpeak } = $props<{
     messages: ChatMessage[];
     isTyping: boolean;
     currentAction?: string;
+    onSpeak?: (text: string) => void;
   }>();
 
   let chatContainer: HTMLDivElement;
   let copiedId = $state<string | null>(null);
+  let speakingId = $state<string | null>(null);
 
   $effect(() => {
     if (messages.length && chatContainer) {
@@ -74,6 +76,20 @@
           <div class="msg-text">{@html renderMarkdown(msg.text)}</div>
           <div class="meta">{formatTime(msg.timestamp)}</div>
         </div>
+        {#if msg.sender === 'luna'}
+          <button
+            class="copy-btn speak-btn"
+            class:speaking={speakingId === msg.id}
+            onclick={() => { speakingId = msg.id; onSpeak?.(msg.text); setTimeout(() => { if (speakingId === msg.id) speakingId = null; }, 2000); }}
+            title="Falar"
+          >
+            {#if speakingId === msg.id}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+            {:else}
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+            {/if}
+          </button>
+        {/if}
         <button
           class="copy-btn"
           class:copied={copiedId === msg.id}
@@ -256,6 +272,13 @@
     background: rgba(34,197,94,0.1);
     border-color: rgba(34,197,94,0.2);
     color: #22c55e;
+  }
+
+  .speak-btn.speaking {
+    opacity: 1;
+    background: rgba(59,158,255,0.15);
+    border-color: rgba(59,158,255,0.3);
+    color: #3b9eff;
   }
 
   /* Typing */
