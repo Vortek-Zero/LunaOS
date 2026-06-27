@@ -151,68 +151,101 @@ class TTSEngine:
             chunks.append(current.strip())
         return chunks if len(chunks) > 1 else [text]
 
+    def _process_text(self, text: str):
+        """Processa texto pelo VoiceEngine (Yara) e retorna (final_text, rate, pitch)."""
+        if HAS_VOICE_ENGINE:
+            engine = get_voice_engine()
+            segments, params = engine.process(text, base_volume=self.volume)
+            final_text = engine.segments_to_text(segments)
+            return final_text, params.rate, params.pitch
+        return self._clean_text(text), self.rate, self.pitch
+
+    def _generate_chunk_audio(self, text: str):
+        """Gera áudio para um chunk e retorna (data, samplerate) ou (None, None)."""
+        if not text or not text.strip():
+            return None, None
+        final_text, rate, pitch = self._process_text(text)
+        if not final_text:
+            return None, None
+
+        out_path = f"/tmp/luna_tts_{os.getpid()}_{id(text)}.wav"
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self._generate_audio(final_text, rate, pitch, out_path))
+            finally:
+                loop.close()
+
+            if os.path.exists(out_path) and os.path.getsize(out_path) > 0:
+                data, sr = sf.read(out_path)
+                if HAS_VOICE_ENGINE:
+                    data, sr = VoiceEngine.postprocess_audio(data, sr)
+                return data, sr
+        except Exception as e:
+            print(err("TTS_CHUNK_FAILED", str(e)))
+        finally:
+            try:
+                if os.path.exists(out_path):
+                    os.remove(out_path)
+            except Exception:
+                pass
+        return None, None
+
     def _speak_sync(self, text: str) -> None:
-        """Executa TTS de forma síncrona com event loop próprio."""
+        """Executa TTS com pré-processamento: gera próximo chunk enquanto o atual toca."""
         with self._lock:
             self._stop_requested = False
             self._speaking = True
+            from concurrent.futures import Future
             try:
                 chunks = self._chunk_text(text)
-                for chunk in chunks:
+                if not chunks:
+                    return
+
+                # Gera o primeiro chunk (bloqueante)
+                data, sr = self._generate_chunk_audio(chunks[0])
+
+                for i in range(len(chunks)):
                     if getattr(self, '_stop_requested', False):
                         break
-                    self._speak_chunk(chunk)
+
+                    # Pré-processa próximo chunk em background
+                    prefetch: Future | None = None
+                    if i + 1 < len(chunks):
+                        prefetch = self._thread_pool.submit(self._generate_chunk_audio, chunks[i + 1])
+
+                    # Toca o chunk atual
+                    if data is not None:
+                        try:
+                            sd.play(data, sr)
+                            sd.wait()
+                        except Exception as e:
+                            print(err("TTS_PLAYBACK_FAILED", str(e)))
+
+                    if getattr(self, '_stop_requested', False):
+                        break
+
+                    # Pega o resultado do pré-processamento (já deve estar pronto)
+                    if prefetch is not None:
+                        try:
+                            data, sr = prefetch.result()
+                        except Exception as e:
+                            print(err("TTS_PREFETCH_FAILED", str(e)))
+                            data, sr = None, None
+                    else:
+                        data, sr = None, None
+
             except Exception as e:
                 print(err("TTS_AUDIO_DEVICE_FAILED", f"Falar: {e}"))
             finally:
                 self._speaking = False
 
-    def _speak_chunk(self, text: str) -> None:
-        """Gera e reproduz áudio para um único chunk de texto."""
-        if not text or not text.strip():
-            return
-        try:
-            if HAS_VOICE_ENGINE:
-                engine = get_voice_engine()
-                segments, params = engine.process(text, base_volume=self.volume)
-                final_text = engine.segments_to_text(segments)
-                rate  = params.rate
-                pitch = params.pitch
-            else:
-                final_text = self._clean_text(text)
-                rate  = self.rate
-                pitch = self.pitch
-
-            if not final_text or getattr(self, '_stop_requested', False):
-                return
-
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                loop.run_until_complete(self._generate_audio(final_text, rate, pitch))
-            finally:
-                loop.close()
-
-            if os.path.exists(TTS_TEMP_FILE):
-                data, samplerate = sf.read(TTS_TEMP_FILE)
-                if HAS_VOICE_ENGINE:
-                    data, samplerate = VoiceEngine.postprocess_audio(data, samplerate)
-                try:
-                    if getattr(self, '_stop_requested', False):
-                        return
-                    sd.play(data, samplerate)
-                    sd.wait()
-                except Exception as e:
-                    print(err("TTS_AUDIO_DEVICE_FAILED", str(e)))
-                try:
-                    os.remove(TTS_TEMP_FILE)
-                except Exception:
-                    pass
-        except Exception as e:
-            print(err("TTS_AUDIO_DEVICE_FAILED", f"Falar chunk: {e}"))
-
-    async def _generate_audio(self, text: str, rate: str = None, pitch: str = None) -> None:
+    async def _generate_audio(self, text: str, rate: str = None, pitch: str = None,
+                               output_path: str = None) -> None:
         """Gera o arquivo de áudio tentando os motores na ordem da prioridade configurada."""
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
         priority = getattr(config, "TTS_PRIORITY", ["google_cloud", "f5", "edge_tts", "elevenlabs", "azure", "pyttsx3"])
         
         for engine_name in priority:
@@ -220,25 +253,27 @@ class TTSEngine:
             success = False
             
             if engine_name == "google_cloud":
-                success = await self._play_google_cloud(text)
+                success = await self._play_google_cloud(text, output_path)
             elif engine_name == "f5":
-                success = await self._play_f5(text)
+                success = await self._play_f5(text, output_path)
             elif engine_name == "edge_tts":
-                success = await self._play_edge_tts(text, rate, pitch)
+                success = await self._play_edge_tts(text, rate, pitch, output_path)
             elif engine_name == "elevenlabs":
-                success = await self._play_elevenlabs(text)
+                success = await self._play_elevenlabs(text, output_path)
             elif engine_name == "azure":
-                success = await self._play_azure(text)
+                success = await self._play_azure(text, output_path)
             elif engine_name == "pyttsx3":
-                success = await self._play_pyttsx3(text)
+                success = await self._play_pyttsx3(text, output_path)
                 
-            if success and os.path.exists(TTS_TEMP_FILE) and os.path.getsize(TTS_TEMP_FILE) > 0:
+            if success and os.path.exists(output_path) and os.path.getsize(output_path) > 0:
                 print(f"[TTS] ✓ Áudio gerado com sucesso usando o motor: {engine_name}")
                 return
                 
         print(err("TTS_ALL_ENGINES_FAILED", "Nenhum motor de voz conseguiu gerar o áudio."))
 
-    async def _play_google_cloud(self, text: str) -> bool:
+    async def _play_google_cloud(self, text: str, output_path: str = None) -> bool:
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
         try:
             from google.cloud import texttospeech
             creds = None
@@ -269,23 +304,27 @@ class TTSEngine:
                 input=input_text, voice=voice, audio_config=audio_config
             )
             
-            with open(TTS_TEMP_FILE, "wb") as out:
+            with open(output_path, "wb") as out:
                 out.write(response.audio_content)
             return True
         except Exception as e:
-            # Silencioso se não configurado
             return False
 
-    async def _play_f5(self, text: str) -> bool:
+    async def _play_f5(self, text: str, output_path: str = None) -> bool:
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
         if hasattr(self, 'f5_engine') and self.f5_engine is not None:
             try:
-                self.f5_engine.generate_to_file(text, TTS_TEMP_FILE)
+                self.f5_engine.generate_to_file(text, output_path)
                 return True
             except Exception as e:
                 print(err("TTS_F5_FAILED", str(e)))
         return False
 
-    async def _play_edge_tts(self, text: str, rate: str = None, pitch: str = None) -> bool:
+    async def _play_edge_tts(self, text: str, rate: str = None, pitch: str = None,
+                              output_path: str = None) -> bool:
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
         if not HAS_EDGE_TTS:
             return False
         try:
@@ -298,13 +337,15 @@ class TTSEngine:
                 pitch=pitch,
                 volume=self.volume,
             )
-            await communicate.save(TTS_TEMP_FILE)
+            await communicate.save(output_path)
             return True
         except Exception as e:
             print(err("TTS_EDGE_FAILED", str(e)))
             return False
 
-    async def _play_elevenlabs(self, text: str) -> bool:
+    async def _play_elevenlabs(self, text: str, output_path: str = None) -> bool:
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
         api_key = getattr(config, "ELEVENLABS_API_KEY", "")
         if not api_key:
             return False
@@ -327,7 +368,7 @@ class TTSEngine:
             }
             resp = requests.post(url, json=data, headers=headers, timeout=10)
             if resp.status_code == 200:
-                with open(TTS_TEMP_FILE, "wb") as f:
+                with open(output_path, "wb") as f:
                     f.write(resp.content)
                 return True
             else:
@@ -341,7 +382,9 @@ class TTSEngine:
     def _xml_escape(text: str) -> str:
         return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
 
-    async def _play_azure(self, text: str) -> bool:
+    async def _play_azure(self, text: str, output_path: str = None) -> bool:
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
         key = getattr(config, "AZURE_SPEECH_KEY", "")
         region = getattr(config, "AZURE_SPEECH_REGION", "eastus")
         if not key:
@@ -363,7 +406,7 @@ class TTSEngine:
             </speak>"""
             resp = requests.post(url, data=ssml.encode('utf-8'), headers=headers, timeout=10)
             if resp.status_code == 200:
-                with open(TTS_TEMP_FILE, "wb") as f:
+                with open(output_path, "wb") as f:
                     f.write(resp.content)
                 return True
             else:
@@ -373,7 +416,9 @@ class TTSEngine:
             print(err("TTS_AZURE_FAILED", str(e)))
             return False
 
-    async def _play_pyttsx3(self, text: str) -> bool:
+    async def _play_pyttsx3(self, text: str, output_path: str = None) -> bool:
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
         try:
             import pyttsx3
             engine = pyttsx3.init()
@@ -383,17 +428,13 @@ class TTSEngine:
                     engine.setProperty('voice', voice.id)
                     break
             
-            wav_file = str(TEMP_DIR / "luna_pyttsx3.wav")
+            wav_file = str(TEMP_DIR / f"luna_pyttsx3_{os.getpid()}.wav")
             engine.save_to_file(text, wav_file)
             engine.runAndWait()
             
             if os.path.exists(wav_file):
-                if os.path.exists(TTS_TEMP_FILE):
-                    try:
-                        os.remove(TTS_TEMP_FILE)
-                    except Exception:
-                        pass
-                os.rename(wav_file, TTS_TEMP_FILE)
+                import shutil
+                shutil.move(wav_file, output_path)
                 return True
             return False
         except Exception as e:
