@@ -29,7 +29,7 @@ class DeviceManager:
     Carrega de devices.json; permite trocar o worker ativo em runtime.
     """
 
-    DEVICES_FILE = Path(__file__).parent / "devices.json"
+    DEVICES_FILE = Path(__file__).parent / "config" / "devices.json"
 
     def __init__(self):
         self._devices: dict[str, dict] = {}

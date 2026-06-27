@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Optional
 
-APPS_FILE = Path(__file__).parent.parent / "apps.json"
+APPS_FILE = Path(__file__).parent.parent / "config" / "apps.json"
 
 class AppManager:
     """Gerencia listagem e execução de aplicações locais."""

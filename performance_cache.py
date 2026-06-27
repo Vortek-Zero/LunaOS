@@ -6,6 +6,7 @@ Reduz latência de resposta e uso de CPU/GPU
 
 import json
 import hashlib
+import heapq
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Any
 from pathlib import Path
@@ -41,6 +42,8 @@ class SmartCache:
         self._l1_cache: Dict[str, Dict] = {}  # Cache em memória (L1 — latência zero)
         self._dirty = False  # Flag para saber se precisa salvar
         self._lock = threading.Lock()
+        self._flush_timer = None
+        self._start_flush_timer()
         self.hit_count = {}  # Rastreamento de hits para estatísticas
         self.miss_count = {}
 
@@ -88,6 +91,20 @@ class SmartCache:
         except Exception as e:
             print(f"[CACHE WARN] Erro ao salvar cache: {e}")
 
+    def _start_flush_timer(self) -> None:
+        """Flush dirty cache to disk every 30 seconds."""
+        if self._flush_timer is not None:
+            self._flush_timer.cancel()
+        self._flush_timer = threading.Timer(30.0, self._periodic_flush)
+        self._flush_timer.daemon = True
+        self._flush_timer.start()
+
+    def _periodic_flush(self) -> None:
+        try:
+            self.flush()
+        finally:
+            self._start_flush_timer()
+
     def _hash_query(self, query: str) -> str:
         """Cria hash SHA256 da query para chave de cache"""
         return hashlib.sha256(query.lower().strip().encode()).hexdigest()[:16]
@@ -124,6 +141,9 @@ class SmartCache:
 
             entry["access_count"] = entry.get("access_count", 0) + 1
             entry["last_accessed"] = datetime.now().isoformat()
+            # Sync back to L2 cache for persistence
+            self.cache["entries"][query_hash] = entry
+            self._dirty = True
             self.hit_count[query_hash] = self.hit_count.get(query_hash, 0) + 1
 
             return {
@@ -175,39 +195,47 @@ class SmartCache:
 
             entries = self.cache["entries"]
             if len(entries) > max_entries:
-                sorted_keys = sorted(
-                    entries.keys(),
-                    key=lambda k: entries[k].get("last_accessed", ""),
-                )
-                for old_key in sorted_keys[:len(entries) - max_entries]:
-                    entries.pop(old_key, None)
-                    self._l1_cache.pop(old_key, None)
+                # Use heapq for O(log N) LRU eviction
+                heap = [
+                    (entry.get("last_accessed", ""), key)
+                    for key, entry in entries.items()
+                ]
+                heapq.heapify(heap)
+                to_remove = len(entries) - max_entries
+                for _ in range(to_remove):
+                    if heap:
+                        _, old_key = heapq.heappop(heap)
+                        entries.pop(old_key, None)
+                        self._l1_cache.pop(old_key, None)
 
-            self._save_cache()
+            self._dirty = True
+
+    def flush(self) -> None:
+        with self._lock:
+            if self._dirty:
+                self._save_cache()
+                self._dirty = False
 
     def clear_expired(self) -> int:
-        """Remove entradas expiradas do cache. Retorna quantidade removida."""
-        removed = 0
-        if "entries" not in self.cache:
+        with self._lock:
+            removed = 0
+            if "entries" not in self.cache:
+                return removed
+            expired_keys = []
+            for key, entry in self.cache["entries"].items():
+                try:
+                    expires_at = datetime.fromisoformat(entry.get("expires_at", datetime.now().isoformat()))
+                    if datetime.now() > expires_at:
+                        expired_keys.append(key)
+                        removed += 1
+                except Exception:
+                    pass
+            for key in expired_keys:
+                del self.cache["entries"][key]
+                self._l1_cache.pop(key, None)  # P3: also remove from L1
+            if removed > 0:
+                self._save_cache()
             return removed
-
-        expired_keys = []
-        for key, entry in self.cache["entries"].items():
-            try:
-                expires_at = datetime.fromisoformat(entry.get("expires_at", datetime.now().isoformat()))
-                if datetime.now() > expires_at:
-                    expired_keys.append(key)
-                    removed += 1
-            except Exception:
-                pass
-
-        for key in expired_keys:
-            del self.cache["entries"][key]
-
-        if removed > 0:
-            self._save_cache()
-
-        return removed
 
     def get_stats(self) -> Dict:
         """Retorna estatísticas de uso do cache"""
@@ -261,8 +289,8 @@ class ResponseOptimizer:
         """
         Define top_p (nucleus sampling) baseado no comprimento esperado.
 
-        Respostas curtas: top_p maior (mais coerência obrigatória)
-        Respostas longas: top_p menor (mais diversidade)
+        Respostas curtas: top_p menor (mais determinístico)
+        Respostas longas: top_p maior (mais diversidade)
         """
         if response_length_estimate < 20:
             return 0.8  # Resposta muito curta

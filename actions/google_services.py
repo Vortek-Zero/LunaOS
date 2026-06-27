@@ -40,8 +40,7 @@ SCOPES = [
 BASE_DIR = Path(__file__).parent.parent
 CREDENTIALS_FILE = BASE_DIR / "credentials.json"
 TOKEN_FILE = BASE_DIR / "token.json"
-WORKSPACE_DIR = Path("/home/pera/Luna-programming")
-
+from config import WORKSPACE_DIR
 
 class GoogleManager:
     def __init__(self):
@@ -117,6 +116,33 @@ class GoogleManager:
             return "\n".join(lines)
         except Exception as e:
             return f"Erro ao acessar o calendário: {e}"
+
+    def get_today_events_formatted(self) -> str:
+        """Retorna eventos de hoje em formato conciso para o briefing."""
+        if not self.available:
+            return ""
+        try:
+            service = self._cal()
+            today = datetime.date.today().isoformat()
+            time_min = today + "T00:00:00Z"
+            time_max = today + "T23:59:59Z"
+            events = service.events().list(
+                calendarId="primary", timeMin=time_min, timeMax=time_max,
+                maxResults=15, singleEvents=True, orderBy="startTime"
+            ).execute().get("items", [])
+            if not events:
+                return ""
+            lines = []
+            for ev in events:
+                start = ev["start"].get("dateTime", ev["start"].get("date"))
+                try:
+                    t = datetime.datetime.fromisoformat(start.replace('Z', '+00:00')).strftime("%H:%M")
+                except Exception:
+                    t = "Dia inteiro"
+                lines.append(f"  • {t} — {ev['summary']}")
+            return "\n".join(lines)
+        except Exception:
+            return ""
 
     def get_events_by_date(self, date_str: str, max_results: int = 20) -> str:
         """Lista eventos de uma data específica (YYYY-MM-DD)."""

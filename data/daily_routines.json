@@ -1,0 +1,55 @@
+[
+  {
+    "id": "morning_briefing",
+    "name": "Briefing Matinal",
+    "hour": 7,
+    "minute": 30,
+    "actions": [
+      {
+        "type": "briefing",
+        "params": {}
+      }
+    ],
+    "days": null,
+    "enabled": true,
+    "last_fired": "2026-06-26"
+  },
+  {
+    "id": "calendar_check_morning",
+    "name": "Verificação de Agenda",
+    "hour": 8,
+    "minute": 0,
+    "actions": [
+      {
+        "type": "calendar_check",
+        "params": {}
+      }
+    ],
+    "days": [
+      0,
+      1,
+      2,
+      3,
+      4
+    ],
+    "enabled": true,
+    "last_fired": "2026-06-26"
+  },
+  {
+    "id": "evening_wind_down",
+    "name": "Resumo do Final do Dia",
+    "hour": 20,
+    "minute": 0,
+    "actions": [
+      {
+        "type": "say",
+        "params": {
+          "message": "Hora de começar a desacelerar. Que tal revisar o dia de amanhã?"
+        }
+      }
+    ],
+    "days": null,
+    "enabled": false,
+    "last_fired": null
+  }
+]

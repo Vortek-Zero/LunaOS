@@ -1,24 +1,28 @@
 #!/usr/bin/env python3
 """
 luna_core.py — Cérebro central da Luna (Singleton)
-
-Arquitetura limpa:
-  - Uma única instância global (sem duplicação)
-  - Pipeline: Input → Intenção → Plano → Ações → Resposta
-  - ReAct loop real para agente autônomo
-  - Sem gambiarras: cada módulo tem responsabilidade única
 """
+import sys
+import ast
+
+# 🚨 Monkey patch para compatibilidade com Python 3.14+ (evita erros em dependências legadas como CrewAI)
+if sys.version_info >= (3, 14):
+    if not hasattr(ast, 'NameConstant'):
+        setattr(ast, 'NameConstant', ast.Constant)
+    if not hasattr(ast, 'Num'):
+        setattr(ast, 'Num', ast.Constant)
+    if not hasattr(ast, 'Str'):
+        setattr(ast, 'Str', ast.Constant)
+
 import json
 import re
 import time
 import threading
-import sys
 from typing import Optional
 from pathlib import Path
 
 # ── Módulos internos ──────────────────────────────────────────
-from brain.planner import generate_plan, format_plan_for_prompt
-from brain.scheduler import select_tools
+import config
 from brain.llm import get_llm, MODELS, GROQ_MODELS, GEMINI_MODELS
 from brain.memory import get_memory
 from voice.tts import get_tts
@@ -26,22 +30,30 @@ from voice.stt import get_stt
 from actions.executor import get_executor
 from actions.writer import get_writer
 from brain.dictionary import get_dictionary
+from brain.daily_routine import (
+    get_routine_manager, get_activity_logger, get_background_worker
+)
+from brain.reflection import OutputValidator, VerificationSystem
+from brain.query_complexity import classify_query
+from brain.loop_guard import LoopGuard
+from brain.trace_logger import get_trace_logger
 from vision.screen import get_vision
 from performance_cache import SmartCache, PerformanceMonitor
 from output_parser import OutputParser
 
 
 # ── Personalidade da Luna ─────────────────────────────────────
-PERSONALITY_FILE = Path(__file__).parent / "personality.json"
-USER_PROFILE_FILE = Path(__file__).parent / "user_profile.json"
+PERSONALITY_FILE = Path(__file__).parent / "config" / "personality.json"
+USER_PROFILE_FILE = Path(__file__).parent / "config" / "user_profile.json"
 
 # Comandos locais — não disparam fact-check web nem extração de memória
 _LOCAL_ACTION_KEYWORDS = (
     "print", "screenshot", "captura", "tira um print", "tira print",
     "timer", "toca", "abre", "fecha", "clica", "digita", "whatsapp",
-    "manda", "envia", "pesquisa", "busca", "lista", "lembret", "nota",
+    "manda", "envia", "pesquisa", "busca", "lista", "listar", "lembret", "nota",
     "luz", "volume", "workspace", "mata", "processo", "brilho", "copia",
-    "clipboard", "arquivo", "pasta", "screenshot", "print da tela",
+    "clipboard", "arquivo", "arquivos", "pasta", "pastas", "home", "diretório", "diretorio",
+    "screenshot", "print da tela",
 )
 
 
@@ -72,6 +84,7 @@ def _tool_progress_label(name: str, raw_args) -> str:
         "system_control": lambda a: f"Sistema: {a.get('action', '')}...",
         "control_window": lambda a: f"Janela: {a.get('action', '')}...",
         "kill_process": lambda a: f"Encerrando {a.get('name') or a.get('pid', 'processo')}...",
+        "image_generate": lambda a: f"Gerando imagem: {a.get('prompt', '')[:40]}...",
     }
     fn = labels.get(name)
     if fn:
@@ -104,44 +117,245 @@ def _sanitize_user_response(text: str) -> str:
         except json.JSONDecodeError:
             pass
 
+    # Remove blocos de função vazados como `create_project("x", [...])`
+    t = re.sub(r'`\w+\([^`]*\)`', '', t)
+    # Remove checkmarks/emojis de "passo concluído"
+    t = re.sub(r'✅.*', '', t)
+    # Remove **Passo N:** headings
+    t = re.sub(r'\*{1,2}Passo \d+.*?\*{1,2}', '', t)
+
     t = re.sub(r"```(?:json)?\s*\{.*?\}\s*```", "", t, flags=re.DOTALL).strip()
     return t.strip() or "Pronto."
 
 
+_TEXT_FUNCTIONS = {
+    "write_code":         ("filename", "content"),
+    "create_project":     ("project_name", "files"),
+    "open_app":           ("app",),
+    "open_url":           ("url",),
+    "search_web":         ("query",),
+    "run_bash_command":   ("command",),
+    "get_weather":        ("city",),
+    "system_control":     ("action", "command"),
+    "document_services":  ("action", "data", "content", "filename"),
+    "set_timer":          ("action", "minutes", "seconds", "name"),
+    "manage_reminder":    ("action", "message", "when"),
+    "manage_notes":       ("action", "content", "query", "index"),
+    "google_services":    ("action", "service", "query", "date", "max_results"),
+    "trigger_n8n_workflow": ("path", "data"),
+    "agno_run":           ("task",),
+    "save_skill":         ("name", "description", "steps"),
+    "ui_click":           ("target",),
+    "ui_type":            ("text",),
+    "ui_key":             ("key",),
+    "ui_scroll":          ("direction",),
+    "see_screen":         (),
+    "self_diagnostic":    (),
+    "image_generate":     ("prompt", "size"),
+}
+
+
+def _split_function_args(text: str) -> list:
+    """Divide argumentos por vírgula respeitando aspas e colchetes."""
+    args, current = [], []
+    depth = bracket_depth = 0
+    in_str = False
+    quote = None
+    for ch in text:
+        if ch in ('"', "'"):
+            if not in_str:
+                in_str, quote = True, ch
+            elif ch == quote:
+                in_str = False
+            current.append(ch)
+        elif ch == '(' and not in_str:
+            depth += 1
+            current.append(ch)
+        elif ch == ')' and not in_str:
+            depth -= 1
+            current.append(ch)
+        elif ch == '[' and not in_str:
+            bracket_depth += 1
+            current.append(ch)
+        elif ch == ']' and not in_str:
+            bracket_depth -= 1
+            current.append(ch)
+        elif ch == ',' and depth == 0 and bracket_depth == 0 and not in_str:
+            args.append(''.join(current).strip())
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        args.append(''.join(current).strip())
+    return args
+
+
+def _parse_arg_value(arg: str):
+    """Converte string de argumento textual para valor Python."""
+    arg = arg.strip()
+    if arg.startswith('"') and arg.endswith('"') and len(arg) >= 2:
+        return arg[1:-1]
+    if arg.startswith("'") and arg.endswith("'") and len(arg) >= 2:
+        return arg[1:-1]
+    if arg.startswith('[') and arg.endswith(']'):
+        try:
+            return json.loads(arg)
+        except json.JSONDecodeError:
+            items = re.findall(r'"([^"]*)"', arg)
+            return items if items else arg
+    return arg
+
+
+def _parse_function_block(block: str) -> Optional[dict]:
+    """Parseia uma chamada de função tipo create_project('nome', [files])."""
+    block = block.strip().strip("`").strip()
+    m = re.match(r"(\w+)\s*\((.*)\)\s*$", block, re.DOTALL)
+    if not m:
+        return None
+    name, rest = m.group(1), m.group(2)
+    param_names = _TEXT_FUNCTIONS.get(name)
+    if param_names is None:
+        return None
+
+    # write_code: extrai filename + content (conteúdo pode ter qualquer caractere)
+    if name == "write_code" and len(param_names) >= 2:
+        m2 = re.match(r'\s*"([^"]*)"\s*,\s*(.*)', rest, re.DOTALL)
+        if m2:
+            filename, content_raw = m2.group(1), m2.group(2).strip()
+            if content_raw.startswith('"') and content_raw.endswith('"'):
+                return {"name": name, "arguments": {"filename": filename, "content": content_raw[1:-1]}}
+            if content_raw.startswith("'") and content_raw.endswith("'"):
+                return {"name": name, "arguments": {"filename": filename, "content": content_raw[1:-1]}}
+
+    # create_project: extrai project_name + files (lista de strings → objetos)
+    if name == "create_project" and len(param_names) >= 2:
+        m2 = re.match(r'\s*"([^"]*)"\s*,\s*(.*)', rest, re.DOTALL)
+        if m2:
+            project_name, files_raw = m2.group(1), m2.group(2).strip()
+            try:
+                files_list = json.loads(files_raw)
+            except json.JSONDecodeError:
+                items = re.findall(r'"([^"]*)"', files_raw)
+                files_list = [{"filename": f, "content": ""} for f in items] if items else None
+            if isinstance(files_list, list):
+                if files_list and isinstance(files_list[0], str):
+                    files_list = [{"filename": f, "content": ""} for f in files_list]
+                return {"name": name, "arguments": {"project_name": project_name, "files": files_list}}
+
+    # Genérico: divide por vírgula e mapeia param names
+    args = _split_function_args(rest)
+    kwargs = {}
+    for i, a in enumerate(args):
+        if i >= len(param_names):
+            break
+        kwargs[param_names[i]] = _parse_arg_value(a)
+    return {"name": name, "arguments": kwargs} if kwargs else None
+
+
+def _extract_functions_from_text(text: str) -> list:
+    """Varre o texto procurando chamadas de função (dentro ou fora de backticks)."""
+    results = []
+
+    # 1) Blocos inline com backticks: `função(args)`
+    for m in re.finditer(r"`([^`]+)`", text):
+        call = _parse_function_block(m.group(1))
+        if call:
+            results.append(call)
+    if results:
+        return _normalize_text_calls(results)
+
+    # 2) Chamadas soltas no texto (sem backticks)
+    for m in re.finditer(r"(?<![`\w])(\w+)\s*\(", text):
+        name = m.group(1)
+        if name not in _TEXT_FUNCTIONS:
+            continue
+        paren_start = m.end() - 1
+        depth, end = 0, -1
+        for i, ch in enumerate(text[paren_start:]):
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    end = paren_start + i + 1
+                    break
+        if end > 0:
+            call = _parse_function_block(text[m.start():end])
+            if call:
+                results.append(call)
+    return _normalize_text_calls(results) if results else []
+
+
+def _normalize_text_calls(calls: list) -> list:
+    """Converte dicts {name, arguments} para tool_call format."""
+    normalized = []
+    ts = int(time.time())
+    for idx, c in enumerate(calls):
+        if not c or "name" not in c or "arguments" not in c:
+            continue
+        normalized.append({
+            "id": f"parsed_{ts}_{idx}_{c['name']}",
+            "type": "function",
+            "function": {
+                "name": c["name"],
+                "arguments": json.dumps(c["arguments"], ensure_ascii=False),
+            },
+        })
+    return normalized
+
+
 def _extract_tool_calls_from_text(raw: str) -> list:
-    """Recupera tool_calls quando o modelo vaza JSON no texto em vez de usar a API nativa."""
-    if not raw or "tool_calls" not in raw:
+    """Recupera tool_calls quando o modelo vaza JSON/função no texto."""
+    if not raw:
         return []
+
+    # 1) JSON com tool_calls (formato existente)
+    if "tool_calls" in raw:
+        try:
+            m = re.search(r"\{.*\"tool_calls\".*\}", raw, re.DOTALL)
+            if m:
+                data = json.loads(m.group())
+                calls = data.get("tool_calls") or []
+                normalized = []
+                for tc in calls:
+                    fn = tc.get("function") or {}
+                    name = fn.get("name")
+                    if name:
+                        normalized.append({
+                            "id": tc.get("id", f"parsed_{int(time.time())}"),
+                            "type": "function",
+                            "function": {"name": name, "arguments": fn.get("arguments", "{}")},
+                        })
+                if normalized:
+                    return normalized
+        except Exception:
+            pass
+        # Fallback: JSON malformado
+        names = re.findall(r'"name"\s*:\s*"(\w+)"', raw)
+        if names:
+            args_m = re.search(r'"arguments"\s*:\s*"(\{.*?\})"', raw)
+            args = args_m.group(1).replace('\\"', '"') if args_m else "{}"
+            return [{
+                "id": f"parsed_{int(time.time())}",
+                "type": "function",
+                "function": {"name": names[0], "arguments": args},
+            }]
+
+    # 2) Funções no texto: função("arg1", "arg2") ou plano **Passo N:** `função(...)`
+    return _extract_functions_from_text(raw)
+
+def _parse_tc_args(tool_call) -> dict:
+    """Extrai argumentos de um tool_call (dict ou objeto)."""
+    if isinstance(tool_call, dict):
+        raw = tool_call.get("function", {}).get("arguments", {})
+    else:
+        raw = tool_call.function.arguments
+    if isinstance(raw, dict):
+        return raw
     try:
-        m = re.search(r"\{.*\"tool_calls\".*\}", raw, re.DOTALL)
-        if m:
-            data = json.loads(m.group())
-            calls = data.get("tool_calls") or []
-            normalized = []
-            for tc in calls:
-                fn = tc.get("function") or {}
-                name = fn.get("name")
-                if name:
-                    normalized.append({
-                        "id": tc.get("id", f"parsed_{int(time.time())}"),
-                        "type": "function",
-                        "function": {"name": name, "arguments": fn.get("arguments", "{}")},
-                    })
-            if normalized:
-                return normalized
-    except Exception:
-        pass
-    # Fallback regex quando JSON está malformado
-    names = re.findall(r'"name"\s*:\s*"(\w+)"', raw)
-    if not names:
-        return []
-    args_m = re.search(r'"arguments"\s*:\s*"(\{.*?\})"', raw)
-    args = args_m.group(1).replace('\\"', '"') if args_m else "{}"
-    return [{
-        "id": f"parsed_{int(time.time())}",
-        "type": "function",
-        "function": {"name": names[0], "arguments": args},
-    }]
+        return json.loads(raw) if raw else {}
+    except (json.JSONDecodeError, TypeError):
+        return {}
 
 def _agent_result(base: dict, tools_executed: int = 0) -> dict:
     """Normaliza retorno do agente; evita re-execução legacy após ferramentas."""
@@ -163,11 +377,11 @@ REGRAS ABSOLUTAS DE TOM E COMPORTAMENTO:
    - Modo Leve/Animado: Pode usar emojis, ser mais carinhosa e demonstrar entusiasmo.
    - Modo Normal: Amigável, natural, com leve bom humor sem exageros.
 2. Para falar com o usuário, apenas ESCREVA O TEXTO NATURALMENTE. NUNCA escreva blocos de JSON puro em sua resposta.
-3. Para interagir com o sistema, abrir sites, e-mails, arquivos, agenda ou tocar música, VOCÊ DEVE USAR A FERRAMENTA (TOOL) correta fornecida. Não explique que vai usar a ferramenta, apenas use.
+3. Para interagir com o sistema, abrir sites, e-mails, arquivos, agenda ou tocar música, USE AS FERRAMENTAS FORNECIDAS VIA API DE FUNCTIONS (function_call). Se você precisa executar uma ação, NÃO escreva function_name("args") no texto da sua resposta — chame a função nativamente pela API. Jamais descreva o plano como se fosse uma simulação; EXECUTE de verdade.
 4. Não invente informações. Se não souber, diga claramente. Para cálculos, CALCULE E MOSTRE o número imediatamente.
 5. Respostas de voz devem ser curtas e naturais (máx 2-3 frases). Não use listas complexas quando puder evitar.
 6. Sugira um próximo passo útil quando fizer sentido (proatividade).
-7. Você é um AGENTE AUTÔNOMO: recebeu uma tarefa → use a ferramenta certa → reporte o resultado concreto. Nunca diga "vou fazer" sem executar.
+7. Você é um AGENTE AUTÔNOMO: recebeu uma tarefa → use a ferramenta certa (function_call nativo) → reporte o resultado concreto. Nunca diga "vou fazer" sem executar. NUNCA escreva `create_project("x")` ou `write_code("x", "y")` em texto — ISSO NÃO EXECUTA NADA.
 8. Para tarefas com múltiplos passos, encadeie ferramentas até concluir — não pare no meio.
 9. PLANEJAMENTO: Se o usuário pedir várias coisas na mesma frase ("e", "depois", ","), identifique TODOS os passos e execute TODOS antes de responder.
 10. Se uma ferramenta falhar, TENTE DE NOVO com abordagem diferente até concluir.
@@ -233,6 +447,7 @@ ACTIONS = {
     "run_bash_command": "Executar comando síncrono no terminal — params: {command: comando}",
     "save_home_info": "Salvar informação sobre a casa — params: {text: info, category: categoria}",
     "search_home_info": "Buscar informação sobre a casa — params: {query: busca}",
+    "image_generate": "Gera imagens usando Google Gemini Imagen — params: {prompt: descricao, size: tamanho}",
 }
 
 
@@ -251,6 +466,7 @@ class LunaCore:
         self._tts = get_tts()
         self._stt = get_stt()
         self._executor = get_executor()
+        self._executor._luna_core = self  # referência para tools acessarem LunaCore
         self._writer = get_writer()
         self._dictionary = get_dictionary()
         self._vision = get_vision()
@@ -275,6 +491,7 @@ class LunaCore:
         self._expected_tool_steps = 1
         self._lock = threading.Lock()
         self._dialog: dict = {}   # estado do diálogo guiado atual
+        self._confirm_edit_callback = None  # chamado para confirmar edições de arquivo
 
         # Carrega personalidade
         self._persona_name = self._load_persona()
@@ -287,6 +504,22 @@ class LunaCore:
         cache_count = len(self._cache.cache.get("entries", {}))
         print(f"[Luna] ✓ Sistema pronto. Modelos: {', '.join(MODELS.values())}")
         print(f"[Luna] ✓ Cache: {cache_count} entradas | Memória: {self._memory.stats()}")
+
+        # Sistema de Rotinas Diárias + Worker Proativo
+        self._routine_manager = get_routine_manager(self)
+        self._activity_logger = get_activity_logger()
+        self._background_worker = get_background_worker(self)
+        self._background_worker.start()
+        print("[Luna] ✓ Rotinas diárias e worker proativo ativos.")
+
+        # Loop Guard + Trace Logger (OpenJarvis)
+        self._loop_guard = LoopGuard(
+            max_identical_calls=3,
+            ping_pong_window=6,
+            poll_tool_budget=5,
+        )
+        self._trace_logger = get_trace_logger()
+        print("[Luna] ✓ Loop Guard e Trace Logger ativos.")
 
     def _load_persona(self) -> str:
         try:
@@ -302,6 +535,10 @@ class LunaCore:
         except Exception as e:
             print(f"[Luna] Erro ao carregar user_profile.json: {e}")
         return {}
+
+    def set_confirm_callback(self, callback):
+        """Define callback para confirmação de edições (ex: via WebSocket/API)."""
+        self._confirm_edit_callback = callback
 
     def select_model(self, mode: str) -> str:
         """
@@ -334,33 +571,35 @@ class LunaCore:
 
     def process(self, text: str, progress_callback=None) -> str:
         """
-        Processa uma entrada do usuário e retorna a resposta.
-        Pipeline: texto → intenção → plano → ações → resposta
-        progress_callback: fn(dict) para eventos em tempo real (SSE/desktop).
+        Processa uma entrada do usuário em um loop autônomo (ReAct).
+        Pipeline: texto → [Plano → Ações → Observação] → Resposta Final
         """
         if not text or not text.strip():
             return ""
 
-        # Sanitização: colapsa espaços, remove caracteres de controle invisíveis
         text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
         text = re.sub(r'[ \t]+', ' ', text).strip()
         if not text:
             return ""
 
-        # Segurança cognitiva: filtra inputs perigosos antes de processar
         from brain.safety import check_safety
         safety_response = check_safety(text)
         if safety_response:
             return safety_response
 
+        # Registra atividade do usuário para aprendizado de padrões
+        try:
+            self._activity_logger.log("user_input", text[:100])
+        except Exception:
+            pass
+
         with self._lock:
             self.processing = True
             self._progress_callback = progress_callback
-            self._emit_progress("thinking", label="Pensando...")
             try:
-                return self._run_pipeline(text)
+                return self._run_autonomous_loop(text)
             except Exception as e:
-                print(f"[Luna] Erro no pipeline: {e}")
+                print(f"[Luna] Erro no loop autônomo: {e}")
                 import traceback; traceback.print_exc()
                 return "Ocorreu um erro interno. Tente novamente."
             finally:
@@ -368,126 +607,403 @@ class LunaCore:
                 self.current_action = None
                 self._progress_callback = None
 
-    def _run_pipeline(self, text: str) -> str:
-        """Pipeline completo de processamento. Fases numeradas para clareza."""
-        self._last_was_cached = False
+    def _run_autonomous_loop(self, text: str) -> str:
+        """
+        Loop ReAct direto: ferramentas nativas do LLM, sem Planner/Scheduler intermediários.
+        O LLM recebe as tools e decide quando usá-las, igual Claw Code/Claude Code.
+        """
         timer_start = self._perf.start_timer()
+        max_steps = 5
+        loop_blocked = False
 
-        # ══ FASE -1: Diálogo guiado (formulários multi-turno — ainda usa LLM no fim) ══
+        # ══ Trace Logger: inicia gravação da interação ══
+        self._trace_logger.start_trace(text)
+        self._loop_guard.reset()
+
+        # ══ FASE -1: Diálogo guiado (formulários) ══
         if hasattr(self, '_dialog') and self._dialog:
             result = self._dialog_step(text)
             if result:
-                elapsed = self._perf.end_timer(timer_start, "request_times")
-                self.last_metrics = {"time_ms": elapsed, "model": "Dialog", "tails": 0}
                 return result
 
-        # ══ Clique pendente → agente (não executa OCR sem pensar) ══
-        if self._pending_click:
-            target = self._pending_click
-            self._pending_click = None
-            text = (
-                f"[Clique pendente] Elemento: «{target}». "
-                f"O usuário indicou app/janela: «{text.strip()}». "
-                f"Use focus_window e click_on_screen para concluir."
-            )
-
-        # ══ Meta/admin local (sem ação no PC — só dados da Luna) ══
+        # ══ Meta/admin local ══
         internal, conv_signal = self._handle_internal_command(text)
         if internal is not None:
-            elapsed = self._perf.end_timer(timer_start, "request_times")
-            self.last_metrics = {"time_ms": elapsed, "model": "Interno", "tails": 0,
-                                 "conv": conv_signal}
+            self._trace_logger.finish_trace("internal_command", internal)
             return internal
 
-        # ══ FASE 1: Escritor (usa LLM dedicado) ══
+        # ══ Escritor (Engine dedicada) ══
         if self._writer.is_writing_request(text):
-            print(f"[Router] FASE 1 — Escritor Engine ativado! Modelo: {self._writing_model}")
             response = self._run_writer_stream(text)
             self._memory.add_exchange(text, response)
-            elapsed = self._perf.end_timer(timer_start, "request_times")
-            self.last_metrics = {"time_ms": elapsed, "model": "Escritor", "tails": 4}
+            self._trace_logger.finish_trace("writer", response)
             return response
 
-        # ══ FASE 2: (desativada) ══
+        # Inicia contexto
+        context = self._build_context(text)
 
-        # ══ FASE 4: Cache desativado ══
-        cached = None
-        if cached:
-            print(f"[Cache] ⚡ HIT! Resposta cacheada.")
-            response = cached["response"]
-            self._memory.add_exchange(text, response)
-            self._last_was_cached = True
-            self._perf.record_cache_event(hit=True)
-            elapsed = self._perf.end_timer(timer_start, "request_times")
-            self.last_metrics = {"time_ms": elapsed, "model": "Cache", "tails": 0}
-            return response
-        self._perf.record_cache_event(hit=False)
+        # Classifica consulta (OpenJarvis) — só para metadados, não para decisão
+        query_info = classify_query(text)
+        self._trace_logger.set_model(query_info.get("model_tier", "main"))
 
-        # ══ FASE 5: Agente — toda ação no PC passa pelo LLM + ferramentas ══
-        if not self._llm.is_ready():
-            elapsed = self._perf.end_timer(timer_start, "request_times")
-            self.last_metrics = {"time_ms": elapsed, "model": "offline", "tails": 0, "conv": None}
-            return (
-                "Não consigo agir agora: o modelo de IA não está disponível. "
-                "Verifique Ollama (localhost:11434) ou a chave Groq no .env."
+        # ── Sistema: prompt + ferramentas nativas ──
+        from brain.agent_tools import LUNA_TOOLS, execute_tool_call, is_tool_success
+
+        system_prompt = (
+            "Você é Luna, uma assistente pessoal e engenheira de software brasileira de elite.\n\n"
+            "PRINCÍPIOS DE ENGENHARIA (Inspirado em Claw Code):\n"
+            "1. EXPLORE ANTES DE AGIR: Se o usuário pedir algo sobre o código ou arquivos, use `list_dir` ou `read_file` para entender o contexto antes de sugerir mudanças.\n"
+            "2. PENSE PASSO A PASSO: Para tarefas complexas, planeje a execução em etapas.\n"
+            "3. INTEGRIDADE: Se for criar ou editar arquivos, use as ferramentas de escrita (`write_code`, `save_file`). NUNCA apenas descreva o código no texto.\n"
+            "4. VERIFICAÇÃO: Após agir, você pode usar `check_project` ou `filesystem` para confirmar que as mudanças estão corretas.\n"
+            "5. HONESTIDADE: Se não souber algo ou se uma ferramenta falhar, admita e tente uma abordagem alternativa.\n\n"
+            "VOCÊ TEM ACESSO A FERRAMENTAS REAIS. Use-as via function_calling nativo:\n"
+            "- Programação: write_code, create_project, check_project, filesystem\n"
+            "- Conhecimento: search_web, open_url, read_webpage, google_search_emails\n"
+            "- Automação: google_services, system_control, get_weather, control_spotify\n\n"
+            "REGRAS CRÍTICAS:\n"
+            "- NÃO alucine sucessos. Se a ferramenta não foi chamada, a ação não aconteceu.\n"
+            "- NÃO responda com blocos de código gigantes no texto se puder salvar direto em um arquivo.\n"
+            "- Use português brasileiro natural e profissional.\n"
+        )
+
+        # ── Historico da conversa ──
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"{text}\n\nContexto:\n{context}"},
+        ]
+
+        # ── Loop ReAct: LLM com tools nativas ──
+        final_response = ""
+        tools_executed_count = 0
+
+        for step in range(max_steps):
+            print(f"[Agente] --- PASSO {step + 1} (tools nativas) ---")
+            self._emit_progress("thinking", label=f"Passo {step + 1}...")
+
+            # Chama o LLM com o tier adequado (permite fallback entre provedores)
+            tier = query_info.get("model_tier", "main")
+            
+            raw = self._llm.generate(
+                messages=messages,
+                task_type=query_info.get("task_type", "command"),
+                model=tier,
+                tools=LUNA_TOOLS,
             )
 
-        if not self.in_conversation_mode:
-            self.in_conversation_mode = True
-            print("[Router] Modo conversa — agente com ferramentas.")
-        context = self._build_context(text)
-        model_tier = self._classify_model_tier(text)
-        print(f"[Router] FASE 5 — Modelo: {model_tier['name']}")
+            if not raw:
+                print("[Agente] LLM retornou vazio — tentando sem tools...")
+                raw = self._llm.generate(
+                    messages=messages,
+                    task_type="command",
+                    model=config.GEMINI_MODELS.get("main", config.GEMINI_MODELS["fallback"]),
+                )
+                if not raw:
+                    final_response = "Não consegui processar sua solicitação. Tente novamente."
+                    break
 
-        model_timer = self._perf.start_timer()
-        llm_result = self._call_llm(text, context, **model_tier["flags"])
-        self._perf.end_timer(model_timer, "model_times")
+            # Verifica se o LLM retornou tool_calls nativos
+            tool_calls_data = None
+            assistant_content = ""
 
-        llm_result["_user_text"] = text
+            if isinstance(raw, dict):
+                tool_calls_data = raw.get("tool_calls")
+                msg = raw.get("message", {})
+                if hasattr(msg, "content"):
+                    assistant_content = msg.content or ""
+                elif isinstance(msg, dict):
+                    assistant_content = msg.get("content", "")
+            else:
+                assistant_content = str(raw)
 
-        response = self._finalize_response(llm_result)
-        response = _sanitize_user_response(response)
-        self._memory.add_exchange(text, response)
+            tool_calls_list = tool_calls_data if tool_calls_data else []
+
+            # Extrai tool_calls do texto também (fallback para modelos que vazam JSON)
+            if not tool_calls_list and assistant_content:
+                parsed = _extract_tool_calls_from_text(assistant_content)
+                if parsed:
+                    tool_calls_list = parsed
+                    assistant_content = ""
+
+            # DETECÇÃO DE ALUCINAÇÃO DE AÇÃO (Lying Detection)
+            # Se o LLM diz que fez algo mas não tem tool_calls_list, forçamos um erro interno para ele se corrigir
+            if not tool_calls_list and assistant_content:
+                creation_keywords = ["criei", "salvei", "escrevi", "deletei", "mandei", "enviei", "alterei", "modifiquei"]
+                if any(kw in assistant_content.lower() for kw in creation_keywords) and tools_executed_count == 0:
+                    # O LLM está mentindo que fez algo sem ter usado ferramentas.
+                    print("[Agente] ⚠️ Alucinação detectada: o modelo alega ter feito algo sem usar tools.")
+                    messages.append({"role": "assistant", "content": assistant_content})
+                    messages.append({"role": "user", "content": "ERRO: Você disse que fez uma ação, mas não chamou nenhuma ferramenta. Se você quer criar/salvar/enviar algo, você DEVE chamar a função apropriada. Tente novamente usando tools."})
+                    continue
+
+            # Se não tem tool_calls, esta é a resposta final
+            if not tool_calls_list:
+                cleaned = assistant_content
+                if "<think>" in cleaned:
+                    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL).strip()
+                final_response = _sanitize_user_response(cleaned)
+                break
+
+            # Executa cada tool call
+            tool_results = []
+            for tc in tool_calls_list:
+                name = ""
+                if isinstance(tc, dict):
+                    fn = tc.get("function", {})
+                    name = fn.get("name", "")
+                else:
+                    name = getattr(tc.function, "name", "")
+
+                params = _parse_tc_args(tc)
+                args_str = json.dumps(params, sort_keys=True)
+
+                label = _tool_progress_label(name, params)
+                self._emit_progress("tool_start", name=name, label=label)
+
+                # LoopGuard
+                verdict = self._loop_guard.check_call(name, args_str)
+                if verdict.blocked:
+                    msg = f"⚠️ LoopGuard bloqueou '{name}': {verdict.reason}"
+                    print(f"[Agente] {msg}")
+                    tool_results.append({"role": "tool", "content": msg, "name": name,
+                                         "tool_call_id": getattr(tc, "id", f"blocked_{step}")})
+                    self._emit_progress("tool_done", name=name, label=label, ok=False)
+                    loop_blocked = True
+                    continue
+                if verdict.warned:
+                    print(f"[Agente] ⚠️ LoopGuard aviso: {verdict.reason}")
+
+                # Permissão de edição
+                if name == "filesystem":
+                    params = _parse_tc_args(tc)
+                    if params.get("action") == "write":
+                        path = params.get("path", "")
+                        content = params.get("content", "")
+                        if not self._request_edit_permission(path, content):
+                            msg = f"USUÁRIO NEGOU permissão para editar {path}"
+                            tool_results.append({"role": "tool", "content": msg, "name": name,
+                                                 "tool_call_id": getattr(tc, "id", f"denied_{step}")})
+                            self._emit_progress("tool_done", name=name, label=label, ok=False)
+                            continue
+
+                res = execute_tool_call(self._executor, tc)
+                success = is_tool_success(res)
+
+                pname = _parse_tc_args(tc).get("filename", "") or _parse_tc_args(tc).get("project_name", "")
+                if pname and name in ("write_code", "create_project"):
+                    if name == "write_code":
+                        v = VerificationSystem.verify_in_workspace(pname)
+                        if not v["success"]:
+                            res += f" | VERIFICAÇÃO: {v['reason']}"
+                        else:
+                            res += f" | VERIFICADO: {v['size']}B em {v['path']}"
+                    elif name == "create_project":
+                        pdir = _parse_tc_args(tc).get("project_name", "")
+                        v = VerificationSystem.verify_directory_created(
+                            str(VerificationSystem.WORKSPACE / pdir)
+                        )
+                        if v["success"]:
+                            res += f" | VERIFICADO: {v['files_count']} arquivo(s)"
+                        else:
+                            res += f" | VERIFICAÇÃO: {v['reason']}"
+
+                tool_results.append({
+                    "role": "tool",
+                    "content": res,
+                    "name": name,
+                    "tool_call_id": getattr(tc, "id", f"tc_{step}_{tools_executed_count}"),
+                })
+                tools_executed_count += 1
+
+                self._trace_logger.add_step("tool_call", name, args_str, res, success)
+                self._emit_progress("tool_done", name=name, label=label, ok=success)
+
+            # Adiciona a mensagem do assistente (com tool_calls) + resultados ao histórico
+            if tool_calls_list:
+                msg_entry = {"role": "assistant", "content": assistant_content or None}
+                if raw and isinstance(raw, dict) and hasattr(raw.get("message"), "tool_calls"):
+                    msg_entry["tool_calls"] = [
+                        {"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                         "type": "function"}
+                        for tc in raw["message"].tool_calls
+                    ]
+                elif raw and isinstance(raw, dict):
+                    msg_entry["tool_calls"] = [
+                        {"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                         "type": "function"}
+                        for tc in (raw.get("tool_calls") or [])
+                    ]
+                messages.append(msg_entry)
+                messages.extend(tool_results)
+
+            if step == max_steps - 1 and not final_response:
+                final_response = "⚠️ Limite de passos atingido. Pode haver ações incompletas."
+
+        # Fallback: se nunca teve resposta do LLM (só ferramentas), gera sumário
+        if not final_response:
+            tool_obs = [
+                m.get("content", "") for m in messages
+                if isinstance(m, dict) and m.get("role") == "tool"
+            ] if tools_executed_count > 0 else []
+            final_response = self._run_executor_layer(text, context, {}, tool_obs)
+
+        # Sanitiza
+        final_response = _sanitize_user_response(final_response)
 
         elapsed = self._perf.end_timer(timer_start, "request_times")
-        print(f"[Perf] Total: {elapsed:.0f}ms")
-        self.last_metrics = {
-            "time_ms": elapsed,
-            "model": model_tier["name"],
-            "tails": model_tier["tails"],
-            "conv": self.in_conversation_mode
-        }
-        return response
+        self.last_metrics = {"time_ms": elapsed, "steps": tools_executed_count}
+
+        self._memory.add_exchange(text, final_response)
+
+        outcome = "loop_blocked" if loop_blocked else "completed"
+        self._trace_logger.finish_trace(outcome, final_response)
+
+        return final_response
+
+    def _run_executor_layer(self, text: str, context: str, plan_json: dict, observations: list) -> str:
+        """Fallback: gera resposta quando o loop ReAct não produziu texto final."""
+        obs_block = "\n".join([f"- {o}" for o in observations]) if observations else "Nenhuma ação foi executada."
+
+        has_failure = any("FALHOU" in o.upper() for o in observations)
+        has_success = any("SUCESSO" in o.upper() for o in observations)
+
+        force_failure_response = ""
+        if has_failure and not has_success:
+            force_failure_response = (
+                "\n\n⚠️ ALERTA CRÍTICO: TODAS as ações acima FALHARAM. "
+                "NÃO minta para o usuário dizendo que algo foi criado ou executado. "
+                "Informe CLARAMENTE que houve um erro e o que pode ter causado. "
+                "Peça desculpas e sugira alternativas."
+            )
+        elif has_failure:
+            force_failure_response = (
+                "\n\n⚠️ ALERTA: Algumas ações acima falharam. Informe tanto os sucessos quanto as falhas."
+            )
+
+        system_prompt = (
+            f"Você é Luna, a assistente pessoal do usuário. Você tem 28 anos, é madura e direta.\n"
+            f"Sua missão é dar uma resposta final baseada ESTRITAMENTE nos RESULTADOS DAS AÇÕES abaixo.\n\n"
+            f"REGRAS ABSOLUTAS:\n"
+            f"1. INFORME resultados concretos: nomes de arquivos criados, caminhos, tamanhos, links.\n"
+            f"2. NUNCA minta. Se uma ação FALHOU, admita. Se nenhuma ação foi executada, NÃO invente resultados.\n"
+            f"3. Seja direta. Responda APENAS o que foi feito.\n"
+            f"4. Remova qualquer pensamento interno. Responda apenas a mensagem final.\n\n"
+            f"[RESULTADOS DAS AÇÕES]\n{obs_block}"
+            f"{force_failure_response}\n"
+        )
+        
+        user_name = self.user_profile.get("user_name", "você")
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Mensagem de {user_name}: \"{text}\"\nContexto:\n{context}"}
+        ]
+        
+        # Usa task_type command (temperatura baixa) para respostas factuais de ferramentas
+        response = self._llm.generate(
+            messages=messages,
+            task_type="command",
+            model=config.GEMINI_MODELS.get("main", config.GEMINI_MODELS["fallback"])
+        )
+        
+        if isinstance(response, dict):
+            response = response.get("message", {}).get("content", "")
+            
+        # 🚨 FILTRO ANTI-THINK (DeepSeek R1)
+        if "<think>" in response:
+            response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
+            
+        final_text = _sanitize_user_response(response)
+
+        # Validação de alucinação pós-resposta (inspirada no format checker do Agent-S)
+        hallucination_feedback = OutputValidator.check_hallucination(final_text, observations, user_text=text)
+        if hallucination_feedback:
+            print(f"[Reflection] ⚠️ Possível alucinação detectada: {hallucination_feedback}")
+            # Se detectou alucinação, tenta gerar resposta corrigida
+            corrected = self._llm.generate(
+                messages=[
+                    {"role": "system", "content": (
+                        f"Você é Luna, assistente pessoal. Sua resposta anterior tinha um problema:\n"
+                        f"{hallucination_feedback}\n\n"
+                        f"RESULTADOS REAIS DAS AÇÕES:\n{obs_block}\n\n"
+                        f"Gere uma resposta CORRIGIDA, honesta e direta baseada APENAS nos resultados reais."
+                    )},
+                    {"role": "user", "content": text}
+                ],
+                task_type="command",
+                model=config.GEMINI_MODELS.get("main", config.GEMINI_MODELS["fallback"])
+            )
+            if isinstance(corrected, dict):
+                corrected = corrected.get("message", {}).get("content", "")
+            if corrected:
+                final_text = _sanitize_user_response(corrected)
+
+        if not observations and len(text.strip()) >= 20:
+            self._auto_extract_facts(text, final_text)
+
+        return final_text
+
+    def _request_edit_permission(self, path: str, new_content: str) -> bool:
+        """Solicita permissão do usuário antes de editar um arquivo."""
+        from actions.filesystem import get_filesystem
+        fs = get_filesystem()
+        current = None
+        try:
+            raw = fs.read_text(path)
+            if raw and not raw.startswith("FALHOU"):
+                current = raw
+        except Exception:
+            pass
+
+        print(f"\n{'='*60}")
+        print(f"✏️  LUNA QUER EDITAR UM ARQUIVO")
+        print(f"{'='*60}")
+        print(f"Arquivo: {path}")
+        if current is not None:
+            preview = current[:1500]
+            if len(current) > 1500:
+                preview += "\n... [truncado]"
+            print(f"\nConteúdo ATUAL:")
+            print(f"{'─'*40}")
+            print(preview)
+        preview_new = new_content[:1500]
+        if len(new_content) > 1500:
+            preview_new += "\n... [truncado]"
+        print(f"\nNovo conteúdo:")
+        print(f"{'─'*40}")
+        print(preview_new)
+        print(f"{'='*60}")
+
+        if self._confirm_edit_callback:
+            return self._confirm_edit_callback(path, current, new_content)
+
+        try:
+            resp = input("\nProssigo com a edição? (s/N): ").strip().lower()
+            return resp in ("s", "sim", "yes", "y")
+        except (EOFError, OSError):
+            return False
 
     def _classify_model_tier(self, text: str) -> dict:
         """
         Classifica qual tier/modelo usar baseado no conteúdo do texto.
+        Usa o query_complexity do OpenJarvis para classificação inteligente.
         Retorna dict com: name, tails, flags (use_fast, use_heavy, use_basic).
         """
         from config import MODELS
-        tl = text.lower()
+        qi = classify_query(text)
+        tier = qi.get("model_tier", "main")
+        model_name = MODELS.get(tier, MODELS["main"])
 
-        # 4 Caudas — Pesado (7B): código, análise, desenvolvimento
-        heavy_kw = [
-            "código", "programe", "analise", "resumo detalhado", "resuma", "explique detalhadamente",
-            "traduza", "html", "python", "script", "desenvolva", "crie um arquivo",
-            "javascript", "css", "aplicativo", "refatore",
-        ]
-        # "jogo", "site", "calculadora" só ativam heavy se há intenção clara de desenvolvimento
-        heavy_dev_kw = ["jogo", "site", "calculadora"]
-        is_dev_request = len(text) > 40 and any(
-            w in tl for w in ["crie", "faça", "desenvolva", "programe", "escreva", "construa"]
-        )
-        if (
-            any(w in tl for w in heavy_kw) or
-            (is_dev_request and any(w in tl for w in heavy_dev_kw))
-        ):
-            return {"name": MODELS["heavy"], "tails": 4,
-                    "flags": {"use_fast": False, "use_heavy": True, "use_basic": False}}
-
-        # 3 Caudas (3B): conversa e agente — padrão equilibrado
-        return {"name": MODELS["main"], "tails": 3,
-                "flags": {"use_fast": False, "use_heavy": False, "use_basic": False}}
+        flags = {
+            "use_heavy": tier == "heavy",
+            "use_fast": tier == "fast",
+            "use_basic": tier == "basic",
+        }
+        tails_map = {"fast": 2, "basic": 1, "main": 3, "heavy": 4}
+        return {
+            "name": model_name,
+            "tails": tails_map.get(tier, 3),
+            "flags": flags,
+        }
 
     def _run_writer_stream(self, text: str) -> str:
         """Modo Escritor Engine: Planejamento -> Stream -> Refinamento."""
@@ -631,6 +1147,12 @@ class LunaCore:
             n = self._memory.clear_facts()
             return f"{n} fatos persistentes removidos.", None
 
+        if tl in ("briefing", "daily briefing", "bom dia luna", "bom dia"):
+            return self._daily_briefing(), None
+
+        if tl in ("rotinas", "minhas rotinas", "ver rotinas"):
+            return self._routine_manager.list_routines_text(), None
+
         if tl == "status":
             llm_ok = "✓" if self._llm.is_ready() else "✗"
             stt_ok = "✓" if self._stt.is_available() else "✗"
@@ -659,7 +1181,7 @@ class LunaCore:
         return None, None
 
     def _daily_briefing(self) -> str:
-        """Briefing diário estilo Jarvis: clima, lembretes, notas e frase do dia."""
+        """Briefing diário estilo Jarvis: clima, calendário, lembretes, notas e frase do dia."""
         from datetime import datetime as _dt
         from actions.weather import get_weather
         from actions.reminders import get_reminders
@@ -687,6 +1209,24 @@ class LunaCore:
         notes_list = get_notes()._notes[-3:] if get_notes()._notes else []
         notes_text = "\n".join(f"  • {n}" for n in notes_list) if notes_list else "  Nenhuma nota recente."
 
+        # Google Calendar — compromissos de hoje
+        calendar_text = ""
+        try:
+            if self._executor.google and self._executor.google.available:
+                cal_events = self._executor.google.get_today_events_formatted()
+                if cal_events:
+                    calendar_text = f"\nCOMPROMISSOS DE HOJE:\n{cal_events}\n"
+        except Exception:
+            pass
+
+        # Frase motivacional do dia
+        from brain.daily_routine import get_activity_logger
+        patterns = get_activity_logger().get_patterns(days=3)
+        activity_hint = ""
+        if patterns.get("peak_hours"):
+            peak = patterns["peak_hours"]
+            activity_hint = f"\nDICA: Horários de pico de atividade do usuário: {', '.join(f'{h}h' for h in peak)} — pode sugerir algo produtivo nesses períodos."
+
         # Monta contexto para o LLM gerar o briefing no estilo Jarvis
         prompt = f"""Você é Luna, uma IA assistente pessoal com personalidade do Jarvis do Tony Stark — precisa, elegante, levemente irônica e sempre útil.
 
@@ -704,8 +1244,7 @@ LEMBRETES DE HOJE:
 {reminders_text}
 
 NOTAS RECENTES:
-{notes_text}
-
+{notes_text}{calendar_text}{activity_hint}
 Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui está:". Comece já com o briefing."""
 
         response = self._llm.generate(prompt, task_type="command", model=MODELS["main"])
@@ -747,7 +1286,7 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
             if vision_desc and "falhou" not in vision_desc and "ausente" not in vision_desc:
                 parts.append(f"[Visão]\n{vision_desc[:1500]}")
 
-        system_state = self._get_system_state_context()
+        system_state = self._get_system_state_context(text)
         if system_state:
             parts.append(system_state)
 
@@ -787,8 +1326,19 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
             except Exception as e:
                 print(f"[Luna] Erro ao limpar facts_cache: {e}")
 
-    def _get_system_state_context(self) -> str:
-        """Retorna estado atual do sistema (timers, lembretes, lista) para o contexto do LLM."""
+    def _get_system_state_context(self, query: str = "") -> str:
+        """Retorna estado atual do sistema APENAS se relevante ao pedido do usuário.
+        Só inclui timers/lembretes/lista de compras se o usuário perguntar sobre eles."""
+        tl = query.lower()
+        talk_about_state = any(w in tl for w in [
+            "timer", "alarme", "lembrete", "lembra", "compras",
+            "foco", "pomodoro", "status", "o que tem", "o que está",
+            "o que esta", "notificação", "notificacao", "aviso",
+            "meu dia", "minhas coisas",
+        ])
+        if not talk_about_state:
+            return ""
+
         parts = []
         try:
             timer_status = self._executor.timer.status()
@@ -1036,7 +1586,7 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
             # Clipboard
             (["copia", "copiar", "colar", "clipboard", "área de transferência", "area de transferencia"], ["clipboard_action"]),
             # Filesystem local
-            (["arquivo", "txt", "ler", "salvar", "escrever", "escreva", "crie um arquivo", "pasta local", "workspace"], 
+            (["arquivo", "txt", "ler", "salvar", "escrever", "escreva", "crie um arquivo", "pasta", "pastas", "home", "diretório", "diretorio", "workspace"], 
              ["read_file", "save_file", "filesystem", "google_list_files"]),
             # Window control
             (["janela", "maximize", "minimize", "workspace", "fechar janela"], ["control_window"]),
@@ -1062,255 +1612,6 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         return filtered
 
 
-    def _call_llm(self, text: str, context: str, use_fast: bool = False, use_heavy: bool = False, use_basic: bool = False) -> dict:
-        """
-        ARQUITETURA HIERÁRQUICA (3 Camadas):
-        1. Planner (Llama 70B): Gera o plano estratégico.
-        2. Scheduler (Llama 70B/8B): Escolhe as ferramentas.
-        3. Executor (Gemini 2.5 Flash): Executa e responde.
-        """
-        # Verifica se é estritamente uma solicitação de programação
-        is_coding_file = use_heavy and any(w in text.lower() for w in ["código", "programe", "script", "desenvolva", "crie um arquivo", "html", "javascript", "python", "css", "aplicativo", "jogo", "site"])
-
-        if is_coding_file:
-            return self._run_coding_bypass(text)
-
-        # ══ FASE 1: Planner (Llama 70B) ══
-        self._emit_progress("thinking", label="Planejando estratégia...")
-        plan_json = generate_plan(text, context)
-        print(f"[Planner] Plano: {plan_json.get('goal')}")
-        
-        # Se não precisa de ferramentas, vai direto para o Executor
-        if not plan_json.get("needs_tools", True):
-            print("[Planner] Conversa pura detectada. Pulando ferramentas.")
-            return self._run_executor_layer(text, context, plan_json, tool_results=[])
-
-        # ══ FASE 2: Scheduler (Llama 70B/8B) ══
-        self._emit_progress("thinking", label="Selecionando ferramentas...")
-        scheduler_json = select_tools(plan_json, text, context)
-        tools_to_call = scheduler_json.get("tools_to_call", [])
-        
-        if not tools_to_call:
-            print("[Scheduler] Nenhuma ferramenta selecionada.")
-            return self._run_executor_layer(text, context, plan_json, tool_results=[])
-
-        # ══ FASE 3: Execução de Ferramentas ══
-        from brain.agent_tools import execute_tool_call, is_tool_success, tool_call_id
-        
-        tool_results = []
-        tools_executed_count = 0
-        
-        print(f"[Scheduler] Executando {len(tools_to_call)} ferramentas em modo {scheduler_json.get('execution_mode', 'sequential')}...")
-        
-        for t_info in tools_to_call:
-            name = t_info["tool_name"]
-            params = t_info.get("parameters", {})
-            explanation = t_info.get("explanation", "")
-            
-            label = _tool_progress_label(name, params)
-            self._emit_progress("tool_start", name=name, label=label)
-            
-            # Mock de NormalizedToolCall para compatibilidade com execute_tool_call
-            class MockTC:
-                def __init__(self, n, a):
-                    self.id = f"call_{int(time.time())}_{n}"
-                    self.function = type('obj', (object,), {'name': n, 'arguments': json.dumps(a)})
-            
-            tc = MockTC(name, params)
-            res = execute_tool_call(self._executor, tc)
-            
-            tool_results.append({
-                "tool": name,
-                "params": params,
-                "result": str(res),
-                "success": is_tool_success(res)
-            })
-            
-            self._emit_progress("tool_done", name=name, label=label, ok=is_tool_success(res))
-            if is_tool_success(res):
-                tools_executed_count += 1
-
-        # ══ FASE 4: Executor (Gemini 2.5 Flash) ══
-        self._emit_progress("thinking", label="Sintetizando resposta...")
-        return self._run_executor_layer(text, context, plan_json, tool_results, tools_executed_count)
-
-    def _run_coding_bypass(self, text: str) -> dict:
-        """Mantém a funcionalidade original de bypass de código via stream."""
-        print("[Router] Bypass de JSON Ativado: Redirecionando saída bruta para o disco via Stream!")
-        prompt = f"""Você é um Programador Nível Sênior Absoluto. Cumpra com o pedido fornecendo APENAS E RESTRITAMENTE O CÓDIGO FONTE FINAL. Sem textos de introdução, sem markdown (```), apenas código rodável.
-Regra Magna: Sua PRIMEIRA LINHA OBRIGATÓRIA escrita deve ser exata e unicamente neste formato: [FILE: nomedoarquivo.extensao]
-A partir da segunda linha, todo o código.
-
-Pedido do usuário: {text}"""
-
-        coder_model = MODELS["heavy"]
-        if self._llm._use_groq("coding"):
-            coder_model = GROQ_MODELS["heavy"]
-            print(f"[Coder] Usando Groq: {coder_model}")
-        else:
-            print(f"[Coder] Usando Ollama: {coder_model} (Aguarde o modelo aquecer...)")
-
-        stream_gen = self._llm.generate(prompt, task_type="coding", model=coder_model, stream=True)
-
-        buffer = ""
-        first_line_done = False
-        filename = "script_gerado_sem_nome.txt"
-        f_handle = None
-
-        for chunk in stream_gen:
-            if str(chunk).startswith("[Erro"):
-                return {"action": "conversar", "params": {}, "response": f"Falha na geração de código: {chunk}"}
-            
-            print(chunk, end="", flush=True)
-            
-            if not first_line_done:
-                buffer += chunk
-                if "\n" in buffer:
-                    first_line, rest = buffer.split("\n", 1)
-                    import re
-                    m = re.search(r'\[FILE:\s*(.+)\]', first_line, re.IGNORECASE)
-                    if m:
-                        filename = m.group(1).strip()
-                        filename = re.sub(r'[\\/\"\'\[\]\{\}]', '', filename)
-                    
-                    try:
-                        f_handle, filepath = self._executor.open_code_file_stream(filename)
-                        if rest and f_handle:
-                            f_handle.write(rest)
-                            f_handle.flush()
-                    except Exception as e:
-                        print(f"\n[Stream] Erro ao abrir arquivo: {e}")
-                    first_line_done = True
-            else:
-                if f_handle:
-                    chunk_limpo = chunk.replace("```html", "").replace("```python", "").replace("```", "")
-                    f_handle.write(chunk_limpo)
-                    f_handle.flush()
-        
-        print("\n[Coder] Streaming concluído!")
-        if f_handle:
-            f_handle.close()
-            return {"action": "conversar", "params": {}, "response": f"Concluído! O código foi escrito em {filename}."}
-        return {"action": "conversar", "params": {}, "response": "Erro ao abrir arquivo para escrita."}
-
-    def _run_executor_layer(self, text: str, context: str, plan_json: dict, tool_results: list, tools_count: int = 0) -> dict:
-        """Camada final: Gemini 2.5 Flash gera a resposta natural."""
-        plan_block = format_plan_for_prompt(plan_json)
-        results_block = "\n[RESULTADOS DAS FERRAMENTAS]\n"
-        if not tool_results:
-            results_block += "Nenhuma ferramenta foi executada.\n"
-        else:
-            for r in tool_results:
-                status = "Sucesso" if r["success"] else "Falha"
-                results_block += f"- {r['tool']}: {status}\n  Resultado: {r['result']}\n"
-
-        user_name = self.user_profile.get("user_name", "você")
-        system_prompt = (
-            f"Você é Luna, uma assistente pessoal autônoma.\n"
-            f"Sua tarefa é responder ao usuário de forma natural em português.\n"
-            f"Use o PLANO e os RESULTADOS DAS FERRAMENTAS para compor sua resposta.\n"
-            f"NUNCA responda com JSON ou nomes técnicos de ferramentas.\n"
-            f"Seja concisa e prestativa.\n\n"
-            f"{plan_block}\n"
-            f"{results_block}\n"
-        )
-        
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Mensagem de {user_name}: \"{text}\"\nHistórico:\n{context}"}
-        ]
-        
-        response = self._llm.generate(
-            messages=messages,
-            task_type="conversational",
-            model=GEMINI_MODELS.get("main", "gemini-2.5-flash")
-        )
-        
-        if isinstance(response, dict):
-            response = response.get("message", {}).get("content", "")
-            
-        return _agent_result(
-            {"action": "conversar", "params": {}, "response": _sanitize_user_response(response)},
-            tools_count
-        )
-
-    def _parse_llm_response(self, raw: str, user_text: str = "") -> dict:
-        """Parseia JSON da resposta do LLM com múltiplas tentativas."""
-        if not raw:
-            return self._fallback_response(user_text)
-
-        # Tenta extrair JSON do texto bruto (modelo pode adicionar texto de markdown ao redor)
-        attempts = [raw]
-        
-        # Tenta extrair explicitamente o bloco de código
-        m = re.search(r'```(?:json)?\s*(\{.*\})\s*```', raw, re.DOTALL)
-        if m:
-            attempts.insert(0, m.group(1))
-
-        # Pega do primeiro '{' até o último '}' para envolver tudo (mesmo se tiver código com chaves dentro)
-        m2 = re.search(r'(\{.*\})', raw, re.DOTALL)
-        if m2:
-            attempts.insert(0, m2.group(1))
-
-        for attempt in attempts:
-            try:
-                data = json.loads(attempt)
-                # Valida estrutura mínima
-                if "action" in data and "response" in data:
-                    data.setdefault("params", {})
-                    data["action"] = "conversar"
-                    return data
-                # JSON com action mas sem response — gera response padrão
-                if "action" in data and "action" != "conversar":
-                    data.setdefault("params", {})
-                    data.setdefault("response", "")
-                    return data
-            except (json.JSONDecodeError, Exception):
-                continue
-
-        # Se nenhuma tentativa funcionou, trata como resposta de conversa
-        # (modelo respondeu em texto puro, ainda é útil)
-        if raw and len(raw) > 5:
-            return {
-                "action": "conversar",
-                "params": {},
-                "response": raw.strip()
-            }
-
-        return self._fallback_response(user_text)
-
-    def _fallback_response(self, text: str) -> dict:
-        """Resposta de fallback quando LLM falha."""
-        if not self._llm.is_ready():
-            return {
-                "action": "conversar",
-                "params": {},
-                "response": "Não consigo me conectar ao LLM. Verifique se o Ollama está rodando."
-            }
-        return {
-            "action": "conversar",
-            "params": {},
-            "response": "Desculpe, não entendi. Pode reformular?"
-        }
-
-    def _finalize_response(self, llm_result: dict) -> str:
-        """Resposta final sanitizada — ações já foram executadas via ferramentas."""
-        base_response = llm_result.get("response", "") or ""
-        action = llm_result.get("action", "conversar")
-        user_text = llm_result.get("_user_text", "")
-        tools_ran = llm_result.get("tools_executed", 0) > 0
-
-        if (
-            action == "conversar"
-            and base_response
-            and not tools_ran
-            and not _is_local_action(user_text)
-            and len(user_text.strip()) >= 20
-        ):
-            self._auto_extract_facts(user_text, base_response)
-
-        return _sanitize_user_response(base_response) or "Entendido."
-
     def _auto_extract_facts(self, user_text: str, response: str) -> None:
         """Extrai fatos memoráveis via LLM em thread background."""
         if not user_text or len(user_text.strip()) < 10:
@@ -1323,26 +1624,30 @@ Pedido do usuário: {text}"""
 
     def _llm_extract_facts_bg(self, user_text: str) -> None:
         """
-        Usa o modelo rápido (8B) para extrair fatos importantes do que o usuário disse.
+        Usa o modelo rápido para extrair fatos importantes do que o usuário disse.
         Roda em background para não atrasar a resposta.
+        Só salva fatos com importance >= 0.85 para evitar poluição da memória.
         """
         try:
             from brain.llm import GROQ_MODELS, MODELS
             prompt = f"""Analise a mensagem do usuário e extraia APENAS informações factuais importantes sobre ele.
-Ignore perguntas, pedidos, e conteúdo que não seja sobre o usuário em si.
+Ignore perguntas, pedidos, comandos, e conteúdo que não seja sobre o usuário em si.
 
-Exemplos de informações IMPORTANTES: hardware do PC, sistema operacional, onde mora, profissão, preferências, projetos, hábitos.
-Exemplos de informações SEM IMPORTÂNCIA: perguntas genéricas, pedidos de ajuda, conversas normais.
+REGRAS:
+- Só extraia um fato se for uma INFORMAÇÃO PERMANENTE sobre o usuário (hardware, sistema, profissão, onde mora, preferências fortes, nome de projetos pessoais).
+- NUNCA extraia: perguntas, comandos, conversas casuais, saudações, feedback, confirmações ("sim", "ok").
+- NUNCA extraia explicações técnicas genéricas (ex: "ls lista arquivos").
+- Se não houver NENHUM fato permanente, retorne {{"facts": []}}.
 
 Mensagem do usuário: "{user_text}"
 
-Responda APENAS com JSON válido. Se não houver fatos relevantes, retorne {{"facts": []}}.
+Responda APENAS com JSON. Se não houver fatos, retorne {{"facts": []}}.
 Formato:
 {{"facts": [
   {{"fact": "descrição clara do fato", "category": "hardware|preferencias|perfil|projeto|habitos|historia", "importance": 0.0-1.0}}
 ]}}
 
-Importância: 0.95 = informação técnica/pessoal crítica (hardware, sistema), 0.85 = preferência forte, 0.7 = informação útil"""
+Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para preferências fortes e projetos pessoais. Ignore importance < 0.85."""
 
             fast_model = MODELS.get("fast", "qwen2.5:0.5b-instruct-fp16")
             # Força Ollama local — não consome quota do Gemini/Groq para tarefa de background
@@ -1364,9 +1669,14 @@ Importância: 0.95 = informação técnica/pessoal crítica (hardware, sistema),
             for item in facts:
                 fact = item.get("fact", "").strip()
                 category = item.get("category", "geral").strip()
-                importance = float(item.get("importance", 0.7))
+                importance = float(item.get("importance", 0.5))
 
-                if not fact or importance < 0.65:
+                # Ignora fatos de baixa importância ou genéricos
+                if not fact or importance < 0.85:
+                    continue
+                # Ignora fatos que parecem perguntas, comandos ou conversas
+                lower = fact.lower()
+                if any(w in lower for w in ["?", "comando", "pergunta", "pedido", "ok ", "sim", "não"]):
                     continue
 
                 self._memory.remember(fact, category=category, importance=importance)

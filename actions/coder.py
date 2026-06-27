@@ -1,12 +1,14 @@
 import os
 from pathlib import Path
 
+from config import WORKSPACE_DIR
+
 class CoderManager:
     """Gerencia a criação e modificação de código pela IA na sua pasta de trabalho."""
 
     def __init__(self):
         # A pasta dedicada para o código gerado pela Luna
-        self.workspace = Path("/home/pera/Luna-programming")
+        self.workspace = WORKSPACE_DIR
         self.workspace.mkdir(parents=True, exist_ok=True)
 
     def write_code(self, filename: str, content: str) -> dict:

@@ -17,8 +17,18 @@ if sys.version_info >= (3, 14):
 
 import os
 from typing import Optional, List
-from crewai import Crew, Agent, Task, Process
-from langchain_core.tools import tool
+
+try:
+    from crewai import Crew, Agent, Task, Process
+    HAS_CREW = True
+except ImportError:
+    HAS_CREW = False
+
+try:
+    from langchain_core.tools import tool
+    HAS_LANGCHAIN = True
+except ImportError:
+    HAS_LANGCHAIN = False
 
 # Importações dos serviços reais da Luna
 from actions.google_services import get_google
@@ -59,6 +69,15 @@ def get_llm():
 
 
 # ── Definição de Ferramentas Reais para os Agentes ───────────────────
+
+# Decorator dummy se langchain não existir
+if not HAS_LANGCHAIN:
+    def tool(name_or_func=None):
+        if callable(name_or_func): return name_or_func
+        return lambda f: f
+else:
+    # Usa o decorator original
+    pass
 
 @tool("google_calendar_events")
 def google_calendar_events(max_results: int = 5) -> str:
@@ -194,6 +213,8 @@ def get_crew():
 
 def run_crew_task(task_description: str) -> str:
     """Executa uma tarefa descrita de forma dinâmica através do Crew de agentes."""
+    if not HAS_CREW:
+        return "FALHOU: CrewAI não instalado. Peça ao usuário para rodar 'pip install crewai'."
     try:
         crew = get_crew()
         # Ajusta a descrição dinamicamente

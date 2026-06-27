@@ -4,7 +4,9 @@ actions/executor.py — Executor unificado de ações (1 Cauda).
 Roteia comandos naturais para os módulos corretos sem passar pelo LLM.
 """
 import re
+import shutil
 import unicodedata
+import threading
 from typing import Optional
 
 from actions.apps import AppManager
@@ -88,10 +90,8 @@ def _resolve_click(raw_target: str, cmd_norm: str, executor) -> dict | None:
     Resolve clique em linguagem natural.
     Ordem: web (URL/teclado/Playwright) → OCR na tela (último recurso).
     """
-    import unicodedata as _ud
-
     def _norm(s):
-        return ''.join(c for c in _ud.normalize('NFD', s) if _ud.category(c) != 'Mn').lower()
+        return ''.join(c for c in unicodedata.normalize('NFD', s) if unicodedata.category(c) != 'Mn').lower()
 
     full_cmd = f"{cmd_norm} {raw_target}".strip()
 
@@ -142,7 +142,7 @@ def _resolve_click(raw_target: str, cmd_norm: str, executor) -> dict | None:
         return None
 
     # ── Helper: clique posicional via OCR (N-ésimo elemento) ──
-    def _try_nth_click(n_index: int, element_type: str = None) -> dict | None:
+    def _do_nth_click(n_index: int, element_type: str = None) -> dict | None:
         """
         Tenta clicar no N-ésimo elemento visível via OCR.
         Captura tela, extrai todos os elementos, e clica no N-ésimo.
@@ -163,7 +163,7 @@ def _resolve_click(raw_target: str, cmd_norm: str, executor) -> dict | None:
             return None
 
         # Se n_index está dentro do range, clica
-        if n_index < len(good_elements):
+        if 0 <= n_index < len(good_elements):
             target = good_elements[n_index]
             print(f"[Click] Clicando no {n_index+1}º elemento: '{target['text']}' em ({target['x']}, {target['y']})")
             return executor.click_at(target["x"], target["y"])
@@ -179,7 +179,7 @@ def _resolve_click(raw_target: str, cmd_norm: str, executor) -> dict | None:
         if result:
             return result
         # Tenta clique posicional pelo índice
-        result = _try_nth_click(n, elem_type)
+        result = _do_nth_click(n, elem_type)
         if result:
             return result
         return {"success": False, "message": f"Não encontrei o {ordinal_idx+1}º {elem_type} na tela via OCR."}
@@ -191,7 +191,7 @@ def _resolve_click(raw_target: str, cmd_norm: str, executor) -> dict | None:
         result = _try_ocr_click(target_text)
         if result:
             return result
-        result = _try_nth_click(n)
+        result = _do_nth_click(n)
         if result:
             return result
         return {"success": False, "message": f"Não encontrei o {ordinal_idx+1}º elemento na tela via OCR."}
@@ -508,8 +508,7 @@ class ActionExecutor:
                 return {"success": True, "message": result}
 
         # ── Morse ──────────────────────────────────────────────
-        from actions.morse import _pending as _morse_pending
-        if "morse" in cmd_norm or _morse_pending:
+        if "morse" in cmd_norm or (hasattr(self.morse, '_pending') and self.morse._pending):
             result = self.morse.handle(cmd_clean)
             if result:
                 return {"success": True, "message": result}
@@ -520,7 +519,7 @@ class ActionExecutor:
             # Agendamento tem prioridade se houver horário no comando
             sched_kw = ["às", "as", "hora", "horario", "horário", "programar", "agendar",
                         "agendamento", "todo dia", "toda noite", "semana", "fim de semana"]
-            has_time = bool(re.search(r'\d{1,2}[h:]\d{0,2}', cmd_norm))
+            has_time = bool(re.search(r'\b\d{1,2}[h:]\d{2}\b', cmd_norm))
             if has_time or any(w in cmd_norm for w in sched_kw):
                 from actions.light_scheduler import get_light_scheduler
                 result = get_light_scheduler().handle(cmd_clean)
@@ -597,7 +596,7 @@ class ActionExecutor:
                 import json
                 from pathlib import Path
                 import subprocess as _sp
-                pl_file = Path(__file__).parent.parent / "playlists.json"
+                pl_file = Path(__file__).parent.parent / "config" / "playlists.json"
                 uri = None
                 if pl_file.exists():
                     try:
@@ -672,19 +671,23 @@ class ActionExecutor:
                          "captura a tela", "print screen"]
         if any(w in cmd_norm for w in screenshot_kw):
             import subprocess, datetime
+            from pathlib import Path
             ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            path = f"/home/pera/Pictures/luna_screenshot_{ts}.png"
-            try:
-                subprocess.run(["scrot", path], check=True, timeout=5)
-                return {"success": True, "message": f"📸 Screenshot salvo em {path}"}
-            except FileNotFoundError:
-                try:
-                    subprocess.run(["gnome-screenshot", "-f", path], check=True, timeout=5)
-                    return {"success": True, "message": f"📸 Screenshot salvo em {path}"}
-                except Exception as e:
-                    return {"success": True, "message": f"Não foi possível tirar o print: {e}"}
-            except Exception as e:
-                return {"success": True, "message": f"Erro ao capturar tela: {e}"}
+            path = str(Path.home() / "Pictures" / f"luna_screenshot_{ts}.png")
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            for cmd in [
+                ["scrot", path],
+                ["gnome-screenshot", "-f", path],
+                ["import", "-window", "root", path],
+                ["grim", path],
+            ]:
+                if shutil.which(cmd[0]):
+                    try:
+                        subprocess.run(cmd, check=True, timeout=5)
+                        return {"success": True, "message": f"Screenshot salvo em {path}"}
+                    except (subprocess.CalledProcessError, FileNotFoundError):
+                        continue
+            return {"success": False, "message": "Nenhum screenshotter disponível (scrot, gnome-screenshot, import, grim)."}
 
         # ── Foco / Pomodoro ────────────────────────────────────
         focus_kw = ["modo foco", "pomodoro", "iniciar foco",
@@ -853,9 +856,15 @@ class ActionExecutor:
 
 # Singleton
 _executor_instance: Optional[ActionExecutor] = None
+_executor_lock = threading.Lock()
 
-def get_executor() -> ActionExecutor:
+def get_executor(force_new: bool = False) -> ActionExecutor:
     global _executor_instance
-    if _executor_instance is None:
+    if force_new:
         _executor_instance = ActionExecutor()
+        return _executor_instance
+    if _executor_instance is None:
+        with _executor_lock:
+            if _executor_instance is None:
+                _executor_instance = ActionExecutor()
     return _executor_instance

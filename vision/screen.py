@@ -12,6 +12,8 @@ import re
 from pathlib import Path
 from typing import Optional
 
+from error_codes import err
+
 try:
     from PIL import Image
     import pytesseract
@@ -63,7 +65,7 @@ class ScreenVision:
             return True
         if self._is_wayland and self._capture_import_imagemagick():
             return True
-        print("[Vision] ✗ Nenhum método de captura funcionou.")
+        print(err("VIS_CAPTURE_FAILED", "Nenhum método de captura funcionou."))
         return False
 
     def _capture_mss(self) -> bool:
@@ -78,7 +80,7 @@ class ScreenVision:
             print("[Vision] ✓ Captura via mss")
             return True
         except Exception as e:
-            print(f"[Vision] mss falhou: {e}")
+            print(err("VIS_CAPTURE_FAILED", f"mss: {e}"))
             return False
 
     def _capture_gnome_screenshot(self) -> bool:
@@ -160,7 +162,7 @@ class ScreenVision:
             img = Image.open(self.last_screenshot)
             return pytesseract.image_to_string(img, lang="por+eng", config="--psm 11 --oem 3").strip()
         except Exception as e:
-            print(f"[Vision] OCR falhou: {e}")
+            print(err("VIS_OCR_FAILED", str(e)))
             return ""
 
     def get_elements_with_positions(self) -> list:
@@ -188,7 +190,7 @@ class ScreenVision:
                 })
             return elements
         except Exception as e:
-            print(f"[Vision] get_elements falhou: {e}")
+            print(err("VIS_OCR_FAILED", f"get_elements: {e}"))
             return []
 
     def find_element_by_text(self, search: str) -> Optional[dict]:
@@ -390,7 +392,7 @@ class ScreenVision:
                 data = json.loads(resp.read().decode())
                 return data["choices"][0]["message"]["content"]
         except Exception as e:
-            print(f"[Vision] Falha no Groq Vision: {e}")
+            print(err("VIS_GROQ_FAILED", str(e)))
 
         # Fallback gratuito: Gemini (google-generativeai)
         try:
@@ -413,7 +415,7 @@ class ScreenVision:
                     print("[Vision] ✓ Gemini Vision")
                     return text.strip()
             except Exception as e2:
-                print(f"[Vision] Gemini Vision falhou: {e2}")
+                print(err("VIS_GEMINI_FAILED", str(e2)))
 
         ocr = self.read_text()
         if ocr and len(ocr) > 20:

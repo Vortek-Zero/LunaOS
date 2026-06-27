@@ -6,6 +6,7 @@ Fornece informações de hardware (CPU, RAM, Disco) e permite executar comandos 
 import subprocess
 import shutil
 import os
+import shlex
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -16,7 +17,19 @@ BANNED_SUBSTRINGS = [
     "rm -rf", "rm -r", "sudo rm", "mkfs", "dd if=",
     "shutdown", "reboot", "halt", "poweroff",
     ":(){:|:&};:", "chmod 777", "chown -R",
-    "curl | sh", "wget | sh", "bash <(", "init 0", "init 6"
+    "curl | sh", "wget | sh", "bash <(",     "init 0", "init 6"
+]
+
+COMMAND_WHITELIST = [
+    "echo", "ls", "cat", "pwd", "whoami", "date", "which", "python3", "python",
+    "pip", "pip3", "git", "node", "npm", "npx", "cargo", "rustc", "gcc", "g++",
+    "make", "cmake", "docker", "docker-compose", "ffmpeg", "wget", "curl",
+    "unzip", "tar", "gzip", "zip", "head", "tail", "sort", "grep", "wc",
+    "mkdir", "cp", "mv", "touch", "chmod", "chown", "find", "du", "df",
+    "ps", "top", "htop", "kill", "pkill", "systemctl", "journalctl",
+    "brightnessctl", "playerctl", "nmcli", "ip", "notify-send",
+    "import", "grim", "scrot", "gnome-screenshot", "wmctrl", "xdpyinfo",
+    "xdg-open", "xdotool", "xprop", "xrandr", "xset",
 ]
 
 class SystemTools:
@@ -109,6 +122,35 @@ class SystemTools:
                 return f"FALHOU: O comando contém termos bloqueados por segurança ('{banned}'). Execução rejeitada."
         return None
 
+    def _run_command_safe(self, command: str) -> str:
+        import shlex
+        parts = shlex.split(command)
+        if not parts:
+            return "FALHOU: Comando vazio."
+        cmd_name = parts[0]
+        if cmd_name not in self.COMMAND_WHITELIST:
+            return f"FALHOU: Comando '{cmd_name}' não está na whitelist de segurança."
+        try:
+            res = subprocess.run(
+                parts,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(Path.home()),
+            )
+            output = ""
+            if res.stdout:
+                output += f"--- SAÍDA (stdout) ---\n{res.stdout.strip()}\n"
+            if res.stderr:
+                output += f"--- ERROS (stderr) ---\n{res.stderr.strip()}\n"
+            if not output:
+                output = "Comando executado com sucesso (sem retorno/output)."
+            return output
+        except subprocess.TimeoutExpired:
+            return "FALHOU: O comando expirou (timeout de 30 segundos)."
+        except Exception as e:
+            return f"FALHOU: Erro na execução: {str(e)}"
+
     def run_bash_command(self, command: str, visible: bool = False) -> str:
         """
         Executa comando no shell.
@@ -123,30 +165,7 @@ class SystemTools:
             from actions.gnome import open_terminal_zsh
             return open_terminal_zsh(command, title="Luna")
 
-        try:
-            res = subprocess.run(
-                command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=30,
-                cwd=str(Path.home()),
-            )
-
-            output = ""
-            if res.stdout:
-                output += f"--- SAÍDA (stdout) ---\n{res.stdout.strip()}\n"
-            if res.stderr:
-                output += f"--- ERROS (stderr) ---\n{res.stderr.strip()}\n"
-
-            if not output:
-                output = "Comando executado com sucesso (sem retorno/output)."
-
-            return output
-        except subprocess.TimeoutExpired:
-            return "FALHOU: O comando expirou (timeout de 30 segundos)."
-        except Exception as e:
-            return f"FALHOU: Erro na execução: {str(e)}"
+        return self._run_command_safe(command)
 
     def run_terminal_command(self, command: str) -> str:
         """Abre terminal visível (zsh) — atalho para run_bash_command(visible=True)."""

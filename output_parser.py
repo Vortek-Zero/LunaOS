@@ -55,6 +55,15 @@ class OutputParser:
         r".*(?:foi um erro|estava errado|me enganei).*",
         r"como um \d{4} específico\b",
         r"segundo.*?(?:que não consigo verificar|fictício)",
+        r"não (tenho acesso a|posso acessar|consigo ver) (informações|dados) (em tempo real|atuais|recentes)",
+        r"de acordo com minha (base de dados|memória|treinamento)",
+        r"até a (data|ano) do meu treinamento",
+        r"corte de conhecimento",
+        r"não foi possível (verificar|confirmar|validar)",
+        r"essa (informação|resposta) pode (estar desatualizada|não ser precisa)",
+        r"recomendo (verificar|confirmar|pesquisar)",
+        r"não (posso|consigo) (responder|afirmar|confirmar) com (certeza|precisão)",
+        r"\b(\d{4})\b.*\b(\d{4})\b",  # multiple years cited (often hallucinated)
     ]
     
     def __init__(self, verbose: bool = False):
@@ -156,20 +165,16 @@ class OutputParser:
         return True, None
     
     def correct_response(self, response_dict: Dict, original_query: str = "") -> Dict:
-        """
-        Aplica correções e melhorias à resposta
-        """
         corrected = response_dict.copy()
-        
-        # Se detectou hallucination, marca para busca nova
         confidence = self.detect_confidence(response_dict.get("resposta", ""))
         if confidence == ConfidenceLevel.HALLUCINATION:
-            self._log("Hallucination detected, marking for re-search")
             corrected["_trigger_research"] = True
-        
-        # Se resposta incerta, adiciona disclaimer
-        # Removed forced uncertainty prepend - handle internally
         corrected["confidence"] = confidence.value
+        
+        # If original_query provided, append it for research
+        if original_query:
+            corrected["_original_query"] = original_query
+            
         return corrected
     
     def should_retry_search(self, response_dict: Dict) -> bool:

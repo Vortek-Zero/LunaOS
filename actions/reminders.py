@@ -95,6 +95,19 @@ class ReminderManager:
 
         return None
 
+    def parse_recurrence(self, text: str) -> Optional[str]:
+        """Extrai padrão de recorrência do texto."""
+        tl = text.lower()
+        if any(w in tl for w in ["todo dia", "todos os dias", "diariamente", "todos dias"]):
+            return "daily"
+        if any(w in tl for w in ["todo dia útil", "dias úteis", "dias uteis", "dia útil", "dia util"]):
+            return "weekdays"
+        if any(w in tl for w in ["toda semana", "semanalmente", "todas as semanas"]):
+            return "weekly"
+        if any(w in tl for w in ["todo mês", "mensalmente", "todos os meses"]):
+            return "monthly"
+        return None
+
     def extract_message(self, text: str) -> str:
         """Extrai a mensagem do lembrete."""
         tl = text.lower()
@@ -108,19 +121,23 @@ class ReminderManager:
         tl = re.sub(r'(?:às?|as|em|daqui|amanhã|amanha)\s+\d+[h:]\d*\s*(?:horas?|minutos?)?', '', tl)
         tl = re.sub(r'\d+\s*(?:horas?|minutos?)', '', tl)
         tl = re.sub(r'(?:segunda|terça|terca|quarta|quinta|sexta|sábado|sabado|domingo)', '', tl)
+        # Remove recorrência
+        tl = re.sub(r'(?:todo dia|todos os dias|diariamente|todo dia útil|dias úteis|semanalmente|mensalmente)', '', tl)
         return tl.strip() or "lembrete"
 
     # ── CRUD ──────────────────────────────────────────────────
 
-    def add(self, message: str, when: datetime) -> str:
+    def add(self, message: str, when: datetime, repeat: Optional[str] = None) -> str:
         with self._lock:
             self._reminders.append({
                 "message": message,
                 "when": when.isoformat(),
                 "done": False,
+                "repeat": repeat,
             })
             self._save()
-        return f"🔔 Lembrete criado: '{message}' para {when.strftime('%d/%m às %H:%M')}."
+        repeat_msg = f" (recorrente: {repeat})" if repeat else ""
+        return f"🔔 Lembrete criado: '{message}' para {when.strftime('%d/%m às %H:%M')}{repeat_msg}."
 
     def list_reminders(self) -> str:
         with self._lock:
@@ -156,9 +173,41 @@ class ReminderManager:
                         when = datetime.fromisoformat(r["when"])
                         if when <= now:
                             r["done"] = True
+                            repeat = r.get("repeat")
+                            if repeat:
+                                new_when = self._next_recurrence(when, repeat)
+                                if new_when:
+                                    self._reminders.append({
+                                        "message": r["message"],
+                                        "when": new_when.isoformat(),
+                                        "done": False,
+                                        "repeat": repeat,
+                                    })
                             self._save()
                             self._fire(r["message"])
         threading.Thread(target=_monitor, daemon=True).start()
+
+    def _next_recurrence(self, from_dt: datetime, repeat: str) -> Optional[datetime]:
+        if repeat == "daily":
+            return from_dt + timedelta(days=1)
+        elif repeat == "weekdays":
+            nxt = from_dt + timedelta(days=1)
+            while nxt.weekday() >= 5:
+                nxt += timedelta(days=1)
+            return nxt
+        elif repeat == "weekly":
+            return from_dt + timedelta(weeks=1)
+        elif repeat == "monthly":
+            month = from_dt.month + 1
+            year = from_dt.year
+            if month > 12:
+                month = 1
+                year += 1
+            try:
+                return from_dt.replace(year=year, month=month)
+            except ValueError:
+                return from_dt + timedelta(days=30)
+        return None
 
     def _fire(self, message: str) -> None:
         print(f"\n[Reminder] 🔔 {message}")
@@ -198,12 +247,13 @@ class ReminderManager:
             return self.cancel(query)
 
         if any(w in tl for w in ["me lembra", "me lembre", "lembra de", "lembre de",
-                                   "criar lembrete", "me avisa"]):
+                                    "criar lembrete", "me avisa"]):
             when = self.parse_datetime(tl)
             if not when:
                 return "Não entendi quando você quer ser lembrado. Tente: 'me lembra de [algo] às 15h'."
+            repeat = self.parse_recurrence(tl)
             message = self.extract_message(text)
-            return self.add(message, when)
+            return self.add(message, when, repeat)
 
         return None
 

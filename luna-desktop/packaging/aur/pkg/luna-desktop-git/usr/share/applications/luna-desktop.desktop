@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Luna Desktop
+Comment=A modern and efficient desktop client for LunaOS
+Exec=luna-desktop
+Icon=luna-desktop
+Terminal=false
+Type=Application
+Categories=Utility;

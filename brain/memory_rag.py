@@ -179,23 +179,19 @@ class MemoryRAG:
         except Exception as e:
             return f"FALHOU: Erro ao salvar informação da casa: {e}"
 
-    def retrieve_home_info(self, query: str, n_results: int = 3) -> str:
-        """Busca informações salvas sobre a casa."""
-        if not self.enabled or self.home_collection.count() == 0:
-            return ""
-        emb = self._get_embedding(query)
+    def reset_collections(self):
+        """Deleta e recria todas as coleções do banco vetorial."""
+        if not self.enabled:
+            return
         try:
-            if emb:
-                results = self.home_collection.query(
-                    query_embeddings=[emb],
-                    n_results=min(n_results, self.home_collection.count())
-                )
-                docs = results.get("documents", [[]])[0]
-            else:
-                docs = self._keyword_search(self.home_collection, query, n_results)
-            if docs:
-                return "[INFORMAÇÕES SOBRE A CASA (RAG)]\n" + "\n".join(f"- {d}" for d in docs)
-        except Exception:
-            pass
-        return ""
+            self.client.delete_collection(name="luna_memory")
+            self.client.delete_collection(name="write_universe")
+            self.client.delete_collection(name="home_info")
+            
+            self.collection = self.client.get_or_create_collection(name="luna_memory")
+            self.write_collection = self.client.get_or_create_collection(name="write_universe")
+            self.home_collection = self.client.get_or_create_collection(name="home_info")
+            print("[MemoryRAG] ✓ Memória RAG resetada.")
+        except Exception as e:
+            print(f"[MemoryRAG] Erro ao resetar: {e}")
 

@@ -134,15 +134,13 @@ def _is_writing_verb(text_norm: str) -> bool:
     return False
 
 
+from config import WORKSPACE_DIR
+
 class WriterManager:
     """Gerencia a criação de textos longos pela Luna."""
 
     def __init__(self):
-        try:
-            from config import WORKSPACE_DIR
-            self.workspace = Path(WORKSPACE_DIR)
-        except ImportError:
-            self.workspace = Path("/home/pera/Luna-programming")
+        self.workspace = WORKSPACE_DIR
         self.workspace.mkdir(parents=True, exist_ok=True)
 
     def is_writing_request(self, text: str) -> bool:

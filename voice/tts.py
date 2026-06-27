@@ -6,11 +6,14 @@ Fix: asyncio em thread, fila de fala, fallback silencioso
 import asyncio
 import threading
 import queue
+from concurrent.futures import ThreadPoolExecutor
 import os
 import time
 import re
 from pathlib import Path
 from typing import Optional
+
+from error_codes import err
 
 # Imports opcionais (podem não estar instalados ainda)
 try:
@@ -85,6 +88,8 @@ class TTSEngine:
         self.volume = VOICE_CONFIG["volume"]
         self._speaking = False
         self._lock = threading.Lock()
+        self._stop_requested = False
+        self._thread_pool = ThreadPoolExecutor(max_workers=1)
 
         if not HAS_EDGE_TTS:
             print("[TTS] ⚠ edge-tts não instalado. Voz desabilitada.")
@@ -104,7 +109,7 @@ class TTSEngine:
                 else:
                     print(f"[TTS] ⚠ Modelos Kokoro não encontrados na pasta voice/models/. Usando Edge TTS.")
             except Exception as e:
-                print(f"[TTS] ⚠ Erro ao carregar Kokoro: {e}")
+                print(err("TTS_KOKORO_FAILED", str(e)))
 
         # Nova verificação para F5-TTS
         if getattr(config, "USE_LOCAL_F5", False):
@@ -114,7 +119,7 @@ class TTSEngine:
                 ref_audio = getattr(config, "F5_REF_AUDIO", "")
                 self.f5_engine = F5TTSEngine(ref_audio)
             except Exception as e:
-                print(f"[TTS] ⚠ Erro ao carregar F5-TTS: {e}")
+                print(err("TTS_F5_FAILED", str(e)))
 
     def speak(self, text: str, blocking: bool = False) -> None:
         """
@@ -129,12 +134,12 @@ class TTSEngine:
         if blocking:
             self._speak_sync(text)
         else:
-            t = threading.Thread(target=self._speak_sync, args=(text,), daemon=True)
-            t.start()
+            self._thread_pool.submit(self._speak_sync, text)
 
     def _speak_sync(self, text: str) -> None:
         """Executa TTS de forma síncrona com event loop próprio."""
         with self._lock:
+            self._stop_requested = False  # Reset flag on each speak
             self._speaking = True
             try:
                 # Processa texto via VoiceEngine (Yara)
@@ -149,7 +154,7 @@ class TTSEngine:
                     rate  = self.rate
                     pitch = self.pitch
 
-                if not final_text:
+                if not final_text or getattr(self, '_stop_requested', False):
                     return
 
                 loop = asyncio.new_event_loop()
@@ -165,17 +170,19 @@ class TTSEngine:
                     if HAS_VOICE_ENGINE:
                         data, samplerate = VoiceEngine.postprocess_audio(data, samplerate)
                     try:
+                        if getattr(self, '_stop_requested', False):
+                            return
                         sd.play(data, samplerate)
                         sd.wait()
                     except Exception as e:
-                        print(f"[TTS] ⚠ Falha no dispositivo de áudio: {e}")
+                        print(err("TTS_AUDIO_DEVICE_FAILED", str(e)))
                     try:
                         os.remove(TTS_TEMP_FILE)
                     except Exception:
                         pass
 
             except Exception as e:
-                print(f"[TTS] Erro ao falar: {e}")
+                print(err("TTS_AUDIO_DEVICE_FAILED", f"Falar: {e}"))
             finally:
                 self._speaking = False
 
@@ -204,7 +211,7 @@ class TTSEngine:
                 print(f"[TTS] ✓ Áudio gerado com sucesso usando o motor: {engine_name}")
                 return
                 
-        print("[TTS] ❌ Falha crítica: Nenhum motor de voz conseguiu gerar o áudio.")
+        print(err("TTS_ALL_ENGINES_FAILED", "Nenhum motor de voz conseguiu gerar o áudio."))
 
     async def _play_google_cloud(self, text: str) -> bool:
         try:
@@ -250,7 +257,7 @@ class TTSEngine:
                 self.f5_engine.generate_to_file(text, TTS_TEMP_FILE)
                 return True
             except Exception as e:
-                print(f"[TTS] ⚠ Erro no F5-TTS: {e}")
+                print(err("TTS_F5_FAILED", str(e)))
         return False
 
     async def _play_edge_tts(self, text: str, rate: str = None, pitch: str = None) -> bool:
@@ -269,7 +276,7 @@ class TTSEngine:
             await communicate.save(TTS_TEMP_FILE)
             return True
         except Exception as e:
-            print(f"[TTS] ⚠ Erro no Edge TTS: {e}")
+            print(err("TTS_EDGE_FAILED", str(e)))
             return False
 
     async def _play_elevenlabs(self, text: str) -> bool:
@@ -299,11 +306,15 @@ class TTSEngine:
                     f.write(resp.content)
                 return True
             else:
-                print(f"[TTS] ⚠ ElevenLabs respondeu {resp.status_code}: {resp.text}")
+                print(err("TTS_ELEVENLABS_FAILED", f"HTTP {resp.status_code}: {resp.text[:200]}"))
                 return False
         except Exception as e:
-            print(f"[TTS] ⚠ Erro no ElevenLabs: {e}")
+            print(err("TTS_ELEVENLABS_FAILED", str(e)))
             return False
+
+    @staticmethod
+    def _xml_escape(text: str) -> str:
+        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;")
 
     async def _play_azure(self, text: str) -> bool:
         key = getattr(config, "AZURE_SPEECH_KEY", "")
@@ -322,7 +333,7 @@ class TTSEngine:
             voice = getattr(config, "AZURE_SPEECH_VOICE", "pt-BR-ThalitaNeural")
             ssml = f"""<speak version='1.0' xml:lang='pt-BR'>
                 <voice xml:lang='pt-BR' name='{voice}'>
-                    {text}
+                    {self._xml_escape(text)}
                 </voice>
             </speak>"""
             resp = requests.post(url, data=ssml.encode('utf-8'), headers=headers, timeout=10)
@@ -331,10 +342,10 @@ class TTSEngine:
                     f.write(resp.content)
                 return True
             else:
-                print(f"[TTS] ⚠ Azure TTS respondeu {resp.status_code}: {resp.text}")
+                print(err("TTS_AZURE_FAILED", f"HTTP {resp.status_code}: {resp.text[:200]}"))
                 return False
         except Exception as e:
-            print(f"[TTS] ⚠ Erro no Azure: {e}")
+            print(err("TTS_AZURE_FAILED", str(e)))
             return False
 
     async def _play_pyttsx3(self, text: str) -> bool:
@@ -361,7 +372,7 @@ class TTSEngine:
                 return True
             return False
         except Exception as e:
-            print(f"[TTS] ⚠ Erro no pyttsx3: {e}")
+            print(err("TTS_PYTTSX3_FAILED", str(e)))
             return False
 
     def _clean_text(self, text: str) -> str:

@@ -19,6 +19,7 @@ if sys.stderr and hasattr(sys.stderr, 'buffer'):
 
 from luna_core import get_luna
 from api import start_server_thread
+from actions.updater import run_update_check
 
 def main_loop():
     print("[Luna Backend] Iniciando sistema headless...")
@@ -28,6 +29,9 @@ def main_loop():
     except Exception as e:
         print(f"[Luna Backend] Erro fatal ao carregar o cérebro: {e}")
         return
+
+    # Verifica atualizações no GitHub em background
+    run_update_check()
 
     # Inicia o módulo de STT e o Wakeword listener nativo
     try:
@@ -67,6 +71,11 @@ def main_loop():
         print("\n[Luna Backend] Desligando graciosamente...")
 
 if __name__ == "__main__":
+    if "--test-update" in sys.argv:
+        from actions.updater import test_notification
+        print(test_notification())
+        sys.exit(0)
+
     # 1. Inicia o servidor da API (FastAPI) em background
     start_server_thread()
     # 2. Mantém o loop principal travado aguardando eventos de voz

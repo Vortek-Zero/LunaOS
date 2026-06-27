@@ -118,10 +118,19 @@ def handle(cmd: str) -> str | None:
     return "O que você quer que eu escreva em morse?"
 
 
+class _MorseAccessor:
+    def handle(self, cmd):
+        return handle(cmd)
+
+    @property
+    def _pending(self):
+        return globals().get("_pending", False)
+
+
 _instance = None
 
 def get_morse():
     global _instance
     if _instance is None:
-        _instance = type("Morse", (), {"handle": staticmethod(handle)})()
+        _instance = _MorseAccessor()
     return _instance
