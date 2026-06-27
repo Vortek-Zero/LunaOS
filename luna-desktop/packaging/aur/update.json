@@ -1,0 +1,11 @@
+{
+  "version": "0.2.0",
+  "notes": "Nova versão disponível! Instale via pacman: yay -S luna-desktop-git",
+  "pub_date": "2026-06-26T22:30:00Z",
+  "platforms": {
+    "linux-x86_64": {
+      "signature": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVSazk2OVIxWFR4cjhnWFp3OEcrZ29zYzYxbTM5djJmOUE3OGJEWEk5OXZKaUp1dVVQMjIwVXJJQ1k0T3VWajQ5d3orWWJuK3dsY2gxZldqOGw5TFgyUElZeGw3UTZQOFFVPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzgyNTI0NTA1CWZpbGU6bHVuYS1kZXNrdG9wLXg4Nl82NC1saW51eC50YXIuZ3oKY29TdjNla01HaVBrRklQSG1rYzBTd0dtMGdXMXpOM3NHL2dERi91cGp1akUwOHczTGhpMTRxalBWbUh6Zll4VVVYQ0lGL0RBcXJMS0NzM084eFVZQnc9PQo=",
+      "url": "https://github.com/milogol2822/LunaOS/releases/download/v0.2.0/luna-desktop-x86_64-linux.tar.gz"
+    }
+  }
+}
