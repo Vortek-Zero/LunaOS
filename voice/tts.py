@@ -136,55 +136,80 @@ class TTSEngine:
         else:
             self._thread_pool.submit(self._speak_sync, text)
 
+    def _chunk_text(self, text: str, max_chars: int = 1500) -> list[str]:
+        """Divide texto longo em chunks por quebra de frase."""
+        import re
+        sentences = re.split(r'(?<=[.!?])\s+', text)
+        chunks, current = [], ""
+        for s in sentences:
+            if len(current) + len(s) > max_chars and current:
+                chunks.append(current.strip())
+                current = s
+            else:
+                current += " " + s if current else s
+        if current.strip():
+            chunks.append(current.strip())
+        return chunks if len(chunks) > 1 else [text]
+
     def _speak_sync(self, text: str) -> None:
         """Executa TTS de forma síncrona com event loop próprio."""
         with self._lock:
-            self._stop_requested = False  # Reset flag on each speak
+            self._stop_requested = False
             self._speaking = True
             try:
-                # Processa texto via VoiceEngine (Yara)
-                if HAS_VOICE_ENGINE:
-                    engine = get_voice_engine()
-                    segments, params = engine.process(text, base_volume=self.volume)
-                    final_text = engine.segments_to_text(segments)
-                    rate  = params.rate
-                    pitch = params.pitch
-                else:
-                    final_text = self._clean_text(text)
-                    rate  = self.rate
-                    pitch = self.pitch
-
-                if not final_text or getattr(self, '_stop_requested', False):
-                    return
-
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    loop.run_until_complete(self._generate_audio(final_text, rate, pitch))
-                finally:
-                    loop.close()
-
-                if os.path.exists(TTS_TEMP_FILE):
-                    data, samplerate = sf.read(TTS_TEMP_FILE)
-                    # Pós-processamento de áudio (EQ + normalização LUFS)
-                    if HAS_VOICE_ENGINE:
-                        data, samplerate = VoiceEngine.postprocess_audio(data, samplerate)
-                    try:
-                        if getattr(self, '_stop_requested', False):
-                            return
-                        sd.play(data, samplerate)
-                        sd.wait()
-                    except Exception as e:
-                        print(err("TTS_AUDIO_DEVICE_FAILED", str(e)))
-                    try:
-                        os.remove(TTS_TEMP_FILE)
-                    except Exception:
-                        pass
-
+                chunks = self._chunk_text(text)
+                for chunk in chunks:
+                    if getattr(self, '_stop_requested', False):
+                        break
+                    self._speak_chunk(chunk)
             except Exception as e:
                 print(err("TTS_AUDIO_DEVICE_FAILED", f"Falar: {e}"))
             finally:
                 self._speaking = False
+
+    def _speak_chunk(self, text: str) -> None:
+        """Gera e reproduz áudio para um único chunk de texto."""
+        if not text or not text.strip():
+            return
+        try:
+            if HAS_VOICE_ENGINE:
+                engine = get_voice_engine()
+                segments, params = engine.process(text, base_volume=self.volume)
+                final_text = engine.segments_to_text(segments)
+                rate  = params.rate
+                pitch = params.pitch
+            else:
+                final_text = self._clean_text(text)
+                rate  = self.rate
+                pitch = self.pitch
+
+            if not final_text or getattr(self, '_stop_requested', False):
+                return
+
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self._generate_audio(final_text, rate, pitch))
+            finally:
+                loop.close()
+
+            if os.path.exists(TTS_TEMP_FILE):
+                data, samplerate = sf.read(TTS_TEMP_FILE)
+                if HAS_VOICE_ENGINE:
+                    data, samplerate = VoiceEngine.postprocess_audio(data, samplerate)
+                try:
+                    if getattr(self, '_stop_requested', False):
+                        return
+                    sd.play(data, samplerate)
+                    sd.wait()
+                except Exception as e:
+                    print(err("TTS_AUDIO_DEVICE_FAILED", str(e)))
+                try:
+                    os.remove(TTS_TEMP_FILE)
+                except Exception:
+                    pass
+        except Exception as e:
+            print(err("TTS_AUDIO_DEVICE_FAILED", f"Falar chunk: {e}"))
 
     async def _generate_audio(self, text: str, rate: str = None, pitch: str = None) -> None:
         """Gera o arquivo de áudio tentando os motores na ordem da prioridade configurada."""
