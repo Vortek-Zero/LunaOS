@@ -1,7 +1,7 @@
 # Maintainer: Pera <pera@example.com>
 pkgname=luna-desktop-git
 _pkgname=luna-desktop
-pkgver=0.1.0.r1.21ebc1a
+pkgver=0.1.0.r4.a180ecb
 pkgrel=1
 pkgdesc="A modern and efficient desktop client for LunaOS"
 arch=('x86_64')
@@ -47,6 +47,9 @@ Terminal=false
 Type=Application
 Categories=Utility;
 EOF
+
+  # Install update manifest (for Tauri updater)
+  install -Dm644 "packaging/aur/update.json" "$pkgdir/usr/share/luna-desktop/update.json"
 
   # Install icons
   install -Dm644 "src-tauri/icons/128x128.png" "$pkgdir/usr/share/icons/hicolor/128x128/apps/luna-desktop.png"
