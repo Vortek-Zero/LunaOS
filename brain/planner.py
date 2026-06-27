@@ -12,53 +12,66 @@ from brain.llm import get_llm, GROQ_MODELS
 
 logger = logging.getLogger("luna.planner")
 
-PLANNER_PROMPT = """Você é o Planner da Luna. Sua função é criar um plano estratégico para resolver o pedido do usuário.
-Você deve retornar APENAS um JSON válido seguindo este formato:
+PLANNER_PROMPT = """Você é o Planner da Luna, um agente de IA de alto desempenho focado em GESTÃO DE RESULTADOS (DOM - Desired Outcome Management).
+Sua missão é criar ou ajustar um plano estratégico para resolver o pedido do usuário.
 
+Você opera em um loop RECURSIVO. Em cada iteração, você receberá o pedido original e os RESULTADOS DOS PASSOS ANTERIORES.
+Analise se o objetivo foi atingido. Se sim, defina "needs_tools": false e informe na análise que a tarefa foi concluída.
+
+REGRAS CRÍTICAS:
+1. CRIAÇÃO DE CÓDIGO/PROJETOS: Se o usuário pedir para CRIAR algo (código, arquivo, projeto, site, app, script, programa, sistema), SEMPRE use "needs_tools": true. Criar algo REAL requer ferramentas — não é conversa.
+2. VERIFICAÇÃO/CONSULTA DE PROJETOS: Se o usuário pedir para CHECAR/VERIFICAR/VER o estado de um projeto, pasta ou arquivo ('como está', 'o que tem', 'mostra', 'lista', 'status do projeto'), SEMPRE use "needs_tools": true. Você PRECISA usar check_project ou filesystem para ler o que existe de verdade — NUNCA invente.
+3. MATEMÁTICA E CONHECIMENTO: Cálculos básicos (10+10), conversão de unidades simples e perguntas de conhecimento geral NÃO precisam de ferramentas. Defina "needs_tools": false para estes casos.
+4. FOCO NO RESULTADO: Se algo falhou, planeje um caminho alternativo ou correção.
+5. AGÊNCIA: O plano deve usar as capacidades do PC (Terminal, Arquivos, Browser, UI) apenas quando necessário para interagir com o mundo real.
+6. Se a meta foi atingida ou pode ser resolvida apenas com conversa, use "needs_tools": false.
+
+Você deve retornar APENAS um JSON válido:
 {
-  "analysis": "Breve análise do que o usuário quer",
+  "analysis": "Análise do estado atual da tarefa. Se concluída ou se for apenas conversa/matemática, diga 'Tarefa concluída ou resolvida por chat'.",
   "goal": "Objetivo final claro",
   "plan": [
-    "Passo 1...",
-    "Passo 2..."
+    "Próximo passo imediato...",
+    "Passos seguintes (opcional)..."
   ],
   "complexity": "low|medium|high",
   "needs_tools": true|false,
-  "potential_challenges": "Quaisquer desafios previstos",
-  "reasoning": "Sua lógica para este plano"
+  "reasoning": "Por que este é o melhor caminho agora?"
 }
-
-REGRAS:
-1. Responda APENAS o JSON. Sem textos antes ou depois.
-2. O plano deve ser focado em ações que podem ser executadas por um agente com acesso ao PC e Web.
-3. Se o pedido for apenas conversa, defina "needs_tools": false.
 """
 
 def _repair_json(text: str) -> str:
     """Tenta reparar JSON truncado ou malformado de forma agressiva."""
+    if not text:
+        return "{}"
     text = text.strip()
-    
+
     # Remove markdown blocks se existirem
     if "```" in text:
         parts = text.split("```")
-        # Pega a parte que contém o JSON (usualmente a do meio)
-        text = next((p for p in parts if p.strip().startswith("{")), parts[0])
+        text = next((p for p in parts if p.strip().startswith("{") or p.strip().startswith("[")), parts[0])
         text = text.replace("json", "").strip()
-    
-    # Garante que começa com { e termina com }
-    if not text.startswith("{"): text = "{" + text
-    if not text.endswith("}"): text = text + "}"
-    
+
+    # Extrai o primeiro bloco JSON { ... } via regex (remove texto antes/depois)
+    import re
+    m = re.search(r'(\{.*\})', text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+    else:
+        # Tenta extrair array
+        m = re.search(r'(\[.*\])', text, re.DOTALL)
+        if m:
+            text = m.group(1).strip()
+        else:
+            return "{}"
+
     # Se ainda tiver uma string não fechada, tenta fechar artificialmente
-    # (isso é um fallback extremo para evitar o erro de 'Unterminated string')
     try:
         json.loads(text)
     except json.JSONDecodeError:
-        # Se falhar, limpa caracteres de controle comuns
         text = text.replace("\n", " ").replace("\r", " ")
-        # Tenta fechar aspas abertas se for o erro (simplista mas ajuda)
         if text.count('"') % 2 != 0:
-             text += '"'
+            text += '"'
     return text
 
 def generate_plan(user_input: str, context: str = "") -> Dict[str, Any]:
@@ -74,16 +87,17 @@ def generate_plan(user_input: str, context: str = "") -> Dict[str, Any]:
     
     model = GROQ_MODELS.get("heavy", "llama-3.3-70b-versatile")
     
+    content = ""
     try:
         raw_response = llm.generate(messages=messages, task_type="planning", model=model)
-        content = raw_response.get("message", {}).get("content", "") if isinstance(raw_response, dict) else raw_response
+        content = raw_response.get("message", {}).get("content", "") if isinstance(raw_response, dict) else (raw_response or "")
         
         # Repara e limpa
-        repaired_content = _repair_json(content)
+        repaired_content = _repair_json(str(content))
         return json.loads(repaired_content)
         
     except Exception as e:
-        logger.error(f"Erro no Planner: {e}. Raw: {content[:100]}")
+        logger.error(f"Erro no Planner: {e}. Raw: {str(content)[:100]}")
         return {
             "analysis": "Erro no planejamento.",
             "goal": user_input,

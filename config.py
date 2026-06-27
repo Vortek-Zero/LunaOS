@@ -13,15 +13,24 @@ BASE_DIR = Path(__file__).parent
 # ── Carrega .env local se existir ─────────────────────────────
 _env_file = BASE_DIR / ".env"
 if _env_file.exists():
-    for _line in _env_file.read_text(encoding="utf-8").splitlines():
-        _line = _line.strip()
-        if _line and not _line.startswith("#") and "=" in _line:
-            _k, _, _v = _line.partition("=")
-            os.environ.setdefault(_k.strip(), _v.strip())
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(_env_file)
+    except ImportError:
+        for _line in _env_file.read_text(encoding="utf-8").splitlines():
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                _k = _k.strip()
+                _v = _v.strip()
+                # Handle quotes
+                if len(_v) >= 2 and _v[0] == _v[-1] and _v[0] in ('"', "'"):
+                    _v = _v[1:-1]
+                os.environ.setdefault(_k, _v)
 
 # ── API ───────────────────────────────────────────────────────
 API_HOST = os.getenv("LUNA_API_HOST", "0.0.0.0")
-API_PORT = int(os.getenv("LUNA_API_PORT", "5000"))
+API_PORT = int(os.getenv("LUNA_API_PORT", "5050"))
 
 # API Key — gera uma automática se não definida (salva em .api_key)
 _API_KEY_FILE = BASE_DIR / ".api_key"
@@ -32,10 +41,12 @@ def _load_or_generate_api_key() -> str:
     if env_key:
         return env_key
     if _API_KEY_FILE.exists():
+        _API_KEY_FILE.chmod(0o600)
         return _API_KEY_FILE.read_text(encoding="utf-8").strip()
     # Gera nova key
     new_key = f"luna-{secrets.token_hex(24)}"
     _API_KEY_FILE.write_text(new_key, encoding="utf-8")
+    _API_KEY_FILE.chmod(0o600)
     print(f"\n🔑 Nova API key gerada e salva em {_API_KEY_FILE}")
     print(f"   Key: {new_key}\n")
     return new_key
@@ -73,14 +84,15 @@ MEMORY_FILE = DATA_DIR / "memory.json"
 CACHE_FILE = DATA_DIR / "cache.json"
 RAG_DB_FILE = DATA_DIR / "rag_db.json"
 
-WORKSPACE_DIR = Path(os.getenv("LUNA_WORKSPACE", "/home/pera/Luna-programming"))
+# Workspace dinâmico: se não houver env LUNA_WORKSPACE, usa a pasta do projeto (BASE_DIR)
+WORKSPACE_DIR = Path(os.getenv("LUNA_WORKSPACE", str(BASE_DIR)))
 WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
 TEMP_DIR = BASE_DIR / "temp"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-PERSONALITY_FILE = BASE_DIR / "personality.json"
-APPS_FILE = BASE_DIR / "apps.json"
+PERSONALITY_FILE = BASE_DIR / "config" / "personality.json"
+APPS_FILE = BASE_DIR / "config" / "apps.json"
 
 # ── Voice ─────────────────────────────────────────────────────
 VOICE_CONFIG = {
@@ -141,38 +153,82 @@ MISTRAL_MODELS = {
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
 GEMINI_MODELS = {
-    "heavy":     "gemini-2.5-flash",
-    "main":      "gemini-2.5-flash",
+    "heavy":     "gemini-1.5-pro",         # Pro para raciocínio pesado
+    "main":      "gemini-2.5-flash",       # Flash para conversa rápida
     "fast":      "gemini-2.5-flash",
     "fallback":  "gemini-2.0-flash",       # fallback 1
     "fallback2": "gemini-2.5-flash-lite",  # fallback 2
 }
 
 # ── OpenRouter LLM API ────────────────────────────────────────
-# openrouter.ai — fallback 1 (quando Gemini falha, oferece modelos alternativos)
+# openrouter.ai — gateway com DeepSeek, Gemini, Llama, etc.
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
-# Modelos OpenRouter — fallback com modelos top quando Gemini indisponível
 OPENROUTER_MODELS = {
-    "heavy":     "google/gemini-2.5-flash",  # tenta Gemini via OR primeiro
-    "main":      "google/gemini-2.5-flash",
-    "fast":      "google/gemini-2.0-flash-001",
-    "fallback":  "meta-llama/llama-4-maverick",            # quando Gemini OR também falha
-    "fallback2": "deepseek/deepseek-chat-v3-0324",
+    "heavy":     "deepseek/deepseek-chat-v3-0324",
+    "main":      "deepseek/deepseek-chat-v3-0324",
+    "fast":      "deepseek/deepseek-chat-v3-0324",
+    "fallback":  "deepseek/deepseek-r1",
+    "fallback2": "google/gemini-2.5-flash",
+}
+
+# ── Chutes.ai LLM API (DESATIVADO — sem créditos) ─────────────
+CHUTES_API_KEY = os.getenv("CHUTES_API_KEY", "")
+CHUTES_BASE_URL = os.getenv("CHUTES_BASE_URL", "https://llm.chutes.ai/v1")
+CHUTES_MODELS = {
+    "heavy":     "deepseek-ai/DeepSeek-V3.2-TEE",
+    "main":      "deepseek-ai/DeepSeek-V3.2-TEE",
+    "fast":      "Qwen/Qwen3.6-27B-TEE",
+    "fallback":  "google/gemma-4-31B-turbo-TEE",
+    "fallback2": "MiniMaxAI/MiniMax-M2.5-TEE",
+}
+
+# ── GitHub Models LLM API ─────────────────────────────────────
+# models.inference.ai.azure.com — DeepSeek V3, R1, etc. via GitHub PAT
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GITHUB_BASE_URL = "https://models.inference.ai.azure.com"
+
+GITHUB_MODELS = {
+    "heavy":     "DeepSeek-R1",           # R1 — raciocínio pesado
+    "main":      "DeepSeek-V3-0324",       # V3 — conversa principal
+    "fast":      "DeepSeek-V3-0324",       # rápido o suficiente
+    "fallback":  "DeepSeek-R1",           # fallback 1
+}
+
+# ── Naga AI API ────────────────────────────────────────────
+# naga.ac — modelos gratuitos (Nemotron, Llama, etc.)
+NAGA_API_KEY = os.getenv("NAGA_API_KEY", "")
+NAGA_BASE_URL = "https://api.naga.ac/v1"
+
+NAGA_MODELS = {
+    "heavy":     "nemotron-3-ultra-550b-a55b:free",  # 1M ctx, reasoning pesado
+    "main":      "nemotron-3-super-120b-a12b:free",   # 262K ctx, conversa principal
+    "fast":      "llama-4-scout-17b-16e-instruct:free",  # comandos rápidos
+    "fallback":  "llama-3.3-70b-instruct:free",       # fallback
+}
+
+# ── Best AI API ───────────────────────────────────────────
+# api.oaibest.com — DeepSeek, Qwen, Gemini gratuitos
+BESTAI_API_KEY = os.getenv("BESTAI_API_KEY", "")
+BESTAI_BASE_URL = "https://api.oaibest.com/v1"
+
+BESTAI_MODELS = {
+    "heavy":     "deepseek-r1",
+    "main":      "deepseek-v3.1",
+    "fast":      "deepseek-v4-flash",
+    "fallback":  "qwen3.5-flash",
 }
 
 # ── Groq LLM API ──────────────────────────────────────────────
-# console.groq.com — Whisper STT + LLM (llama3, gemma2, mixtral)
+# console.groq.com — Whisper STT + LLM (qwen3, llama4, deepseek via Groq)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 
-# Modelos Groq (substituem Ollama quando disponível)
-# REGRA: 8B = chat/conversa/planejamento (rápido, sem rate limit)
-#        70B = escrita criativa, análise pesada, código complexo
+# Modelos Groq — todos com rate limits generosos na free tier
+# Qwen 3 32B e Llama 4 Scout são MUITO superiores ao Llama 3.1 8B
 GROQ_MODELS = {
-    "heavy": "llama-3.3-70b-versatile",    # escrita criativa + análise pesada — reservado
-    "main":  "llama-3.1-8b-instant",       # chat/conversa/planejamento — produção (rápido)
-    "fast":  "llama-3.1-8b-instant",       # comandos rápidos — produção
+    "heavy": "llama-3.3-70b-versatile",      # escrita criativa + análise pesada
+    "main":  "qwen/qwen3-32b",               # chat/conversa/planejamento — inteligente e rápido
+    "fast":  "meta-llama/llama-4-scout-17b-16e-instruct",  # comandos rápidos
 }
 
 # ── Tavily Search API ─────────────────────────────────────────

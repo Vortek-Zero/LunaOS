@@ -1,0 +1,342 @@
+[
+  {
+    "ts": "2026-06-10T09:50:09.097404",
+    "action": "user_input",
+    "details": "oi vamos voltar a criar aquele projeto de fogos de artificio? eu acabei apagando faz de novo"
+  },
+  {
+    "ts": "2026-06-10T09:51:44.291976",
+    "action": "user_input",
+    "details": "não faca isso no github"
+  },
+  {
+    "ts": "2026-06-10T09:52:29.559911",
+    "action": "user_input",
+    "details": "coloque o condteudo discutido em html lá"
+  },
+  {
+    "ts": "2026-06-10T09:53:05.148370",
+    "action": "user_input",
+    "details": "use o modelo de codigo 70B"
+  },
+  {
+    "ts": "2026-06-10T09:53:18.037008",
+    "action": "user_input",
+    "details": "sim"
+  },
+  {
+    "ts": "2026-06-10T10:14:28.139821",
+    "action": "user_input",
+    "details": "oi luna, pode checar o estado do projeto fogos de artificio?"
+  },
+  {
+    "ts": "2026-06-10T10:16:06.778131",
+    "action": "user_input",
+    "details": "vamos começar a fazer as coisas. na pasta do projeto fogos de artificio crie um html simples"
+  },
+  {
+    "ts": "2026-06-10T10:43:08.493243",
+    "action": "user_input",
+    "details": "oi você me ajuda a criar um projeto?"
+  },
+  {
+    "ts": "2026-06-10T10:49:01.954428",
+    "action": "user_input",
+    "details": "vamos criar um projeto hoje"
+  },
+  {
+    "ts": "2026-06-10T10:49:59.029221",
+    "action": "user_input",
+    "details": "crie uma pasta o nome \"fogos-comemoracao\""
+  },
+  {
+    "ts": "2026-06-10T10:51:57.999226",
+    "action": "user_input",
+    "details": "crie de novo o arquivo"
+  },
+  {
+    "ts": "2026-06-10T10:53:12.784133",
+    "action": "user_input",
+    "details": "é um site html em comemoração a versão 1.4 do seu sistema Luna misture efeitos visuais e transforme "
+  },
+  {
+    "ts": "2026-06-10T10:53:46.635675",
+    "action": "user_input",
+    "details": "faça isso"
+  },
+  {
+    "ts": "2026-06-10T11:02:02.729433",
+    "action": "user_input",
+    "details": "tente criar aquilo que pedi de novo"
+  },
+  {
+    "ts": "2026-06-10T11:06:11.948603",
+    "action": "user_input",
+    "details": "agora melhora essa celebração eu achei muito simples"
+  },
+  {
+    "ts": "2026-06-10T11:06:44.034175",
+    "action": "user_input",
+    "details": "faça isso adicione os arquivos e edite o codigo"
+  },
+  {
+    "ts": "2026-06-10T11:09:31.553993",
+    "action": "user_input",
+    "details": "o arquivo não foi editado tente de novo"
+  },
+  {
+    "ts": "2026-06-10T11:09:50.044716",
+    "action": "user_input",
+    "details": "o arquivo de celebração"
+  },
+  {
+    "ts": "2026-06-10T11:11:34.491965",
+    "action": "user_input",
+    "details": "edite o que você falou que ia editar"
+  },
+  {
+    "ts": "2026-06-10T11:26:07.728169",
+    "action": "user_input",
+    "details": "status"
+  },
+  {
+    "ts": "2026-06-10T11:26:17.022757",
+    "action": "user_input",
+    "details": "apps"
+  },
+  {
+    "ts": "2026-06-10T11:26:17.028514",
+    "action": "user_input",
+    "details": "oi Luna, como você está?"
+  },
+  {
+    "ts": "2026-06-10T11:26:17.030841",
+    "action": "user_input",
+    "details": "qual é a capital do Brasil?"
+  },
+  {
+    "ts": "2026-06-10T11:29:12.700412",
+    "action": "user_input",
+    "details": "status"
+  },
+  {
+    "ts": "2026-06-10T11:29:15.196789",
+    "action": "user_input",
+    "details": "apps"
+  },
+  {
+    "ts": "2026-06-10T11:37:14.364778",
+    "action": "user_input",
+    "details": "crie um site de portifolio pra você com html"
+  },
+  {
+    "ts": "2026-06-10T11:37:49.636997",
+    "action": "user_input",
+    "details": "crie os arquivos e a pasta"
+  },
+  {
+    "ts": "2026-06-10T11:39:40.566534",
+    "action": "user_input",
+    "details": "usando o modelo 70B faça algo muito melhor"
+  },
+  {
+    "ts": "2026-06-10T11:40:07.508264",
+    "action": "user_input",
+    "details": "escreva sozinha"
+  },
+  {
+    "ts": "2026-06-10T12:06:50.636567",
+    "action": "user_input",
+    "details": "programa pra min um siste de e-comerce estilo mercado livre com um desin moderno em html"
+  },
+  {
+    "ts": "2026-06-10T12:07:49.457102",
+    "action": "user_input",
+    "details": "crie os arquivos manualmente em uma nova pasta na home"
+  },
+  {
+    "ts": "2026-06-10T12:17:23.361102",
+    "action": "user_input",
+    "details": "programe algo divertido"
+  },
+  {
+    "ts": "2026-06-10T12:19:07.084765",
+    "action": "user_input",
+    "details": "crie com html um jogo de acertar o alvo na hora certa"
+  },
+  {
+    "ts": "2026-06-10T12:20:15.929346",
+    "action": "user_input",
+    "details": "nenhum arquivo foi criado"
+  },
+  {
+    "ts": "2026-06-10T13:47:06.366846",
+    "action": "user_input",
+    "details": "e ai luna!"
+  },
+  {
+    "ts": "2026-06-10T13:47:28.336438",
+    "action": "user_input",
+    "details": "lista pra min o que tem na home"
+  },
+  {
+    "ts": "2026-06-13T10:27:28.483965",
+    "action": "user_input",
+    "details": "Luna, você pode me explicar como centralizar uma div"
+  },
+  {
+    "ts": "2026-06-13T10:33:23.246984",
+    "action": "user_input",
+    "details": "me ensina a subir um git"
+  },
+  {
+    "ts": "2026-06-13T10:35:45.231702",
+    "action": "user_input",
+    "details": "verifica quanto de espaço eu tenho no meu hd"
+  },
+  {
+    "ts": "2026-06-13T10:38:29.435152",
+    "action": "user_input",
+    "details": "verifique o armazenamento do meu pc"
+  },
+  {
+    "ts": "2026-06-13T10:40:01.026510",
+    "action": "user_input",
+    "details": "você pode usar para verificar no terminal com df -h. du -sh * pra ver os arquivos e tamanho"
+  },
+  {
+    "ts": "2026-06-13T10:43:40.549826",
+    "action": "user_input",
+    "details": "tente verificar o armazenamento e arquivos agora"
+  },
+  {
+    "ts": "2026-06-13T10:44:00.570060",
+    "action": "user_input",
+    "details": "ela já está funcionando tente"
+  },
+  {
+    "ts": "2026-06-13T10:48:42.346978",
+    "action": "user_input",
+    "details": "verifica qunto de armzanamento eu tenho"
+  },
+  {
+    "ts": "2026-06-13T10:49:59.367615",
+    "action": "user_input",
+    "details": "abra o terminal e digite du -sh *"
+  },
+  {
+    "ts": "2026-06-13T10:51:23.409208",
+    "action": "user_input",
+    "details": "diagnostico das ferramentas"
+  },
+  {
+    "ts": "2026-06-13T10:52:17.368193",
+    "action": "user_input",
+    "details": "me diga todas elas quais falharam"
+  },
+  {
+    "ts": "2026-06-13T10:52:46.564874",
+    "action": "user_input",
+    "details": "verifique o espaço no meu disco"
+  },
+  {
+    "ts": "2026-06-13T10:53:31.284906",
+    "action": "user_input",
+    "details": "quanto espaço eu tenho na /home"
+  },
+  {
+    "ts": "2026-06-13T10:55:34.522899",
+    "action": "user_input",
+    "details": "verifica no terminal o que tem na /"
+  },
+  {
+    "ts": "2026-06-13T10:56:21.535240",
+    "action": "user_input",
+    "details": "tente de novo"
+  },
+  {
+    "ts": "2026-06-25T00:12:36.135967",
+    "action": "user_input",
+    "details": "Olá Luna, quem é você?"
+  },
+  {
+    "ts": "2026-06-25T22:21:40.261384",
+    "action": "user_input",
+    "details": "teste erro"
+  },
+  {
+    "ts": "2026-06-25T22:30:19.414258",
+    "action": "user_input",
+    "details": "teste de conexão"
+  },
+  {
+    "ts": "2026-06-25T22:31:25.581116",
+    "action": "user_input",
+    "details": "oii"
+  },
+  {
+    "ts": "2026-06-25T22:38:48.944363",
+    "action": "user_input",
+    "details": "o que temos pra essa noite?"
+  },
+  {
+    "ts": "2026-06-26T19:19:47.945037",
+    "action": "user_input",
+    "details": "oi"
+  },
+  {
+    "ts": "2026-06-26T19:20:41.796890",
+    "action": "user_input",
+    "details": "qual é a formula do teorema de pitagoras"
+  },
+  {
+    "ts": "2026-06-26T19:21:19.267955",
+    "action": "user_input",
+    "details": "me dê um exemplo de calculo"
+  },
+  {
+    "ts": "2026-06-26T19:23:17.184058",
+    "action": "user_input",
+    "details": "Oi, tudo bom?"
+  },
+  {
+    "ts": "2026-06-26T19:23:45.896105",
+    "action": "user_input",
+    "details": "Qual a soma dos catetos?"
+  },
+  {
+    "ts": "2026-06-26T19:24:12.946362",
+    "action": "user_input",
+    "details": "O céu é azul."
+  },
+  {
+    "ts": "2026-06-26T19:24:33.580614",
+    "action": "user_input",
+    "details": "Salve o que eu vou te dizer agora. 1 mais 1 não pode ser igual a 3 caso eu precise de dinheiro."
+  },
+  {
+    "ts": "2026-06-26T19:35:08.208278",
+    "action": "user_input",
+    "details": "prepare uma lista de máteriais para uma maquete copia da taça da copa do mundo"
+  },
+  {
+    "ts": "2026-06-26T19:35:21.018102",
+    "action": "user_input",
+    "details": "pensar"
+  },
+  {
+    "ts": "2026-06-26T19:39:26.930413",
+    "action": "user_input",
+    "details": "oi"
+  },
+  {
+    "ts": "2026-06-26T19:39:52.251129",
+    "action": "user_input",
+    "details": "/pensar"
+  },
+  {
+    "ts": "2026-06-26T19:40:22.599036",
+    "action": "user_input",
+    "details": "/pensar como criar um buraco negro"
+  }
+]

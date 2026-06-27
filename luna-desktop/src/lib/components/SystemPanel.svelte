@@ -47,6 +47,13 @@
     await loadFacts();
   }
 
+  async function resetAll() {
+    if (!confirm('ATENÇÃO: Limpar TODO o sistema (chat, memória, notas, lista)? Isso não pode ser desfeito.')) return;
+    await luna.resetSystem();
+    alert('Sistema resetado! Reinicie o backend para aplicar as mudanças.');
+    window.location.reload();
+  }
+
   async function loadPerf() {
     const p = await luna.fetchPerformance();
     if (p) {
@@ -187,9 +194,12 @@
           <span class="perf-label">Entradas em cache</span>
           <span class="perf-val">{perfInfo.total_entries}</span>
         </div>
-        <div class="btn-row">
+        <div class="btn-row" style="margin-top: 10px;">
           <button class="btn sm" onclick={loadPerf}>
             <Icon name="refresh-cw" size="14" /> Atualizar
+          </button>
+          <button class="btn danger sm" onclick={resetAll} style="margin-left: auto;">
+            <Icon name="skull" size="14" /> Limpeza Total
           </button>
         </div>
       </div>

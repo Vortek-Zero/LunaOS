@@ -11,10 +11,7 @@ from typing import List, Dict, Any, Optional
 
 import pandas as pd
 from actions.google_services import get_google
-
-WORKSPACE_DIR = Path("/home/pera/Luna-programming")
-WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
-
+from config import WORKSPACE_DIR
 
 class DocumentServices:
     """Serviços de documentos locais e integração com Google Drive."""
@@ -29,7 +26,8 @@ class DocumentServices:
             path = WORKSPACE_DIR / path
         # Segurança: impede sair do workspace ou do diretório home do usuário
         resolved = path.resolve()
-        if not (resolved.is_relative_to(WORKSPACE_DIR) or resolved.is_relative_to(Path("/home/pera"))):
+        home = Path.home()
+        if not (resolved.is_relative_to(WORKSPACE_DIR) or resolved.is_relative_to(home)):
             raise PermissionError("Acesso não autorizado fora do workspace de programação ou diretório home.")
         return resolved
 

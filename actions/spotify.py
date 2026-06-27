@@ -41,7 +41,7 @@ SCOPE = (
 )
 
 _CACHE_PATH = os.path.expanduser("~/.cache-luna_spotify")
-_APPS_JSON  = Path(__file__).parent.parent / "apps.json"
+_APPS_JSON  = Path(__file__).parent.parent / "config" / "apps.json"
 
 # Tempo máximo para aguardar o Spotify abrir e aparecer como device (segundos)
 _OPEN_TIMEOUT = 20

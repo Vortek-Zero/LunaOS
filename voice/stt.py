@@ -17,6 +17,8 @@ import wave
 from pathlib import Path
 from typing import Optional
 
+from error_codes import err
+
 os.environ["LC_ALL"] = "C.UTF-8"
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
@@ -27,7 +29,7 @@ try:
     HAS_PYAUDIO = True
 except ImportError:
     HAS_PYAUDIO = False
-    print("[STT] ⚠ pyaudio não instalado.")
+    print(err("STT_PYAUDIO_MISSING", "pyaudio não instalado."))
 
 try:
     from faster_whisper import WhisperModel
@@ -53,21 +55,24 @@ _ACTIVATE_SOUND = Path(__file__).parent.parent / "sounds" / "Beepvisual.mp3"
 WAKEWORD = "luna"   # único — sem variações, Groq vai acertar
 
 
-def _load_env():
-    """Lê .env e retorna dict."""
-    env_file = Path(__file__).parent.parent / ".env"
-    env = {}
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env[k.strip()] = v.strip()
-    return env
+try:
+    from config import GROQ_API_KEY as _CFG_GROQ_KEY
+    GROQ_API_KEY = _CFG_GROQ_KEY or os.environ.get("GROQ_API_KEY", "")
+except ImportError:
+    def _load_env():
+        """Lê .env e retorna dict."""
+        env_file = Path(__file__).parent.parent / ".env"
+        env = {}
+        if env_file.exists():
+            for line in env_file.read_text().splitlines():
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip()
+        return env
 
-
-_ENV = _load_env()
-GROQ_API_KEY = _ENV.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY", "")
+    _ENV = _load_env()
+    GROQ_API_KEY = _ENV.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY", "")
 HAS_GROQ = HAS_GROQ_LIB and bool(GROQ_API_KEY)
 
 
@@ -151,7 +156,7 @@ def _record_until_silence(
         stream.close()
         return b"".join(frames) if started else None
     except Exception as e:
-        print(f"[STT] Erro ao gravar: {e}")
+        print(err("STT_RECORD_FAILED", str(e)))
         return None
 
 
@@ -172,7 +177,7 @@ def _transcribe_groq(wav_path: str) -> str:
             )
         return str(result).strip()
     except Exception as e:
-        print(f"[STT] Erro Groq: {e}")
+        print(err("STT_GROQ_FAILED", str(e)))
         return ""
     finally:
         try:
@@ -192,7 +197,7 @@ def _transcribe_local(model, wav_path: str) -> str:
         )
         return " ".join(s.text for s in segments).strip()
     except Exception as e:
-        print(f"[STT] Erro Whisper local: {e}")
+        print(err("STT_WHISPER_FAILED", str(e)))
         return ""
     finally:
         try:
@@ -236,7 +241,7 @@ class STTEngine:
             self._local_model = WhisperModel(MODEL_SIZE, device="cpu", compute_type="int8")
             print(f"[STT] ✓ Whisper '{MODEL_SIZE}' carregado.")
         except Exception as e:
-            print(f"[STT] ⚠ Erro ao carregar Whisper: {e}")
+            print(err("STT_WHISPER_LOAD_FAILED", str(e)))
             self._local_model = None
 
     def _transcribe(self, wav_path: str) -> str:
@@ -262,69 +267,70 @@ class STTEngine:
 
         consecutive_errors = 0
         while not self._stop_bg.is_set():
-            try:
-                stream = pa.open(
-                    format=pyaudio.paInt16, channels=1,
-                    rate=SAMPLE_RATE, input=True,
-                    frames_per_buffer=CHUNK_WAKE,
-                )
-                consecutive_errors = 0  # Reset upon success
-            except Exception as e:
-                consecutive_errors += 1
-                if consecutive_errors == 1:
-                    print(f"[STT] Erro ao abrir stream: {e}")
-                
-                if consecutive_errors >= 3:
-                    print("\n[STT] ⚠ Microfone indisponível ou bloqueado. Desativando o modo de escuta automática (wakeword) para evitar spam de erros.")
-                    self.stop_wakeword_listener()
-                    break
-                    
-                time.sleep(2.0)
-                continue
-
-            ring_buf     = []
-            speech_frames = []
-            listening    = False
-
-            try:
-                while not self._stop_bg.is_set():
-                    data = stream.read(CHUNK_WAKE, exception_on_overflow=False)
-                    shorts = struct.unpack(f"{CHUNK_WAKE}h", data)
-                    rms    = math.sqrt(sum(s*s for s in shorts) / CHUNK_WAKE)
-
-                    if not listening:
-                        ring_buf.append(data)
-                        if len(ring_buf) > PRE_FRAMES:
-                            ring_buf.pop(0)
-                        if rms > ENERGY_THRESHOLD:
-                            listening = True
-                            speech_frames = list(ring_buf)
-                    else:
-                        speech_frames.append(data)
-                        if rms < ENERGY_THRESHOLD or len(speech_frames) >= MAX_CHUNKS:
-                            pcm  = b"".join(speech_frames)
-                            wav  = _pcm_to_wav(pcm)
-                            text = self._transcribe(wav).lower().strip()
-                            if text:
-                                print(f"[STT WAKE] ouvido: '{text}'")
-                            if WAKEWORD in text:
-                                print(f"[STT] 🔔 Wakeword 'Luna' detectado!")
-                                stream.stop_stream()
-                                stream.close()
-                                self.stop_wakeword_listener()
-                                self._wake_event.set()
-                                return
-                            ring_buf      = []
-                            speech_frames = []
-                            listening     = False
-            except Exception as e:
-                print(f"[STT] Erro no wakeword loop: {e}")
-            finally:
+            with self._lock:
                 try:
-                    stream.stop_stream()
-                    stream.close()
-                except Exception:
-                    pass
+                    stream = pa.open(
+                        format=pyaudio.paInt16, channels=1,
+                        rate=SAMPLE_RATE, input=True,
+                        frames_per_buffer=CHUNK_WAKE,
+                    )
+                    consecutive_errors = 0  # Reset upon success
+                except Exception as e:
+                    consecutive_errors += 1
+                    if consecutive_errors == 1:
+                        print(err("STT_MIC_UNAVAILABLE", f"Stream: {e}"))
+
+                    if consecutive_errors >= 3:
+                        print(err("STT_MIC_UNAVAILABLE", "Microfone indisponível ou bloqueado. Wakeword desativado."))
+                        self.stop_wakeword_listener()
+                        break
+
+                    time.sleep(2.0)
+                    continue
+
+                ring_buf     = []
+                speech_frames = []
+                listening    = False
+
+                try:
+                    while not self._stop_bg.is_set():
+                        data = stream.read(CHUNK_WAKE, exception_on_overflow=False)
+                        shorts = struct.unpack(f"{CHUNK_WAKE}h", data)
+                        rms    = math.sqrt(sum(s*s for s in shorts) / CHUNK_WAKE)
+
+                        if not listening:
+                            ring_buf.append(data)
+                            if len(ring_buf) > PRE_FRAMES:
+                                ring_buf.pop(0)
+                            if rms > ENERGY_THRESHOLD:
+                                listening = True
+                                speech_frames = list(ring_buf)
+                        else:
+                            speech_frames.append(data)
+                            if rms < ENERGY_THRESHOLD or len(speech_frames) >= MAX_CHUNKS:
+                                pcm  = b"".join(speech_frames)
+                                wav  = _pcm_to_wav(pcm)
+                                text = self._transcribe(wav).lower().strip()
+                                if text:
+                                    print(f"[STT WAKE] ouvido: '{text}'")
+                                if WAKEWORD in text:
+                                    print(f"[STT] 🔔 Wakeword 'Luna' detectado!")
+                                    stream.stop_stream()
+                                    stream.close()
+                                    self.stop_wakeword_listener()
+                                    self._wake_event.set()
+                                    return
+                                ring_buf      = []
+                                speech_frames = []
+                                listening     = False
+                except Exception as e:
+                    print(err("STT_WAKEWORD_LOOP", str(e)))
+                finally:
+                    try:
+                        stream.stop_stream()
+                        stream.close()
+                    except Exception:
+                        pass
 
     # ── API pública ────────────────────────────────────────────
 
@@ -333,7 +339,7 @@ class STTEngine:
             return
         self._stop_bg.clear()
         self._bg_thread = threading.Thread(
-            target=self._wakeword_loop, daemon=True
+            target=self._wakeword_loop, daemon=True, name="wakeword-listener"
         )
         self._bg_thread.start()
         mode = "Groq" if HAS_GROQ else "Whisper local"

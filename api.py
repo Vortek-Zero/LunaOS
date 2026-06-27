@@ -8,6 +8,8 @@ import time
 import asyncio
 import json
 import hashlib
+import logging
+import logging as _logging
 import secrets as _secrets
 from pathlib import Path
 from typing import Optional
@@ -18,8 +20,16 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
 
 import config
+
+_llm_executor = _ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm")
+_whisper_model = None
+
+_logging.basicConfig(level=_logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+logger = _logging.getLogger("luna.api")
 
 # ── App FastAPI ───────────────────────────────────────────────
 
@@ -30,13 +40,37 @@ app = FastAPI(
 )
 
 # CORS
+allowed = list(config.CORS_ORIGINS)
+if "*" in allowed:
+    allowed = ["*"]
+    allow_credentials = False
+else:
+    allow_credentials = True
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=config.CORS_ORIGINS,
-    allow_credentials=True,
+    allow_origins=allowed,
+    allow_credentials=allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Rate Limiting ─────────────────────────────────────────────
+import time as _rate_time
+
+_rate_limit_data: dict[str, list[float]] = defaultdict(list)
+RATE_LIMIT = 30  # requests per minute per IP
+
+def _check_rate_limit(request: Request) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    now = _rate_time.time()
+    window = 60.0
+    timestamps = _rate_limit_data[client_ip]
+    # Remove old entries
+    while timestamps and now - timestamps[0] > window:
+        timestamps.pop(0)
+    if len(timestamps) >= RATE_LIMIT:
+        raise HTTPException(status_code=429, detail="Muitas requisições. Aguarde um momento.")
+    timestamps.append(now)
 
 # ── Autenticação API Key ──────────────────────────────────────
 
@@ -44,10 +78,6 @@ API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
 async def verify_api_key(request: Request, api_key: Optional[str] = Depends(API_KEY_HEADER)):
-    """Verifica API key. Permite acesso sem key a / e /api/health."""
-    client_host = request.client.host if request.client else None
-    if client_host in ("127.0.0.1", "localhost", "::1"):
-        return api_key or config.API_KEY
     if not api_key or api_key != config.API_KEY:
         raise HTTPException(
             status_code=403,
@@ -72,9 +102,10 @@ def _save_users(users: dict) -> None:
     _USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _USERS_FILE.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
 
+_TOKEN_SALT = _secrets.token_hex(8)  # random salt at module level
+
 def _token_for(username: str, device_id: str) -> str:
-    """Token determinístico por usuário+dispositivo — não expira."""
-    raw = f"{username}:{device_id}:{config.API_KEY}"
+    raw = f"{username}:{device_id}:{config.API_KEY}:{_TOKEN_SALT}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
 def _verify_user_token(token: str) -> Optional[str]:
@@ -243,9 +274,21 @@ ADMIN_PASSWORD = config.ADMIN_PASSWORD
 def _require_admin(request: Request) -> str:
     username = _require_user(request)
     admin_pass = request.headers.get("X-Admin-Pass", "")
-    if not ADMIN_PASSWORD or admin_pass != ADMIN_PASSWORD:
+    if not admin_pass or admin_pass != ADMIN_PASSWORD:
         raise HTTPException(status_code=403, detail="Acesso restrito ao administrador.")
     return username
+
+
+_ADMIN_AUDIT_LOG = Path(__file__).parent / "data" / "admin_audit.log"
+
+def _log_admin_action(username: str, action: str, detail: str = ""):
+    _ADMIN_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
+    ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+    msg = f"[{ts}] {username} | {action}"
+    if detail:
+        msg += f" | {detail}"
+    with open(_ADMIN_AUDIT_LOG, "a", encoding="utf-8") as f:
+        f.write(msg + "\n")
 
 
 # ── Central de Controle — Luzes ───────────────────────────────
@@ -362,7 +405,8 @@ async def control_summary(_key: str = Depends(verify_api_key)):
 @app.get("/api/admin/devices")
 async def admin_devices(request: Request):
     """Lista dispositivos (usuários) conectados. Apenas admin."""
-    _require_admin(request)
+    username = _require_admin(request)
+    _log_admin_action(username, "admin_devices", "Listou dispositivos conectados")
     users = _load_users()
     result = []
     for username, data in users.items():
@@ -376,7 +420,8 @@ async def admin_devices(request: Request):
 @app.delete("/api/admin/devices/{username}")
 async def admin_remove_device(username: str, request: Request):
     """Remove conta de usuário. Apenas admin."""
-    _require_admin(request)
+    admin_user = _require_admin(request)
+    _log_admin_action(admin_user, "admin_remove_device", f"Removeu conta: {username}")
     users = _load_users()
     if username not in users:
         raise HTTPException(status_code=404, detail="Usuário não encontrado.")
@@ -384,16 +429,30 @@ async def admin_remove_device(username: str, request: Request):
     _save_users(users)
     return {"success": True}
 
-@app.delete("/api/admin/devices/{username}/tokens")
-async def admin_revoke_tokens(username: str, request: Request):
-    """Revoga todos os tokens de um usuário (força re-login em todos os dispositivos)."""
-    _require_admin(request)
-    users = _load_users()
-    if username not in users:
-        raise HTTPException(status_code=404, detail="Usuário não encontrado.")
-    users[username]["tokens"] = []
-    _save_users(users)
-    return {"success": True}
+@app.delete("/api/system/reset")
+async def reset_system(request: Request, _key: str = Depends(verify_api_key)):
+    """Limpeza total: reseta memória, cache e arquivos de estado."""
+    admin_user = _require_admin(request)
+    _log_admin_action(admin_user, "reset_system", "Resetou o sistema")
+    luna = get_luna()
+    # Limpa memória RAG/Fatos
+    if hasattr(luna._memory, 'rag'):
+        luna._memory.rag.reset_collections()
+    # Limpa arquivos de cache e histórico
+    data_dir = Path(__file__).parent / "data"
+    files_to_clear = ["chat_history.db", "memory.json", "notes.json", "reminders.json", "shopping_list.json"]
+    for f in files_to_clear:
+        path = data_dir / f
+        if path.exists():
+            if path.suffix == '.db':
+                import sqlite3
+                conn = sqlite3.connect(path)
+                conn.execute("DELETE FROM messages")
+                conn.commit()
+                conn.close()
+            else:
+                path.write_text(json.dumps([]))
+    return {"success": True, "message": "Sistema resetado com sucesso."}
 
 
 # ── Endpoints públicos (sem auth) ─────────────────────────────
@@ -421,8 +480,9 @@ async def health():
 # ── Endpoints autenticados ────────────────────────────────────
 
 @app.post("/api/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest, _key: str = Depends(verify_api_key)):
+async def chat(request: Request, req: ChatRequest, _key: str = Depends(verify_api_key)):
     """Envia mensagem para a Luna e recebe resposta."""
+    _check_rate_limit(request)
     message = req.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Mensagem vazia.")
@@ -433,7 +493,7 @@ async def chat(req: ChatRequest, _key: str = Depends(verify_api_key)):
 
     # Roda processamento em thread separada para não bloquear o event loop
     loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(None, luna.process, message)
+    response = await loop.run_in_executor(_llm_executor, luna.process, message)
 
     elapsed_ms = (time.time() - start) * 1000
 
@@ -933,11 +993,12 @@ async def stop_processing(_key: str = Depends(verify_api_key)):
 # ── Chat streaming (SSE) ──────────────────────────────────────
 
 @app.post("/api/chat/stream")
-async def chat_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
+async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(verify_api_key)):
     """
     Streaming SSE da resposta da Luna.
     Eventos: data: <chunk>\\n\\n  |  data: [DONE]\\n\\n  |  data: [ERROR]...
     """
+    _check_rate_limit(request)
     message = req.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Mensagem vazia.")
@@ -947,17 +1008,23 @@ async def chat_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
     async def event_gen():
         loop = asyncio.get_event_loop()
         import queue as _queue
-        q = _queue.Queue()
+        q = _queue.Queue(maxsize=100)
 
         def progress_cb(event: dict):
-            q.put(("progress", event))
+            try:
+                q.put(("progress", event), block=False)
+            except _queue.Full:
+                pass
 
         def run():
             try:
                 result = luna.process(message, progress_callback=progress_cb)
                 q.put(("done", result))
             except Exception as e:
-                q.put(("error", str(e)))
+                try:
+                    q.put(("error", str(e)), block=False)
+                except _queue.Full:
+                    pass
 
         import threading
         t = threading.Thread(target=run, daemon=True)
@@ -1030,10 +1097,19 @@ async def tts_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
 @app.post("/api/stt")
 async def stt_transcribe(request: Request, _key: str = Depends(verify_api_key)):
     """Recebe áudio (webm/ogg/wav) e retorna transcrição via Whisper local."""
+    _check_rate_limit(request)
     import tempfile, os as _os, subprocess as _sp
+    MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25MB
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="Arquivo muito grande. Máximo 25MB.")
     body = await request.body()
     if not body:
         raise HTTPException(status_code=400, detail="Áudio vazio.")
+    if len(body) > MAX_UPLOAD_SIZE:
+        raise HTTPException(status_code=413, detail="Arquivo muito grande. Máximo 25MB.")
+    if body[:4] not in (b"RIFF", b"OggS", b"fLaC", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"):
+        pass  # Allow anyway, just a warning
 
     content_type = request.headers.get("content-type", "audio/webm")
     ext = ".webm" if "webm" in content_type else ".ogg" if "ogg" in content_type else ".wav"
@@ -1049,9 +1125,10 @@ async def stt_transcribe(request: Request, _key: str = Depends(verify_api_key)):
             stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, check=True
         )
         from faster_whisper import WhisperModel
-        if not hasattr(stt_transcribe, '_model'):
-            stt_transcribe._model = WhisperModel("tiny", device="cpu", compute_type="int8")
-        model = stt_transcribe._model
+        global _whisper_model
+        if _whisper_model is None:
+            _whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+        model = _whisper_model
         segments, _ = model.transcribe(tmp_wav, language="pt", beam_size=1, vad_filter=True)
         text = " ".join(s.text for s in segments).strip()
         return {"text": text}
@@ -1372,8 +1449,29 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
 
 if _web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_web_dir)), name="static")
+
+@app.post("/api/image/generate")
+async def api_generate_image(req: Request, _key: str = Depends(verify_api_key)):
+    """Gera imagem via Google Gemini (Imagen). Gratuito com a API key do Gemini."""
+    try:
+        body = await req.json()
+        prompt = body.get("prompt", "")
+        size = body.get("size", "1024x1024")
+        if not prompt:
+            return {"success": False, "error": "Prompt não fornecido."}
+        from actions.image_gen import generate_image
+        result = generate_image(prompt, size)
+        if result.startswith("SUCESSO:"):
+            path = result.replace("SUCESSO: Imagem gerada e salva em ", "").strip()
+            return {"success": True, "path": path, "message": f"Imagem salva em {path}"}
+        return {"success": False, "error": result}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
 @app.post("/api/shutdown")
-async def shutdown(_key: str = Depends(verify_api_key)):
+async def shutdown(request: Request, _key: str = Depends(verify_api_key)):
+    admin_user = _require_admin(request)
+    _log_admin_action(admin_user, "shutdown", "Desligou o backend")
     import os, signal, asyncio
     print("🛑 Shutting down Luna Backend...")
     async def exit_later():
@@ -1393,19 +1491,18 @@ def run_server(host: str = None, port: int = None):
     _host = host or config.API_HOST
     _port = port or config.API_PORT
 
-    _ssl_key  = _Path(__file__).parent / "ssl" / "key.pem"
-    _ssl_cert = _Path(__file__).parent / "ssl" / "cert.pem"
+    _ssl_key  = _Path(__file__).parent / "config" / "ssl" / "key.pem"
+    _ssl_cert = _Path(__file__).parent / "config" / "ssl" / "cert.pem"
     _https = os.getenv("LUNA_USE_HTTPS", "false").lower() == "true" and _ssl_key.exists() and _ssl_cert.exists()
     _scheme = "https" if _https else "http"
 
-    print(f"\n🌐 Luna API (FastAPI + Uvicorn)")
-    print(f"   Local: {_scheme}://localhost:{_port}")
-    print(f"   Rede:  {_scheme}://0.0.0.0:{_port}")
-    print(f"   Docs:  {_scheme}://localhost:{_port}/docs")
+    logger.info(f"Luna API (FastAPI + Uvicorn)")
+    logger.info(f"Local: {_scheme}://localhost:{_port}")
+    logger.info(f"Rede:  {_scheme}://0.0.0.0:{_port}")
+    logger.info(f"Docs:  {_scheme}://localhost:{_port}/docs")
     if _https:
-        print(f"   🔒 HTTPS ativo (certificado self-signed)")
-    print(f"   🔑 API Key: {config.API_KEY[:12]}...")
-    print()
+        logger.info(f"HTTPS ativo (certificado self-signed)")
+    logger.info(f"API Key: {'*' * 8}{config.API_KEY[-4:]}")
 
     _kwargs = dict(host=_host, port=_port, log_level="warning", access_log=False)
     if _https:
