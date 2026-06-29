@@ -1,6 +1,6 @@
 pkgbase = luna-desktop-git
 	pkgdesc = A modern and efficient desktop client for LunaOS
-	pkgver = 0.1.0.r4.a180ecb
+	pkgver = 0.1.0.r11.8fb51b2
 	pkgrel = 1
 	url = https://github.com/Vortek-Zero/LunaOS
 	arch = x86_64

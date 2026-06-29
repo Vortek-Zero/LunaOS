@@ -11,6 +11,7 @@
   let facts = $state<Array<{ fact: string; category?: string }>>([]);
   let factsHeader = $state('0 fatos');
   let perfInfo = $state({ avg_request_ms: 0, cache_hits: 0, cache_misses: 0, total_entries: 0 });
+  let providers = $state<Array<{ name: string; active: boolean; available: boolean; rate_limited_for: number; model?: string; models?: Record<string, { name: string; rate_limited_for: number }> }>>([]);
 
   async function loadMetrics() {
     const res = await luna.fetchSystemMetrics();
@@ -66,11 +67,19 @@
     }
   }
 
+  async function loadModels() {
+    const res = await luna.fetchModelsStatus();
+    if (res && res.providers) {
+      providers = res.providers;
+    }
+  }
+
   onMount(() => {
     loadMetrics();
     loadApps();
     loadFacts();
     loadPerf();
+    loadModels();
 
     const metricsInterval = setInterval(loadMetrics, 3000);
     const perfInterval = setInterval(loadPerf, 10000);
@@ -204,6 +213,48 @@
         </div>
       </div>
     </div>
+
+    <!-- Bloco 5: Modelos LLM -->
+    <div class="panel-section">
+      <div class="section-title">
+        <Icon name="cpu" size="14" />
+        <span>Provedores de IA</span>
+        <button class="btn-icon" onclick={loadModels} title="Atualizar">
+          <Icon name="refresh-cw" size="12" />
+        </button>
+      </div>
+      <div class="card">
+        <div class="provider-list">
+          {#each providers as p}
+            <div class="provider-item" class:inactive={!p.active}>
+              <div class="provider-row">
+                <span class="provider-name">{p.name}</span>
+                {#if p.available}
+                  <span class="status-dot active" title="Disponível"></span>
+                {:else if p.active}
+                  <span class="status-dot busy" title="Rate limited ({p.rate_limited_for}s)"></span>
+                {:else}
+                  <span class="status-dot inactive" title="Inativo"></span>
+                {/if}
+              </div>
+              {#if p.model}
+                <div class="provider-model">{p.model}</div>
+              {/if}
+              {#if p.models}
+                {#each Object.values(p.models) as m}
+                  <div class="provider-model">
+                    {m.name}
+                    {#if m.rate_limited_for > 0}
+                      <span class="rl-badge">⏳ {m.rate_limited_for}s</span>
+                    {/if}
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -259,6 +310,19 @@
   .fact-text { font-size: 12px; color: rgba(255,255,255,0.7); line-height: 1.4; }
   .fact-cat { font-size: 9px; font-weight: 600; color: #3b9eff; background: rgba(59,158,255,0.1); padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
   .no-data { font-size: 12px; color: rgba(255,255,255,0.3); text-align: center; padding: 12px; }
+
+  /* Provider List */
+  .provider-list { display: flex; flex-direction: column; gap: 6px; }
+  .provider-item { padding: 10px 12px; background: rgba(0,0,0,0.15); border: 1px solid rgba(255,255,255,0.02); border-radius: 10px; }
+  .provider-item.inactive { opacity: 0.45; }
+  .provider-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .provider-name { font-size: 12px; color: rgba(255,255,255,0.75); font-weight: 600; }
+  .provider-model { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 2px; font-family: 'JetBrains Mono', monospace; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.active { background: #22c55e; box-shadow: 0 0 8px rgba(34,197,94,0.4); }
+  .status-dot.busy { background: #f59e0b; box-shadow: 0 0 8px rgba(245,158,11,0.4); }
+  .status-dot.inactive { background: #6b7280; }
+  .rl-badge { font-size: 9px; color: #f59e0b; margin-left: 6px; font-weight: 600; }
 
   /* Performance */
   .perf-row { display: flex; justify-content: space-between; align-items: center; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.03); }
