@@ -139,6 +139,7 @@ def get_luna():
 
 class ChatRequest(BaseModel):
     message: str
+    voice: bool = False  # se True, resposta otimizada para áudio (fala)
 
 class ChatResponse(BaseModel):
     response: str
@@ -496,8 +497,12 @@ async def chat(request: Request, req: ChatRequest, _key: str = Depends(verify_ap
     start = time.time()
 
     # Roda processamento em thread separada para não bloquear o event loop
+    voice_mode = req.voice
     loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(_llm_executor, luna.process, message)
+    response = await loop.run_in_executor(
+        None,
+        lambda: luna.process(message, mode="voice" if voice_mode else "")
+    )
 
     elapsed_ms = (time.time() - start) * 1000
 
@@ -534,66 +539,49 @@ async def code_chat(req: CodeChatRequest, _key: str = Depends(verify_api_key)):
     sid = req.session_id or "default"
     history = _code_sessions.setdefault(sid, [])
 
-    # Monta histórico resumido (últimas 4 trocas)
-    hist_text = ""
-    for h in history[-4:]:
-        hist_text += f"Usuário: {h['user']}\nLuna: {h['explanation']}\n\n"
+    import re as _re
 
-    has_code = bool(req.current_code.strip())
-    code_ctx = f"\n\nCódigo atual no editor:\n```html\n{req.current_code[:8000]}\n```" if has_code else ""
+    # Monta contexto extra com o histórico recente e código atual
+    ctx_parts = []
+    if req.current_code:
+        ctx_parts.append(f"Código atual:\n```\n{req.current_code[:8000]}\n```")
+    if history:
+        recent = history[-4:]
+        ctx_lines = []
+        for h in recent:
+            ctx_lines.append(f"Usuário: {h['user']}\nLuna: {h['explanation']}")
+        ctx_parts.append("Histórico recente:\n" + "\n\n".join(ctx_lines))
 
-    prompt = f"""Você é um especialista em desenvolvimento web (HTML, CSS, JavaScript).
-Sua tarefa é gerar ou modificar código HTML completo e funcional.
-
-REGRAS ABSOLUTAS:
-1. Responda SEMPRE em JSON válido com exatamente dois campos: "code" e "explanation"
-2. "code": o HTML COMPLETO (<!DOCTYPE html>...) pronto para rodar no browser. NUNCA omita partes.
-3. "explanation": resposta curta e natural em português explicando o que foi feito (máx 2 frases).
-4. Se o usuário reportar um erro, corrija-o no código e explique a correção.
-5. CSS e JS devem ser internos (dentro do próprio HTML) a menos que o usuário peça externo.
-6. NUNCA use markdown (```) dentro dos campos JSON.
-
-{f"Histórico recente:{chr(10)}{hist_text}" if hist_text else ""}
-{code_ctx}
-
-Pedido do usuário: {message}
-
-Responda APENAS com JSON válido:
-{{"code": "<!DOCTYPE html>...", "explanation": "..."}}"""
+    extra_context = "\n\n".join(ctx_parts) if ctx_parts else ""
 
     start = time.time()
     loop = asyncio.get_event_loop()
-
-    from brain.llm import get_llm, GROQ_MODELS, MODELS
-    llm = get_llm()
     raw = await loop.run_in_executor(
         None,
-        lambda: llm.generate(prompt, task_type="coding", model=GROQ_MODELS["heavy"] if llm._use_groq("coding") else MODELS["heavy"])
+        lambda: luna.process(message, mode="code", extra_context=extra_context)
     )
 
     elapsed_ms = (time.time() - start) * 1000
 
-    # Parseia resposta
-    code_out = req.current_code  # fallback: mantém código atual
+    # Parseia: extrai último bloco de código como code, resto como explanation
+    code_out = req.current_code
     explanation = str(raw)
 
-    import re as _re
-    # Tenta JSON direto
-    try:
-        # Remove markdown wrapper se houver
-        clean = _re.sub(r'^```(?:json)?\s*|\s*```$', '', str(raw).strip(), flags=_re.MULTILINE)
-        # Extrai o JSON
-        m = _re.search(r'\{.*\}', clean, _re.DOTALL)
-        if m:
-            data = json.loads(m.group())
-            code_out = data.get("code", code_out).strip()
-            explanation = data.get("explanation", explanation).strip()
-    except Exception:
-        # Se falhou, tenta extrair o HTML diretamente
-        m_html = _re.search(r'(<!DOCTYPE html>.*)', str(raw), _re.DOTALL | _re.IGNORECASE)
-        if m_html:
-            code_out = m_html.group(1).strip()
-            explanation = "Código gerado."
+    # Primeiro: tenta código capturado via write_code tool no ReAct loop
+    if hasattr(luna, '_code_mode_result') and luna._code_mode_result:
+        code_out = luna._code_mode_result["content"]
+
+    # Segundo: tenta extrair de bloco markdown no texto
+    if not code_out or code_out == req.current_code:
+        code_blocks = _re.findall(r'```(?:\w+)?\s*\n(.*?)```', str(raw), _re.DOTALL)
+        if code_blocks:
+            code_out = code_blocks[-1].strip()
+
+    # Remove bloco(s) de código da explicação
+    if code_out != req.current_code:
+        explanation = _re.sub(r'```(?:\w+)?\s*\n.*?```', '', str(raw), flags=_re.DOTALL).strip()
+    if not explanation:
+        explanation = str(raw)
 
     # Salva no histórico
     history.append({"user": message, "explanation": explanation})
@@ -644,6 +632,14 @@ async def set_writing_model(req: ModelRequest, _key: str = Depends(verify_api_ke
     luna = get_luna()
     msg = luna.select_model(req.mode)
     return {"success": True, "message": msg, "mode": req.mode}
+
+
+@app.get("/api/models/status")
+async def models_status(_key: str = Depends(verify_api_key)):
+    """Status de todos os provedores de LLM."""
+    from brain.llm import get_llm
+    llm = get_llm()
+    return {"providers": llm.get_providers_status(), "available": llm.available}
 
 
 @app.get("/api/apps")
@@ -1022,11 +1018,12 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
 
         def run():
             try:
-                result = luna.process(message, progress_callback=progress_cb)
+                mode = "voice" if req.voice else ""
+                result = luna.process(message, mode=mode, progress_callback=progress_cb)
                 q.put(("done", result))
             except Exception as e:
                 try:
-                    q.put(("error", str(e)), block=False)
+                    q.put(("error", str(e)))
                 except _queue.Full:
                     pass
 
@@ -1224,28 +1221,19 @@ async def joy_action_endpoint(req: JoyActionRequest, _key: str = Depends(verify_
 
 @app.post("/api/joy/chat")
 async def joy_chat(req: JoyChatRequest, _key: str = Depends(verify_api_key)):
-    """Luna conversa durante o jogo — não revela estratégia."""
+    """Luna conversa durante o jogo — usa o sistema de pensamento completo da Luna."""
     luna = get_luna()
-    game_ctx = f" Estamos jogando {req.game}." if req.game else ""
-    prompt = (
-        f"Você é Luna, uma IA jogando um jogo com o usuário.{game_ctx} "
-        f"Responda de forma divertida, animada e curta (máx 2 frases). "
-        f"NUNCA revele suas próximas jogadas ou estratégia. "
-        f"Mensagem do usuário: {req.message}"
-    )
     loop = asyncio.get_event_loop()
-    from brain.llm import MODELS
-    llm = luna._llm
+    game_ctx = f" Estamos jogando {req.game}." if req.game else ""
+    extra_context = f"[JOGO ATUAL]{game_ctx}\nMensagem do jogador: {req.message}"
+
     response = await loop.run_in_executor(
         None,
-        lambda: llm.generate(prompt, task_type="command", model=MODELS["fast"])
+        lambda: luna.process(req.message, mode="joy", extra_context=extra_context)
     )
-    # Remove JSON wrapper se vier
+
     import re as _re
-    clean = _re.sub(r'^\{.*?"response"\s*:\s*"', '', str(response), flags=_re.DOTALL)
-    clean = _re.sub(r'"\s*,?\s*"action".*$', '', clean, flags=_re.DOTALL).strip().strip('"')
-    if not clean or clean.startswith("{"):
-        clean = str(response)
+    clean = _re.sub(r'^```(?:json)?\s*|\s*```$', '', str(response).strip(), flags=_re.MULTILINE)
     return {"response": clean}
 
 @app.get("/joy", include_in_schema=False)
@@ -1257,6 +1245,10 @@ async def joy_page():
 
 
 # ── Luna Write Mode ──────────────────────────────────────────
+
+class WriteChatRequest(BaseModel):
+    message: str
+    context_text: str = ""
 
 class WriteStreamRequest(BaseModel):
     prompt: str
@@ -1367,6 +1359,28 @@ async def delete_write_project(project_id: str, _key: str = Depends(verify_api_k
     return {"success": True}
 
 
+@app.post("/api/write/chat")
+async def write_chat(req: WriteChatRequest, _key: str = Depends(verify_api_key)):
+    """Chat livre para o modo escritor — usa o sistema de pensamento completo da Luna."""
+    luna = get_luna()
+    loop = asyncio.get_event_loop()
+
+    extra_context = req.context_text or ""
+    if extra_context:
+        extra_context = f"[CONTEXTO ATUAL DO EDITOR]\n{extra_context[-3000:]}"
+
+    response = await loop.run_in_executor(
+        None,
+        lambda: luna.process(req.message, mode="write", extra_context=extra_context)
+    )
+
+    text = str(response)
+    import re as _re
+    text = _re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=_re.MULTILINE)
+
+    return {"response": text}
+
+
 @app.post("/api/write/stream")
 async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_key)):
     """Streaming SSE — gera texto criativo em tempo real."""
@@ -1393,8 +1407,7 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
             try:
                 # Fase 1: Planning
                 plan_prompt = writer.build_planning_prompt(req.prompt)
-                fast_model = GROQ_MODELS.get("fast", MODELS.get("fast", ""))
-                plan_text = llm.generate(plan_prompt, task_type="planning", model=fast_model)
+                plan_text = llm.generate(plan_prompt, task_type="planning", model=MODELS.get("main", MODELS["main"]))
                 q.put(("phase", "planning_done"))
 
                 # Fase 2: Streaming Draft

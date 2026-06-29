@@ -541,7 +541,7 @@ LUNA_TOOLS = [
         "type": "function",
         "function": {
             "name": "open_url",
-            "description": "Abre uma URL no navegador padrão.",
+            "description": "Abre uma URL no navegador padrão (Firefox). Use para YouTube, GitHub, artigos específicos.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1364,8 +1364,9 @@ def execute_tool_call(executor, tool_call) -> str:
             return _format_result(_handle_spotify(executor, args.get("query", "")))
 
         elif name == "control_lights":
-            res = executor.lights.handle("acender" if args.get("state") == "on" else "apagar")
-            return _format_result(res or "Luzes atualizadas.")
+            from actions.lights import _set_light
+            res = _set_light(args.get("state") == "on")
+            return _format_result(res)
 
         # ── Produtividade ────────────────────────────────────
         elif name == "productivity_manage":
@@ -1511,7 +1512,8 @@ def execute_tool_call(executor, tool_call) -> str:
             query = args.get("query", "")
             if not query:
                 return _format_result("FALHOU: Termo de pesquisa não fornecido.")
-            return _format_result(executor.search_web(query))
+            res = executor.search_web(query)
+            return _format_result(f"Pesquisei '{query}' e abri no navegador. {res.get('message', '')}")
 
         elif name == "read_webpage":
             url = args.get("url", "")

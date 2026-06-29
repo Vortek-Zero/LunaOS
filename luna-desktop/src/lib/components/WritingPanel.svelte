@@ -29,7 +29,7 @@
     if (res && res.projects) {
       projects = res.projects;
       if (projects.length > 0 && !activeProjectId) {
-        selectProject(projects[0].id);
+        selectProject(projects[0].project_id);
       }
     }
   }
@@ -37,10 +37,10 @@
   async function selectProject(id: string) {
     activeProjectId = id;
     const res = await luna.getWriteProject(id);
-    if (res && res.project) {
-      activeProject = res.project;
-      editorText = res.project.text || '';
-      activeStyle = res.project.style || 'neutro';
+    if (res) {
+      activeProject = { ...res, id: res.project_id };
+      editorText = res.text || '';
+      activeStyle = res.style || 'neutro';
     }
   }
 
@@ -51,7 +51,7 @@
       showNewProjectModal = false;
       newProjectTitle = '';
       await loadProjects();
-      selectProject(res.project.id);
+      selectProject(res.project.project_id);
     }
   }
 
@@ -73,14 +73,30 @@
   }
 
   async function startAIGeneration() {
-    if (!chatInputText.trim() || !activeProjectId) return;
+    if (!chatInputText.trim()) return;
     const prompt = chatInputText.trim();
     chatMessages.push({ sender: 'user', text: prompt });
     chatInputText = '';
     isWriting = true;
     writePhase = 'Planejando...';
 
-    // Append newline to editor for new output
+    if (!activeProjectId) {
+      chatMessages.push({ sender: 'luna', text: '✍️ Pensando...' });
+      try {
+        const resp = await luna.sendWriteChat(prompt, editorText);
+        chatMessages.pop();
+        if (resp?.response) {
+          chatMessages.push({ sender: 'luna', text: resp.response });
+        }
+      } catch (e: any) {
+        chatMessages.pop();
+        chatMessages.push({ sender: 'luna', text: `⚠️ Erro: ${e.message || e}` });
+      }
+      isWriting = false;
+      writePhase = 'Pronto';
+      return;
+    }
+
     editorText += '\n\n';
 
     await luna.streamWrite(
@@ -102,7 +118,6 @@
         isWriting = false;
         writePhase = 'Pronto';
         chatMessages.push({ sender: 'luna', text: 'Capítulo gerado e adicionado ao editor.' });
-        // Auto-save the written text
         await luna.updateWriteProjectText(activeProjectId, editorText);
       },
       (err) => {
@@ -148,12 +163,12 @@
     </div>
     <div class="projects-list">
       {#each projects as p}
-        <div class="project-item" class:active={p.id === activeProjectId}>
-          <button class="project-btn" onclick={() => selectProject(p.id)}>
+        <div class="project-item" class:active={p.project_id === activeProjectId}>
+          <button class="project-btn" onclick={() => selectProject(p.project_id)}>
             <span class="p-title">{p.title}</span>
             <span class="p-genre">{p.genre}</span>
           </button>
-          <button class="delete-btn" onclick={() => deleteProject(p.id)}>✕</button>
+          <button class="delete-btn" onclick={() => deleteProject(p.project_id)}>✕</button>
         </div>
       {/each}
     </div>

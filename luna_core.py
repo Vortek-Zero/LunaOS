@@ -492,6 +492,7 @@ class LunaCore:
         self._lock = threading.Lock()
         self._dialog: dict = {}   # estado do diálogo guiado atual
         self._confirm_edit_callback = None  # chamado para confirmar edições de arquivo
+        self._code_mode_result = None  # último código escrito via write_code em modo code
 
         # Carrega personalidade
         self._persona_name = self._load_persona()
@@ -569,10 +570,12 @@ class LunaCore:
             except Exception:
                 pass
 
-    def process(self, text: str, progress_callback=None) -> str:
+    def process(self, text: str, progress_callback=None, mode: str = "", extra_context: str = "") -> str:
         """
         Processa uma entrada do usuário em um loop autônomo (ReAct).
         Pipeline: texto → [Plano → Ações → Observação] → Resposta Final
+        mode: "code", "write", "joy", "voice", ou "" (normal)
+        extra_context: contexto adicional específico do modo (ex: código atual, estado do jogo)
         """
         if not text or not text.strip():
             return ""
@@ -593,11 +596,14 @@ class LunaCore:
         except Exception:
             pass
 
+        if mode == "code":
+            self._code_mode_result = None
+
         with self._lock:
             self.processing = True
             self._progress_callback = progress_callback
             try:
-                return self._run_autonomous_loop(text)
+                return self._run_autonomous_loop(text, mode=mode, extra_context=extra_context)
             except Exception as e:
                 print(f"[Luna] Erro no loop autônomo: {e}")
                 import traceback; traceback.print_exc()
@@ -607,7 +613,7 @@ class LunaCore:
                 self.current_action = None
                 self._progress_callback = None
 
-    def _run_autonomous_loop(self, text: str) -> str:
+    def _run_autonomous_loop(self, text: str, mode: str = "", extra_context: str = "") -> str:
         """
         Loop ReAct direto: ferramentas nativas do LLM, sem Planner/Scheduler intermediários.
         O LLM recebe as tools e decide quando usá-las, igual Claw Code/Claude Code.
@@ -632,15 +638,8 @@ class LunaCore:
             self._trace_logger.finish_trace("internal_command", internal)
             return internal
 
-        # ══ Escritor (Engine dedicada) ══
-        if self._writer.is_writing_request(text):
-            response = self._run_writer_stream(text)
-            self._memory.add_exchange(text, response)
-            self._trace_logger.finish_trace("writer", response)
-            return response
-
         # Inicia contexto
-        context = self._build_context(text)
+        context = self._build_context(text, mode, extra_context)
 
         # Classifica consulta (OpenJarvis) — só para metadados, não para decisão
         query_info = classify_query(text)
@@ -649,23 +648,76 @@ class LunaCore:
         # ── Sistema: prompt + ferramentas nativas ──
         from brain.agent_tools import LUNA_TOOLS, execute_tool_call, is_tool_success
 
-        system_prompt = (
-            "Você é Luna, uma assistente pessoal e engenheira de software brasileira de elite.\n\n"
-            "PRINCÍPIOS DE ENGENHARIA (Inspirado em Claw Code):\n"
-            "1. EXPLORE ANTES DE AGIR: Se o usuário pedir algo sobre o código ou arquivos, use `list_dir` ou `read_file` para entender o contexto antes de sugerir mudanças.\n"
-            "2. PENSE PASSO A PASSO: Para tarefas complexas, planeje a execução em etapas.\n"
-            "3. INTEGRIDADE: Se for criar ou editar arquivos, use as ferramentas de escrita (`write_code`, `save_file`). NUNCA apenas descreva o código no texto.\n"
-            "4. VERIFICAÇÃO: Após agir, você pode usar `check_project` ou `filesystem` para confirmar que as mudanças estão corretas.\n"
-            "5. HONESTIDADE: Se não souber algo ou se uma ferramenta falhar, admita e tente uma abordagem alternativa.\n\n"
-            "VOCÊ TEM ACESSO A FERRAMENTAS REAIS. Use-as via function_calling nativo:\n"
-            "- Programação: write_code, create_project, check_project, filesystem\n"
-            "- Conhecimento: search_web, open_url, read_webpage, google_search_emails\n"
-            "- Automação: google_services, system_control, get_weather, control_spotify\n\n"
-            "REGRAS CRÍTICAS:\n"
-            "- NÃO alucine sucessos. Se a ferramenta não foi chamada, a ação não aconteceu.\n"
-            "- NÃO responda com blocos de código gigantes no texto se puder salvar direto em um arquivo.\n"
-            "- Use português brasileiro natural e profissional.\n"
-        )
+        system_parts = [
+            "Você é Luna, uma assistente pessoal e engenheira de software brasileira de elite.",
+            "Você tem 28 anos, é madura, calma, sincera e inteligente.",
+            "",
+            "PRINCÍPIOS DE ENGENHARIA (Claw Code):",
+            "1. EXPLORE ANTES DE AGIR: Para tarefas de código/arquivos, use as ferramentas para entender antes de modificar.",
+            "2. PENSE PASSO A PASSO: planeje a execução em etapas e execute TODAS.",
+            "3. NUNCA finja que executou algo. Se a ferramenta não foi chamada, a ação não aconteceu. Ponto.",
+            "4. INTEGRIDADE: para criar/editar arquivos, use write_code, filesystem, create_project. NUNCA só descreva.",
+            "5. VERIFICAÇÃO: após agir, confirme que as mudanças estão corretas.",
+            "6. HONESTIDADE: se falhar, admita e tente outra abordagem.",
+            "",
+            "VOCÊ É UM AGENTE, NÃO UM CHATBOT. Você TEM ferramentas reais — use function_calling nativo.",
+            "Ferramentas disponíveis: write_code, create_project, filesystem, open_app, open_url, search_web, "
+            "read_webpage, system_control, google_services, get_weather, control_spotify, manage_reminder, "
+            "manage_notes, manage_shopping_list, set_timer, manage_focus, take_screenshot, see_screen, "
+            "clipboard_action, control_media, kill_process, send_notification, control_window, "
+            "desktop_type, desktop_hotkey, whatsapp_action, image_generate.",
+            "",
+            "REGRAS ABSOLUTAS:",
+            "- Se você precisa executar algo, USE A FERRAMENTA. NUNCA escreva *faz ação* no texto.",
+            "- NUNCA alucine sucessos. Sem chamada de ferramenta = ação não realizada.",
+            "- NUNCA use `write_code` apenas para HTML. Use para QUALQUER linguagem (Python, TS, Rust, etc).",
+            "- Se o usuário pedir várias coisas, execute TODAS as ferramentas necessárias antes de responder.",
+            "- Responda como uma pessoa real. Nada de 'falo animadamente' ou 'digo' — apenas fale.",
+            "- Se o usuário pedir busca/pesquisa, faça (search_web) e explique o que encontrou.",
+            "- No final, sugira algo criativo relacionado ao assunto — nunca apenas 'mais algo?'.",
+        ]
+
+        if mode == "code":
+            system_parts.extend([
+                "",
+                "VOCÊ ESTÁ EM MODO CÓDIGO:",
+                "- Você é uma engenheira full-stack de elite. Pode programar em QUALQUER linguagem.",
+                "- O usuário está num editor ao vivo. Você DEVE escrever o código COMPLETO usando write_code.",
+                "- VOCÊ DEVE incluir o código COMPLETO na sua resposta em texto, em um bloco markdown ```.",
+                "- NUNCA confie apenas no write_code — o código PRECISA estar visível na resposta em texto.",
+                "- Formato obrigatório: 1) explicação curta em português 2) linha em branco 3) bloco ``` com o código completo.",
+                "- Se o usuário pedir alterações, MOSTRE o código completo de novo no bloco markdown.",
+            ])
+        elif mode == "voice":
+            system_parts.extend([
+                "",
+                "MODO VOZ: a resposta será lida em voz alta. Seja conversada, frases curtas.",
+                "Sem formatação, sem markdown, sem emojis. Fale diretamente com o usuário.",
+                "No final, sugira algo criativo relacionado ao assunto — nunca apenas 'mais algo?'.",
+            ])
+        elif mode == "write":
+            system_parts.extend([
+                "",
+                "VOCÊ ESTÁ EM MODO ESCRITA CRIATIVA:",
+                "- Você é uma escritora de ficção brasileira. Show, don't tell.",
+                "- Parágrafos curtos, diálogos naturais. ZERO formalidade acadêmica.",
+                "- Pode usar search_web para pesquisa, manage_notes para salvar ideias, filesystem para organizar.",
+                "- Use TODO o seu sistema de pensamento: planeje a estrutura, pesquise se necessário, depois escreva.",
+                "- NUNCA use markdown ou JSON na resposta final. Apenas texto narrativo puro.",
+            ])
+        elif mode == "joy":
+            system_parts.extend([
+                "",
+                "VOCÊ ESTÁ EM MODO JOGO (JOY):",
+                "- Você é uma companheira de jogo carismática e divertida.",
+                "- Seja expressiva: provocações leves, comemore vitórias, lamente derrotas.",
+                "- Mantenha o personagem: você é competitiva mas adora jogar junto.",
+                "- Responda com 1-3 frases naturais, como se estivesse no mesmo sofá.",
+                "- NUNCA revele estratégia ou próximas jogadas.",
+                "- Varie as reações: não repete a mesma frase.",
+            ])
+
+        system_prompt = "\n".join(system_parts)
 
         # ── Historico da conversa ──
         messages = [
@@ -788,6 +840,13 @@ class LunaCore:
 
                 res = execute_tool_call(self._executor, tc)
                 success = is_tool_success(res)
+
+                # Captura código escrito para modo code
+                if name == "write_code" and success:
+                    self._code_mode_result = {
+                        "filename": params.get("filename", ""),
+                        "content": params.get("content", ""),
+                    }
 
                 pname = _parse_tc_args(tc).get("filename", "") or _parse_tc_args(tc).get("project_name", "")
                 if pname and name in ("write_code", "create_project"):
@@ -1259,9 +1318,14 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
 
         return response or "Não consegui gerar o briefing agora. Tente novamente."
 
-    def _build_context(self, text: str) -> str:
-        """Monta contexto enxuto — memória + estado; vision/web só quando pedido."""
+    def _build_context(self, text: str, mode: str = "", extra_context: str = "") -> str:
+        """Monta contexto enxuto — memória + estado; vision/web só quando pedido.
+        mode: "code", "write", "joy", ou "" (normal)
+        extra_context: contexto adicional específico do modo
+        """
         parts = []
+        if extra_context:
+            parts.append(f"[CONTEXTO DO MODO {mode.upper()}]\n{extra_context}")
 
         mem_ctx = self._memory.get_context_for_prompt(text)
         if mem_ctx:
@@ -1691,8 +1755,17 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
     # ── Interface de voz ──────────────────────────────────────
 
     def speak(self, text: str) -> None:
-        """Fala o texto (não bloqueia)."""
-        self._tts.speak(text, blocking=False)
+        """Fala o texto (não bloqueia). Permite interrupção por voz."""
+        self._tts.speak(
+            text, blocking=False,
+            barge_in_callback=lambda interruption: self._handle_barge_in(interruption),
+        )
+
+    def _handle_barge_in(self, interruption: str) -> None:
+        """Processa interrupção do usuário durante a fala."""
+        response = self.process(interruption)
+        if response:
+            self.speak(response)
 
     # ── Diálogo guiado ────────────────────────────────────────
 

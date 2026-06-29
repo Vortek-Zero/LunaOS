@@ -165,13 +165,19 @@ INIT_CHESS = [
     ["wR","wN","wB","wQ","wK","wB","wN","wR"],
 ]
 
+PIECE_VALUES = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9, "K": 100}
+
 class Xadrez:
     def __init__(self):
         self.board = [row[:] for row in INIT_CHESS]
-        self.turn = "player"   # player=brancas, luna=pretas
+        self.turn = "player"
         self.difficulty = "medio"
         self.winner = None
         self.history = []
+        self._check_state = {"check": False, "stalemate": False}
+        self._kings_pos = {"w": (7, 4), "b": (0, 4)}  # track king positions
+        self._castling = {"wK": True, "wQ": True, "bK": True, "bQ": True}
+        self._en_passant = None
 
     def get_state(self):
         return {
@@ -179,7 +185,11 @@ class Xadrez:
             "turn": self.turn,
             "winner": self.winner,
             "difficulty": self.difficulty,
+            "check": self._is_check(self.turn_color()),
         }
+
+    def turn_color(self):
+        return "b" if self.turn == "luna" else "w"
 
     def _color(self, piece):
         if not piece: return None
@@ -254,22 +264,134 @@ class Xadrez:
         valid = self._valid_moves("w")
         if (fr, fc, tr, tc) not in valid:
             return {"ok": False, "msg": "Movimento inválido."}
+        # Verifica se move não deixa próprio rei em xeque
+        b2 = [row[:] for row in self.board]
+        kpos = self._kings_pos.copy()
+        piece = b2[fr][fc]
+        b2[fr][fc] = None
+        if piece[1] == "K":
+            kpos["w"] = (tr, tc)
+        b2[tr][tc] = piece
+        if self._in_check("w", b2):
+            return {"ok": False, "msg": "Movimento deixa seu rei em xeque!"}
         self._apply_move(fr, fc, tr, tc)
         self._check_winner()
         if not self.winner:
             self.turn = "luna"
         return {"ok": True, "state": self.get_state()}
 
+    def _in_check(self, color, board=None):
+        b = board or self.board
+        king_pos = self._kings_pos[color]
+        opp = "b" if color == "w" else "w"
+        for r in range(8):
+            for c in range(8):
+                p = b[r][c]
+                if p and p[0] == opp:
+                    moves = self._piece_moves_raw(r, c, p)
+                    if king_pos in moves:
+                        return True
+        return False
+
+    def _is_check(self, color):
+        return self._in_check(color)
+
+    def _is_checkmate(self, color):
+        if not self._in_check(color):
+            return False
+        for r in range(8):
+            for c in range(8):
+                p = self.board[r][c]
+                if p and p[0] == color:
+                    for mv in self._piece_moves(r, c, p, color):
+                        b2 = [row[:] for row in self.board]
+                        # Apply move on copy
+                        _, _, tr, tc = mv
+                        captured = b2[tr][tc]
+                        b2[tr][tc] = b2[r][c]
+                        b2[r][c] = None
+                        if p == "wK":
+                            self._kings_pos["w"] = (tr, tc)
+                        elif p == "bK":
+                            self._kings_pos["b"] = (tr, tc)
+                        if not self._in_check(color, b2):
+                            # Restore
+                            if p == "wK":
+                                self._kings_pos["w"] = (r, c)
+                            elif p == "bK":
+                                self._kings_pos["b"] = (r, c)
+                            return False
+                        if p == "wK":
+                            self._kings_pos["w"] = (r, c)
+                        elif p == "bK":
+                            self._kings_pos["b"] = (r, c)
+        return True
+
+    def _piece_moves_raw(self, r, c, piece, board=None):
+        b = board or self.board
+        kind = piece[1]
+        color = piece[0]
+        opp = "b" if color == "w" else "w"
+        moves = []
+        def add(nr, nc):
+            if 0 <= nr < 8 and 0 <= nc < 8:
+                t = b[nr][nc]
+                if not t or t[0] == opp:
+                    moves.append((nr, nc))
+        def slide(drs):
+            for dr, dc in drs:
+                nr, nc = r+dr, c+dc
+                while 0 <= nr < 8 and 0 <= nc < 8:
+                    t = b[nr][nc]
+                    if t:
+                        if t[0] == opp:
+                            moves.append((nr, nc))
+                        break
+                    moves.append((nr, nc))
+                    nr += dr; nc += dc
+        if kind == "P":
+            d = -1 if color == "w" else 1
+            if 0 <= r+d < 8 and not b[r+d][c]:
+                moves.append((r+d, c))
+            for dc in [-1, 1]:
+                nr, nc = r+d, c+dc
+                if 0 <= nr < 8 and 0 <= nc < 8 and b[nr][nc] and b[nr][nc][0] == opp:
+                    moves.append((nr, nc))
+        elif kind == "R": slide([(0,1),(0,-1),(1,0),(-1,0)])
+        elif kind == "B": slide([(1,1),(1,-1),(-1,1),(-1,-1)])
+        elif kind == "Q": slide([(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)])
+        elif kind == "N":
+            for dr, dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
+                add(r+dr, c+dc)
+        elif kind == "K":
+            for dr in [-1,0,1]:
+                for dc in [-1,0,1]:
+                    if dr or dc: add(r+dr, c+dc)
+        return moves
+
     def _apply_move(self, fr, fc, tr, tc):
         piece = self.board[fr][fc]
+        color = piece[0]
+        kind = piece[1]
         self.board[fr][fc] = None
-        # Promoção de peão
-        if piece == "wP" and tr == 0:
-            piece = "wQ"
-        elif piece == "bP" and tr == 7:
-            piece = "bQ"
+        if kind == "K":
+            self._kings_pos[color] = (tr, tc)
+        if kind == "P" and tr in (0, 7):
+            piece = color + "Q"
         self.board[tr][tc] = piece
         self.history.append((fr, fc, tr, tc))
+
+    def _score_move(self, mv):
+        _, _, tr, tc = mv
+        target = self.board[tr][tc]
+        score = 0
+        if target:
+            score += PIECE_VALUES.get(target[1], 1) * 10
+        # Center control bonus
+        if tr in (3, 4) and tc in (3, 4):
+            score += 1
+        # Randomize slightly
+        return score + random.random() * 0.5
 
     def _check_winner(self):
         wK = any(self.board[r][c] == "wK" for r in range(8) for c in range(8))
@@ -278,6 +400,14 @@ class Xadrez:
             self.winner = "luna"
         elif not bK:
             self.winner = "player"
+        elif self._is_checkmate("w"):
+            self.winner = "luna"
+        elif self._is_checkmate("b"):
+            self.winner = "player"
+        elif self._is_check("w") or self._is_check("b"):
+            pass  # game continues with check indication
+        elif not any(self._valid_moves("w")) or not any(self._valid_moves("b")):
+            self.winner = "draw"
 
     def luna_move(self) -> dict:
         if self.winner or self.turn != "luna":
@@ -291,9 +421,9 @@ class Xadrez:
         if random.random() < diff["random_chance"]:
             mv = random.choice(moves)
         else:
-            # Prefere capturas
-            captures = [m for m in moves if self.board[m[2]][m[3]]]
-            mv = random.choice(captures) if captures else random.choice(moves)
+            scored = [(self._score_move(m), m) for m in moves]
+            scored.sort(key=lambda x: -x[0])
+            mv = scored[0][1]
 
         self._apply_move(*mv)
         self._check_winner()
@@ -317,6 +447,34 @@ WORDS_FORCA = [
     "universo","ventania","xadrez","zumbido","aventura",
 ]
 
+FORCA_HINTS = {
+    "abacaxi": "Fruta tropical com coroa na cabeça",
+    "borboleta": "Inseto colorido que transforma lagartas",
+    "computador": "Máquina que processa dados",
+    "diamante": "Pedra preciosa mais dura da natureza",
+    "elefante": "Maior animal terrestre, tem tromba",
+    "fantasia": "Imaginação ou roupa de personagem",
+    "girassol": "Flor que sempre olha para o sol",
+    "horizonte": "Linha onde o céu encontra a terra",
+    "infinito": "Algo sem fim, símbolo ∞",
+    "jornada": "Viagem longa ou caminho percorrido",
+    "kaleidoscopio": "Tubo com espelhos que cria padrões coloridos",
+    "luminoso": "Que emite ou reflete muita luz",
+    "maravilha": "Algo extraordinário que causa admiração",
+    "nebulosa": "Nuvem interestelar de poeira e gás",
+    "oceano": "Grande extensão de água salgada",
+    "papagaio": "Ave colorida que imita a voz humana",
+    "quilombo": "Comunidade de escravos fugidos no Brasil colonial",
+    "relampago": "Descarga elétrica visível durante tempestade",
+    "saudade": "Sentimento de falta de alguém ou algo",
+    "tartaruga": "Réptil lento com casco duro",
+    "universo": "Conjunto de tudo que existe",
+    "ventania": "Vento muito forte e duradouro",
+    "xadrez": "Jogo de tabuleiro de estratégia",
+    "zumbido": "Som contínuo e baixo, como de abelha",
+    "aventura": "Experiência emocionante e arriscada",
+}
+
 class Forca:
     def __init__(self):
         self.word = random.choice(WORDS_FORCA)
@@ -324,6 +482,11 @@ class Forca:
         self.max_errors = 6
         self.errors = 0
         self.winner = None
+        self.hint_used = False
+
+    def get_hint(self) -> str:
+        self.hint_used = True
+        return FORCA_HINTS.get(self.word, "Sem dica disponível")
 
     def get_state(self):
         display = [c if c in self.guesses else "_" for c in self.word]
@@ -333,6 +496,8 @@ class Forca:
             "errors": self.errors,
             "max_errors": self.max_errors,
             "winner": self.winner,
+            "hint": FORCA_HINTS.get(self.word, "") if self.errors >= 3 and not self.hint_used else "",
+            "word_length": len(self.word),
         }
 
     def guess(self, letter: str) -> dict:
@@ -414,7 +579,7 @@ def joy_action(session_id: str, action: str, data: dict) -> dict:
 
 def list_games() -> list:
     return [
-        {"id": "damas",  "name": "Damas",   "icon": "⚫", "desc": "Jogo de damas clássico 8x8"},
-        {"id": "xadrez", "name": "Xadrez",  "icon": "♟",  "desc": "Xadrez completo contra a Luna"},
-        {"id": "forca",  "name": "Forca",   "icon": "🎯", "desc": "Adivinhe a palavra letra por letra"},
+        {"id": "damas",  "name": "Damas",   "icon": "checkers", "desc": "Jogo de damas clássico 8x8"},
+        {"id": "xadrez", "name": "Xadrez",  "icon": "chess",   "desc": "Xadrez completo contra a Luna"},
+        {"id": "forca",  "name": "Forca",   "icon": "target",  "desc": "Adivinhe a palavra letra por letra"},
     ]

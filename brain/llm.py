@@ -479,7 +479,15 @@ class LLMWrapper:
                 if result is not None:
                     return result
 
-        # 4. GitHub Models (fallback — DeepSeek via free tier)
+        # 4. Chutes.ai (DeepSeek-V3.2-TEE)
+        if self._chutes_available() and _time.time() - _start_time < _global_timeout:
+            chutes_model = self._chutes_model_for(used_model)
+            if chutes_model:
+                result = self._generate_chutes(prompt, task_type, chutes_model, stream, messages, tools)
+                if result is not None:
+                    return result
+
+        # 5. GitHub Models (fallback — DeepSeek via free tier)
         if self._github_available() and _time.time() - _start_time < _global_timeout:
             github_model = self._github_model_for(used_model)
             if github_model:
@@ -1508,6 +1516,81 @@ class LLMWrapper:
                 prompt=prompt, task_type=task_type, model=gemini_model,
                 stream=True, messages=messages,
             )
+
+    def get_providers_status(self) -> list[dict]:
+        now = time.time()
+        def rl(t):
+            return round(max(0, t - now), 1) if t > now else 0
+        def model_for(mod_dict, hint="main"):
+            return mod_dict.get(hint, mod_dict.get("main", "?")) if mod_dict else "?"
+        return [
+            {
+                "name": "Mistral",
+                "active": self._mistral_ok,
+                "available": self._mistral_available(),
+                "rate_limited_for": rl(self._mistral_rl_until),
+                "model": model_for(globals().get("MISTRAL_MODELS")),
+            },
+            {
+                "name": "Gemini",
+                "active": self._gemini_ok,
+                "available": self._gemini_available(),
+                "rate_limited_for": rl(self._gemini_rl_until),
+                "models": {k: {"name": v, "rate_limited_for": rl(self._gemini_rl_per_model.get(v, 0))}
+                          for k, v in (globals().get("GEMINI_MODELS") or {}).items()},
+            },
+            {
+                "name": "OpenRouter",
+                "active": self._openrouter_ok,
+                "available": self._openrouter_available(),
+                "rate_limited_for": 0,
+                "models": {k: {"name": v, "rate_limited_for": rl(self._openrouter_rl_per_model.get(v, 0))}
+                          for k, v in (globals().get("OPENROUTER_MODELS") or {}).items()},
+            },
+            {
+                "name": "Chutes.ai",
+                "active": self._chutes_ok,
+                "available": self._chutes_available(),
+                "rate_limited_for": rl(self._chutes_rl_until),
+                "model": model_for(globals().get("CHUTES_MODELS")),
+            },
+            {
+                "name": "GitHub Models",
+                "active": self._github_ok,
+                "available": self._github_available(),
+                "rate_limited_for": 0,
+                "models": {k: {"name": v, "rate_limited_for": rl(self._github_rl_per_model.get(v, 0))}
+                          for k, v in (globals().get("GITHUB_MODELS") or {}).items()},
+            },
+            {
+                "name": "Naga AI",
+                "active": self._naga_ok,
+                "available": self._naga_available(),
+                "rate_limited_for": rl(self._naga_rl_until),
+                "model": model_for(globals().get("NAGA_MODELS")),
+            },
+            {
+                "name": "Best AI",
+                "active": self._bestai_ok,
+                "available": self._bestai_available(),
+                "rate_limited_for": rl(self._bestai_rl_until),
+                "model": model_for(globals().get("BESTAI_MODELS")),
+            },
+            {
+                "name": "Groq",
+                "active": self._groq_ok,
+                "available": self._groq_available(),
+                "rate_limited_for": rl(self._groq_rl_until),
+                "model": model_for(globals().get("GROQ_MODELS")),
+            },
+            {
+                "name": "Ollama",
+                "active": self._ollama_ok,
+                "available": self._ollama_ok,
+                "rate_limited_for": 0,
+                "model": self.model,
+            },
+        ]
 
     def is_ready(self) -> bool:
         return self.available

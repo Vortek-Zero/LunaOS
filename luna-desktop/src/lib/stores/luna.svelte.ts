@@ -26,11 +26,13 @@ let messages = $state<ChatMessage[]>([]);
 let isTyping = $state(false);
 let currentAction = $state('');
 let audioLevel = $state(0);
+let processingHeat = $state(0);
 let connected = $state(false);
 let sessions = $state<any[]>([]);
 let systemInfo = $state<any>({});
 let mediaState = $state<any>({});
 let voiceEnabled = $state(true);
+let ttsEnabled = $state(true);
 
 let _id = 0;
 function uid(): string { return `msg_${Date.now()}_${_id++}`; }
@@ -39,7 +41,62 @@ function addMessage(sender: 'luna' | 'user', text: string) {
   messages.push({ id: uid(), sender, text, timestamp: Date.now() });
 }
 
-// ── Chat (SSE — mostra pensando/executando em tempo real) ──
+// ── SSE Chat Stream (compartilhado entre texto e voz) ──
+async function _streamChat(body: object): Promise<string> {
+  const res = await fetch(`${API}/api/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error('Stream indisponível');
+
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let finalText = '';
+  let toolCount = 0;
+
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+
+    for (const line of lines) {
+      if (!line.startsWith('data:')) continue;
+      try {
+        const data = JSON.parse(line.slice(5).trim());
+        if (data.type === 'done') {
+          finalText = data.text || '';
+          processingHeat = 0.3;
+        } else if (data.type === 'error') {
+          throw new Error(data.content || 'Erro no stream');
+        } else if (data.type === 'thinking') {
+          status = 'thinking';
+          currentAction = data.label || 'Pensando...';
+          processingHeat = Math.min(1, 0.15 + toolCount * 0.15);
+        } else if (data.type === 'tool_start') {
+          status = 'executing';
+          currentAction = data.label || 'Executando...';
+          toolCount++;
+          processingHeat = Math.min(1, 0.25 + toolCount * 0.2);
+        } else if (data.type === 'tool_done') {
+          currentAction = data.label || 'Concluindo...';
+          processingHeat = Math.min(1, 0.2 + toolCount * 0.15);
+        }
+      } catch (e) {
+        if (e instanceof SyntaxError) continue;
+        throw e;
+      }
+    }
+  }
+  return finalText;
+}
+
+// ── Chat (texto + SSE — mostra pensando/executando em tempo real) ──
 async function sendMessage(text: string) {
   if (!text.trim()) return;
   addMessage('user', text);
@@ -48,56 +105,8 @@ async function sendMessage(text: string) {
   currentAction = 'Pensando...';
 
   try {
-  const res = await fetch(`${API}/api/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: text }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-
-    const reader = res.body?.getReader();
-    if (!reader) throw new Error('Stream indisponível');
-
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
-    let finalText = '';
-
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        try {
-          const data = JSON.parse(line.slice(5).trim());
-          if (data.type === 'done') {
-            finalText = data.text || '';
-          } else if (data.type === 'error') {
-            throw new Error(data.content || 'Erro no stream');
-          } else if (data.type === 'thinking') {
-            status = 'thinking';
-            currentAction = data.label || 'Pensando...';
-          } else if (data.type === 'tool_start') {
-            status = 'executing';
-            currentAction = data.label || 'Executando...';
-          } else if (data.type === 'tool_done') {
-            currentAction = data.label || 'Concluindo...';
-          }
-        } catch (e) {
-          if (e instanceof SyntaxError) continue;
-          throw e;
-        }
-      }
-    }
-
-    isTyping = false;
-    currentAction = '';
-    status = 'speaking';
-    addMessage('luna', finalText || 'Sem resposta.');
-    setTimeout(() => { status = 'idle'; }, 2500);
+    const finalText = await _streamChat({ message: text });
+    _finishChat(finalText);
   } catch {
     isTyping = false;
     currentAction = '';
@@ -106,7 +115,21 @@ async function sendMessage(text: string) {
   }
 }
 
-// ── Voice ───────────────────────────────────────────────
+// ── Finalização pós-stream (TTS + status) ──
+function _finishChat(finalText: string) {
+  isTyping = false;
+  currentAction = '';
+  status = 'speaking';
+  processingHeat = 0.1;
+  addMessage('luna', finalText || 'Sem resposta.');
+  if (ttsEnabled && finalText) {
+    api('/api/voice/speak', { method: 'POST', body: JSON.stringify({ message: finalText }) }).catch(() => {});
+  }
+  const speakDuration = finalText ? Math.max(2000, finalText.length * 14) : 500;
+  setTimeout(() => { status = 'idle'; processingHeat = 0; }, speakDuration);
+}
+
+// ── Voice (agora com SSE — mostra pensando/executando) ──
 async function toggleMic() {
   if (status === 'listening') {
     status = 'idle';
@@ -119,21 +142,15 @@ async function toggleMic() {
       addMessage('user', data.text);
       status = 'thinking';
       isTyping = true;
-      const resp = await api('/api/chat', {
-        method: 'POST',
-        body: JSON.stringify({ message: data.text }),
-      });
-      isTyping = false;
-      status = 'speaking';
-      addMessage('luna', resp.response || 'Sem resposta.');
-      // Speak
-      try { await api('/api/voice/speak', { method: 'POST', body: JSON.stringify({ message: resp.response }) }); } catch {}
-      setTimeout(() => { status = 'idle'; }, 1500);
+      currentAction = 'Pensando...';
+      const finalText = await _streamChat({ message: data.text, voice: true });
+      _finishChat(finalText);
     } else {
       status = 'idle';
     }
   } catch {
     status = 'idle';
+    isTyping = false;
     addMessage('luna', '⚠️ Falha na captura de áudio.');
   }
 }
@@ -239,6 +256,19 @@ async function fetchSystemApps() {
 
 async function openSystemApp(name: string) {
   try { return await api('/api/system/apps/open', { method: 'POST', body: JSON.stringify({ text: name }) }); } catch { return null; }
+}
+
+async function sendWriteChat(message: string, contextText: string) {
+  try {
+    return await api('/api/write/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, context_text: contextText })
+    });
+  } catch { return null; }
+}
+
+async function fetchModelsStatus() {
+  try { return await api('/api/models/status'); } catch { return { providers: [] }; }
 }
 
 // ── Control Center ──────────────────────────────────────
@@ -445,6 +475,14 @@ async function speakMessage(text: string) {
   } catch {}
 }
 
+function toggleTts() {
+  ttsEnabled = !ttsEnabled;
+}
+
+function setTtsEnabled(v: boolean) {
+  ttsEnabled = v;
+}
+
 async function shutdownBackend() {
   try { await api('/api/shutdown', { method: 'POST' }); } catch {}
 }
@@ -459,17 +497,20 @@ export function useLuna() {
     get currentAction() { return currentAction; },
     get audioLevel() { return audioLevel; },
     set audioLevel(v) { audioLevel = v; },
+    get processingHeat() { return processingHeat; },
     get connected() { return connected; },
     get sessions() { return sessions; },
     get systemInfo() { return systemInfo; },
     get voiceEnabled() { return voiceEnabled; },
+    get ttsEnabled() { return ttsEnabled; },
     get currentMode() { return currentMode; },
-    sendMessage, toggleMic, addMessage, checkConnection, sendWithMode, setMode, speakMessage,
+    sendMessage, toggleMic, addMessage, checkConnection, sendWithMode, setMode,
+    speakMessage, toggleTts, setTtsEnabled,
     fetchSessions, createSession, deleteSession, switchSession,
     mediaControl, getMemoryStats, getMemoryFacts, fetchPerformance,
     toggleVoiceInput, fetchSystemMetrics, fetchSystemFacts, deleteSystemFacts,
     resetSystem,
-    fetchSystemApps, openSystemApp, fetchLightsStatus, setLightsState,
+    fetchSystemApps, openSystemApp, sendWriteChat, fetchModelsStatus, fetchLightsStatus, setLightsState,
     fetchSchedules, addSchedule, deleteSchedule, toggleSchedule,
     fetchControlSummary, fetchProcesses, killProcess, sendCodeChat,
     clearCodeSession, fetchWriteProjects, createWriteProject, getWriteProject,

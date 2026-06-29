@@ -2,7 +2,7 @@ from PIL import Image
 
 def combine():
     # Load background and foreground logo
-    bg = Image.open('/home/pera/Luna/newlogolunafundo.png')
+    bg = Image.open('/home/pera/Luna/newlogoluna.png')
     fg = Image.open('/home/pera/Luna/newlogoluna.png')
 
     # Get bounding box of the logo to remove empty transparency around it

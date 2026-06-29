@@ -154,7 +154,7 @@
 <style>
   .coding-layout { display: flex; width: 100%; height: 100%; overflow: hidden; background: rgba(5, 6, 12, 0.4); }
 
-  .code-col { flex: 1; display: flex; flex-direction: column; border-right: 1px solid rgba(255,255,255,0.04); background: rgba(10, 11, 20, 0.4); overflow: hidden; }
+  .code-col { flex: 1; display: flex; flex-direction: column; border-right: 1px solid rgba(255,255,255,0.04); background: rgba(10, 11, 20, 0.4); overflow: hidden; min-width: 0; }
   .code-col:last-child { border-right: none; }
 
   .code-col-head { height: 42px; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; border-bottom: 1px solid rgba(255,255,255,0.04); background: rgba(0,0,0,0.15); font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.6); }
@@ -173,10 +173,11 @@
   /* Chat list */
   .code-chat-messages { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
   
-  .cmsg { padding: 10px 14px; border-radius: 12px; font-size: 12.5px; line-height: 1.5; max-width: 90%; word-break: break-word; }
+  .cmsg { padding: 10px 14px; border-radius: 12px; font-size: 12.5px; line-height: 1.5; max-width: 90%; word-break: break-word; white-space: pre-wrap; overflow-wrap: anywhere; }
   .cmsg.sys { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.04); color: rgba(255,255,255,0.4); max-width: 100%; font-style: italic; }
   .cmsg.user { background: rgba(253, 150, 68, 0.1); border: 1px solid rgba(253, 150, 68, 0.25); color: white; align-self: flex-end; border-bottom-right-radius: 3px; }
   .cmsg.luna { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); color: rgba(255,255,255,0.85); align-self: flex-start; border-bottom-left-radius: 3px; }
+  .cmsg-text { white-space: pre-wrap; overflow-wrap: anywhere; }
 
   .coding-typing { display: flex; gap: 4px; align-items: center; background: rgba(255,255,255,0.02); border: none; align-self: flex-start; padding: 8px 12px; }
   .tdot { width: 4px; height: 4px; background: #fd9644; border-radius: 50%; animation: typingDot 1.4s infinite; }
