@@ -4,6 +4,7 @@
   let {
     status = "idle",
     audioLevel = 0,
+    processingHeat = 0,  // 0-1: quão intenso é o processamento (tools/tokens)
     mini = false,
     speed = 1.0,
     intensity = 1.0,
@@ -22,8 +23,12 @@
   let currentMouseX = $state(0);
   let currentMouseY = $state(0);
   let localAudio = $state(0);
+  let audioBass = $state(0);
+  let audioMid = $state(0);
+  let audioTreble = $state(0);
+  let breathPhase = $state(0);
 
-  let scale = $derived(1 + localAudio * 0.08 * intensity);
+  let scale = $derived(1 + localAudio * 0.22 * intensity);
 
   // Vertex Shader
   const vsSource = `
@@ -36,11 +41,15 @@
 		}
 	`;
 
-  // Fragment Shader - Soothing Bluish Nebula with Twinkling Stars
+  // Fragment Shader - Soothing Bluish Nebula with Twinkling Stars and CAVA-style Audio Visualizer
   const fsSource = `
 		precision mediump float;
 		uniform float u_time;
 		uniform float u_audio;
+		uniform float u_bass;
+		uniform float u_mid;
+		uniform float u_treble;
+		uniform float u_heat;
 		uniform vec2 u_mouse;
 		varying vec2 v_uv;
 
@@ -69,35 +78,108 @@
 			return v;
 		}
 
-		// Procedural twinkling starfield using cell-based hashing (no loops needed)
+		// Procedural twinkling starfield using cell-based hashing
 		float stars(vec2 uv, float scale, float t) {
 			vec2 cell = floor(uv * scale);
 			vec2 sub = fract(uv * scale);
 
-			// Random star position within the cell
 			float rnd = hash(cell);
 			vec2 starPos = vec2(hash(cell + vec2(1.0, 0.0)), hash(cell + vec2(0.0, 1.0)));
 
-			// Distance to star center
 			float d = length(sub - starPos);
 
-			// Only some cells have stars (threshold controls density)
 			float hasStar = step(0.78, rnd);
-
-			// Star size varies per cell
 			float size = 0.015 + rnd * 0.025;
 
-			// Sharp point of light with soft glow halo
 			float core = smoothstep(size, size * 0.15, d);
 			float glow = smoothstep(size * 4.0, 0.0, d) * 0.25;
 
-			// Unique twinkle phase per star
 			float twinkleSpeed = 1.5 + rnd * 3.0;
 			float twinklePhase = rnd * 6.28318;
 			float twinkle = sin(t * twinkleSpeed + twinklePhase) * 0.5 + 0.5;
 			twinkle = pow(twinkle, 1.5);
 
 			return (core + glow) * hasStar * (0.3 + 0.7 * twinkle);
+		}
+
+		// ── CAVA-STYLE AUDIO VISUALIZER BANDS ──
+		float cavaBands(vec2 uv, vec2 center, float t, float audio, float bass, float mid, float treble) {
+			float bandCount = 24.0;
+			float angle = atan(uv.y - center.y, uv.x - center.x);
+			float normAngle = (angle / 6.28318) + 0.5;
+			if (normAngle > 1.0) normAngle -= 1.0;
+
+			float band = floor(normAngle * bandCount);
+			float bandFrac = fract(normAngle * bandCount);
+
+			// Map bands: low angles = bass, mid angles = mid, high angles = treble
+			float bandRatio = band / bandCount;
+			float bassWeight = 1.0 - smoothstep(0.0, 0.4, bandRatio);
+			float midWeight = 1.0 - abs(bandRatio - 0.5) * 2.0;
+			float trebleWeight = 1.0 - smoothstep(0.6, 1.0, 1.0 - bandRatio);
+
+			float bandEnergy = bass * bassWeight + mid * midWeight + treble * trebleWeight;
+			bandEnergy = clamp(bandEnergy, 0.0, 1.0);
+
+			// Procedural variation per band for organic look
+			float freqPhase = band / bandCount;
+			float variation = 0.3 + 0.5 * sin(t * 3.0 + freqPhase * 12.56)
+					+ 0.3 * sin(t * 5.1 + freqPhase * 8.3)
+					+ 0.2 * sin(t * 7.7 + freqPhase * 15.1);
+			float bandMag = bandEnergy * max(0.2, 0.5 + 0.5 * variation);
+			bandMag = clamp(bandMag, 0.0, 1.0);
+			bandMag = pow(bandMag, 1.6); // contrast boost
+
+			// Falloff from center — bars grow outward with audio
+			float distFromCenter = length(uv - center);
+			float bandHeight = 0.02 + bandMag * 0.40;
+
+			float glow = smoothstep(distFromCenter, distFromCenter - bandHeight, 0.5);
+			// Soft edges between bands
+			float edgeFade = 1.0 - smoothstep(0.0, 0.08, abs(bandFrac - 0.5));
+			float bandGlow = glow * (0.3 + 0.7 * edgeFade);
+
+			// Extra flash at peak
+			float peakFlash = smoothstep(0.75, 0.95, bandMag) * bandMag * 0.6;
+
+			return (bandGlow + peakFlash) * audio;
+		}
+
+		// ── AUDIO RING PULSES ──
+		float audioRings(vec2 uv, vec2 center, float t, float audio) {
+			float dist = length(uv - center);
+			float rings = 0.0;
+
+			// Three concentric rings expanding at different speeds
+			for (int i = 0; i < 3; i++) {
+				float fi = float(i);
+				float speed = 1.2 + fi * 0.7;
+				float phase = t * speed + fi * 1.5;
+				float ringPos = 0.15 + 0.35 * (0.5 + 0.5 * sin(phase));
+				float ringWidth = 0.015 + audio * 0.04;
+				float ring = smoothstep(ringPos + ringWidth, ringPos, abs(dist - ringPos));
+				ring *= 0.3 + 0.7 * (0.5 + 0.5 * sin(phase + 1.57));
+				ring *= 0.3 + 0.7 * audio;
+				rings += ring;
+			}
+			return rings;
+		}
+
+		// ── AUDIO WAVES (distortion on the nebula) ──
+		float audioWaves(vec2 uv, float t, float audio) {
+			float wave = 0.0;
+			for (int i = 0; i < 3; i++) {
+				float fi = float(i);
+				float freq = 4.0 + fi * 3.0;
+				float speed = 2.0 + fi * 1.3;
+				float y = uv.y + 0.3 * sin(uv.x * freq + t * speed);
+				float band = 1.0 - abs(y * 2.0 - 1.0);
+				band = pow(band, 3.0);
+				// Each band gets stronger with audio
+				float bandAudio = audio * (0.5 + 0.5 * sin(t * 1.7 + fi * 2.1));
+				wave += band * bandAudio * 0.25;
+			}
+			return wave;
 		}
 
 		void main() {
@@ -107,15 +189,22 @@
 			float alpha = smoothstep(0.5, 0.482, dist);
 			if (alpha <= 0.0) discard;
 
+			// Audio-normalized: smooth breathing when idle, pulsing when active
+			float audio = u_audio;
+
 			vec2 p = uv * 3.6 - u_mouse * 0.22;
 			float t = u_time * 0.12 * 1.5;
 
 			// ── 1. NEBULA CORE ──
+			// Audio waves distort the nebula coordinates
+			float waveDistort = audioWaves(uv, t, audio);
+			vec2 audioP = p + vec2(waveDistort * 0.5, waveDistort * 0.3);
+
 			vec2 q = vec2(
-				fbm(p + vec2(0.0, 0.0) + t * 0.6, t),
-				fbm(p + vec2(5.2, 1.8) + t * 0.9, t)
+				fbm(audioP + vec2(0.0, 0.0) + t * 0.6, t),
+				fbm(audioP + vec2(5.2, 1.8) + t * 0.9, t)
 			);
-			float f = fbm(p + 3.0 * q + t * 0.4, t);
+			float f = fbm(audioP + 3.0 * q + t * 0.4, t);
 
 			// Bluish, calming celestial colors
 			vec3 indigo       = vec3(0.02, 0.04, 0.12);
@@ -123,24 +212,34 @@
 			vec3 softCyan     = vec3(0.36, 0.82, 0.98);
 			vec3 lavenderBlue = vec3(0.58, 0.62, 0.94);
 			vec3 pearlWhite   = vec3(0.96, 0.98, 1.0);
+			vec3 hotPink      = vec3(0.95, 0.30, 0.65);
 
 			// Volumetric Fluid Nebula
 			float shimmer = sin(f * 10.0 + t * 1.5) * 0.5 + 0.5;
 			vec3 color = mix(indigo, lavenderBlue, f * 1.1);
 			color = mix(color, softBlue, shimmer * 0.75);
 			color = mix(color, softCyan, pow(shimmer, 2.0) * 0.65);
-			color = mix(color, pearlWhite, pow(shimmer, 3.2) * (0.45 + u_audio * 0.95));
+
+			// Audio drives color toward pearl white / hot pink at peak
+			float colorPulse = 0.45 + audio * 0.95;
+			color = mix(color, pearlWhite, pow(shimmer, 3.2) * colorPulse);
+
+			// Processing heat — brighter / warmer with more tools/tokens
+			float heat = u_heat;
+			color = mix(color, pearlWhite, heat * 0.3);
+			color = mix(color, hotPink, heat * 0.1);
+
+			// Subtle warm shift on high audio
+			vec3 warmGlow = mix(pearlWhite, hotPink, 0.3);
+			color = mix(color, warmGlow, audio * 0.15);
 
 			// ── 2. TWINKLING STARS ──
-			// Multiple layers at different scales for depth & parallax
 			float s1 = stars(uv + u_mouse * 0.03, 12.0, u_time);
 			float s2 = stars(uv + u_mouse * 0.05 + vec2(0.33, 0.77), 18.0, u_time);
 			float s3 = stars(uv + u_mouse * 0.08 + vec2(0.61, 0.19), 28.0, u_time);
 
-			// Stars glow brighter with audio
-			float starBoost = 1.0 + u_audio * 1.5;
+			float starBoost = 1.0 + audio * 2.0;
 
-			// Blend stars on top of the nebula (brighter in darker nebula areas)
 			float nebulaLuminance = dot(color, vec3(0.299, 0.587, 0.114));
 			float starVisibility = 1.0 - smoothstep(0.15, 0.55, nebulaLuminance);
 
@@ -150,18 +249,29 @@
 
 			color += (starColor1 + starColor2 + starColor3) * starBoost * (0.4 + starVisibility * 0.6);
 
-			// Specular glass lens reflection
+			// ── 3. CAVA-STYLE AUDIO BANDS ──
+			float cava = cavaBands(uv, center, t, audio, u_bass, u_mid, u_treble);
+			color += vec3(0.2, 0.5, 0.9) * cava * 0.6;
+			color += vec3(0.6, 0.8, 1.0) * cava * cava * 0.4;
+
+			// ── 4. AUDIO RINGS ──
+			float rings = audioRings(uv, center, t, audio);
+			color += vec3(0.3, 0.7, 1.0) * rings * 0.5;
+
+			// ── 5. SPECULAR + RIM ──
 			float specular = pow(1.0 - dist * 1.8, 6.0) * 0.62;
 			color += specular * vec3(0.92, 0.96, 1.0);
 
-			// Rim light edge glow
 			float rim = smoothstep(0.45, 0.5, dist);
-			color += rim * softCyan * 0.55;
+			color += rim * mix(softCyan, hotPink, heat * 0.5) * (0.55 + audio * 0.4 + heat * 0.3);
 
-			// Audio energy boost
-			color = mix(color, pearlWhite, u_audio * 0.25);
+			// Audio + heat energy boost
+			color = mix(color, pearlWhite, audio * 0.2 + heat * 0.1);
 
-			gl_FragColor = vec4(color, alpha * (0.96 + u_audio * 0.04));
+			// Alpha slightly brighter with audio
+			float finalAlpha = alpha * (0.96 + audio * 0.04);
+
+			gl_FragColor = vec4(color, finalAlpha);
 		}
 	`;
 
@@ -240,6 +350,10 @@
     const timeLoc = gl.getUniformLocation(program, "u_time");
     const audioLoc = gl.getUniformLocation(program, "u_audio");
     const mouseLoc = gl.getUniformLocation(program, "u_mouse");
+    const bassLoc = gl.getUniformLocation(program, "u_bass");
+    const midLoc = gl.getUniformLocation(program, "u_mid");
+    const trebleLoc = gl.getUniformLocation(program, "u_treble");
+    const heatLoc = gl.getUniformLocation(program, "u_heat");
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
@@ -249,14 +363,34 @@
 
       const elapsed = (Date.now() - startTime) / 1000;
 
-      // Audio smoothing
+      // Audio — real mic level or strong procedural pulse
       let target = audioLevel;
+      const now = Date.now();
+
       if (target === 0 && (status === "listening" || status === "speaking")) {
-        const t = Date.now() * 0.006;
-        target = 0.12 + Math.sin(t) * 0.28 + Math.sin(t * 2.7) * 0.18;
+        // Procedural speech: continuous pulsing with no dead zones
+        const t = now * 0.005;
+        const env = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * 2.8 + Math.sin(t * 5.3) * 0.4));
+        target = Math.min(1, env);
+      } else if (status === "thinking" || status === "executing") {
+        // Processing: slow deep pulse
+        const t = now * 0.002;
+        target = 0.15 + 0.2 * (0.5 + 0.5 * Math.sin(t * 1.3));
+      } else if (status === "idle") {
+        // Gentle breathing when idle
+        const t = now * 0.001;
+        target = 0.03 + Math.sin(t) * 0.015;
       }
 
-      localAudio += (target - localAudio) * 0.18;
+      localAudio += (target - localAudio) * 0.35;
+
+      // Simulated frequency bands from single audio level
+      const t2 = now * 0.003;
+      audioBass += ((target * (0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t2)))) - audioBass) * 0.28;
+      audioMid  += ((target * (0.3 + 0.7 * (0.5 + 0.5 * Math.sin(t2 * 2.3)))) - audioMid) * 0.28;
+      audioTreble += ((target * (0.2 + 0.8 * (0.5 + 0.5 * Math.sin(t2 * 4.7)))) - audioTreble) * 0.28;
+
+      breathPhase = now * 0.001;
 
       // Mouse smoothing
       currentMouseX += (mouseX - currentMouseX) * 0.12;
@@ -268,6 +402,10 @@
       gl.uniform1f(timeLoc, elapsed * speed);
       gl.uniform1f(audioLoc, localAudio);
       gl.uniform2f(mouseLoc, currentMouseX, currentMouseY);
+      gl.uniform1f(bassLoc, audioBass);
+      gl.uniform1f(midLoc, audioMid);
+      gl.uniform1f(trebleLoc, audioTreble);
+      gl.uniform1f(heatLoc, processingHeat);
 
       gl.drawArrays(gl.TRIANGLES, 0, 6);
 

@@ -119,11 +119,11 @@ def _pcm_to_wav(pcm: bytes, sample_rate: int = SAMPLE_RATE) -> str:
 
 
 def _record_until_silence(
-    max_seconds: float = 12,
-    silence_threshold: int = 500,
-    silence_duration: float = 0.8,
+    max_seconds: float = 20,
+    silence_threshold: int = 300,
 ) -> Optional[bytes]:
-    """Grava até silêncio ou max_seconds. Retorna PCM16 ou None."""
+    """Grava até silêncio ou max_seconds. VAD adaptativo: mais pausas = mais tolerância.
+    Retorna PCM16 ou None."""
     pa = _get_pa()
     if not pa:
         return None
@@ -133,11 +133,11 @@ def _record_until_silence(
             rate=SAMPLE_RATE, input=True,
             frames_per_buffer=CHUNK,
         )
-        frames = []
+        frames        = []
         silent_chunks = 0
-        silent_limit = int(SAMPLE_RATE / CHUNK * silence_duration)
-        max_chunks   = int(SAMPLE_RATE / CHUNK * max_seconds)
-        started = False
+        speech_bursts = 0
+        max_chunks    = int(SAMPLE_RATE / CHUNK * max_seconds)
+        started       = False
 
         for _ in range(max_chunks):
             data = stream.read(CHUNK, exception_on_overflow=False)
@@ -145,11 +145,15 @@ def _record_until_silence(
             shorts = struct.unpack(f"{len(data)//2}h", data)
             rms = math.sqrt(sum(s*s for s in shorts) / len(shorts)) if shorts else 0
             if rms > silence_threshold:
+                if started and silent_chunks > 0:
+                    speech_bursts += 1
                 started = True
                 silent_chunks = 0
             elif started:
                 silent_chunks += 1
-                if silent_chunks >= silent_limit:
+                dynamic_limit = int(SAMPLE_RATE / CHUNK * 0.4) + speech_bursts * int(SAMPLE_RATE / CHUNK * 0.12)
+                max_silence = int(SAMPLE_RATE / CHUNK * 2.2)
+                if silent_chunks >= min(dynamic_limit, max_silence):
                     break
 
         stream.stop_stream()
@@ -218,7 +222,7 @@ class STTEngine:
     """
 
     def __init__(self):
-        self.enabled = False
+        self.enabled = True
         self._local_model = None
         self._wake_event  = threading.Event()
         self._stop_bg     = threading.Event()
@@ -255,15 +259,19 @@ class STTEngine:
     # ── Wakeword loop (energy gate + transcrição) ──────────────
 
     def _wakeword_loop(self) -> None:
-        """Detecta fala por energia e transcreve só quando necessário."""
+        """Detecta fala por energia e transcreve só quando necessário.
+        VAD adaptativo: cada novo burst de fala aumenta a tolerância a pausas."""
         pa = _get_pa()
         if not pa:
             return
 
-        ENERGY_THRESHOLD = 400  # RMS mínimo para considerar fala
-        PRE_FRAMES       = 10   # frames de buffer pré-onset
-        MAX_CHUNKS       = 80   # máx ~2.5s (80 × 512 / 16000)
-        CHUNK_WAKE       = 512
+        ENERGY_THRESHOLD  = 300   # RMS mínimo para considerar fala
+        BASE_SILENCE      = 15    # ~480ms base
+        EXTRA_PER_BURST   = 6     # +~190ms por burst
+        MAX_SILENCE       = 70    # ~2.2s máximo
+        PRE_FRAMES        = 8     # frames de buffer pré-onset
+        MAX_CHUNKS        = 480   # máx ~15s (480 × 512 / 16000)
+        CHUNK_WAKE        = 512
 
         consecutive_errors = 0
         while not self._stop_bg.is_set():
@@ -274,7 +282,7 @@ class STTEngine:
                         rate=SAMPLE_RATE, input=True,
                         frames_per_buffer=CHUNK_WAKE,
                     )
-                    consecutive_errors = 0  # Reset upon success
+                    consecutive_errors = 0
                 except Exception as e:
                     consecutive_errors += 1
                     if consecutive_errors == 1:
@@ -288,9 +296,11 @@ class STTEngine:
                     time.sleep(2.0)
                     continue
 
-                ring_buf     = []
+                ring_buf      = []
                 speech_frames = []
-                listening    = False
+                listening     = False
+                silent_count  = 0
+                speech_bursts = 0
 
                 try:
                     while not self._stop_bg.is_set():
@@ -305,9 +315,21 @@ class STTEngine:
                             if rms > ENERGY_THRESHOLD:
                                 listening = True
                                 speech_frames = list(ring_buf)
+                                silent_count = 0
+                                speech_bursts = 1
                         else:
                             speech_frames.append(data)
-                            if rms < ENERGY_THRESHOLD or len(speech_frames) >= MAX_CHUNKS:
+                            if rms > ENERGY_THRESHOLD:
+                                if silent_count > 0:
+                                    speech_bursts += 1
+                                silent_count = 0
+                            else:
+                                silent_count += 1
+
+                            dynamic_limit = min(BASE_SILENCE + speech_bursts * EXTRA_PER_BURST, MAX_SILENCE)
+
+                            if (silent_count >= dynamic_limit or
+                                len(speech_frames) >= MAX_CHUNKS):
                                 pcm  = b"".join(speech_frames)
                                 wav  = _pcm_to_wav(pcm)
                                 text = self._transcribe(wav).lower().strip()
@@ -323,6 +345,8 @@ class STTEngine:
                                 ring_buf      = []
                                 speech_frames = []
                                 listening     = False
+                                silent_count  = 0
+                                speech_bursts = 0
                 except Exception as e:
                     print(err("STT_WAKEWORD_LOOP", str(e)))
                 finally:
@@ -348,7 +372,7 @@ class STTEngine:
     def stop_wakeword_listener(self) -> None:
         self._stop_bg.set()
 
-    def listen_once(self, timeout: int = 12, phrase_limit: int = 25) -> Optional[str]:
+    def listen_once(self, timeout: int = 20, phrase_limit: int = 30) -> Optional[str]:
         if not self.enabled:
             return None
         if not HAS_GROQ and not self._local_model:
@@ -361,7 +385,7 @@ class STTEngine:
             print("[STT] 🎤 Pode falar...")
             pcm = _record_until_silence(
                 max_seconds=float(phrase_limit),
-                silence_duration=0.8,
+                silence_threshold=300,
             )
             if not pcm:
                 return None

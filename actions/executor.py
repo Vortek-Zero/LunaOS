@@ -300,6 +300,40 @@ class ActionExecutor:
         return self._wm
 
     @property
+    def window_manager(self):
+        return self.wm
+
+    def list_windows(self) -> str:
+        try:
+            return self.wm.list_windows()
+        except Exception as e:
+            return f"FALHOU: {e}"
+
+    def focus_window(self, title: str) -> str:
+        try:
+            return self.wm.focus_window(title)
+        except Exception as e:
+            return f"FALHOU: {e}"
+
+    def whatsapp_open(self) -> str:
+        try:
+            from actions.whatsapp import get_whatsapp
+            w = get_whatsapp()
+            w.open()
+            return "WhatsApp aberto."
+        except Exception as e:
+            return f"FALHOU: {e}"
+
+    def whatsapp_send(self, contact: str, message: str) -> str:
+        try:
+            from actions.whatsapp import get_whatsapp
+            w = get_whatsapp()
+            w.send(contact, message)
+            return f"Mensagem enviada para {contact}."
+        except Exception as e:
+            return f"FALHOU: {e}"
+
+    @property
     def clipboard(self):
         if not self._clipboard:
             self._clipboard = get_clipboard()

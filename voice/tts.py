@@ -121,10 +121,11 @@ class TTSEngine:
             except Exception as e:
                 print(err("TTS_F5_FAILED", str(e)))
 
-    def speak(self, text: str, blocking: bool = False) -> None:
+    def speak(self, text: str, blocking: bool = False, barge_in_callback=None) -> None:
         """
         Fala o texto. Por padrão, não bloqueia (thread separada).
         Se blocking=True, espera terminar.
+        barge_in_callback(texto) é chamado se o usuário interromper a fala.
         """
         if not self.enabled or not text or not text.strip():
             return
@@ -132,9 +133,9 @@ class TTSEngine:
             return
 
         if blocking:
-            self._speak_sync(text)
+            self._speak_sync(text, barge_in_callback)
         else:
-            self._thread_pool.submit(self._speak_sync, text)
+            self._thread_pool.submit(self._speak_sync, text, barge_in_callback)
 
     def _chunk_text(self, text: str, max_chars: int = 1500) -> list[str]:
         """Divide texto longo em chunks por quebra de frase."""
@@ -192,7 +193,47 @@ class TTSEngine:
                 pass
         return None, None
 
-    def _speak_sync(self, text: str) -> None:
+    def _barge_in_monitor(self, barge_in_callback) -> None:
+        """Monitora microfone durante TTS. Se detectar fala, interrompe e captura o comando."""
+        try:
+            import pyaudio
+            pa = pyaudio.PyAudio()
+            stream = pa.open(
+                format=pyaudio.paInt16, channels=1,
+                rate=16000, input=True,
+                frames_per_buffer=1024,
+            )
+            speech_count = 0
+            energy_threshold = 300
+            while self._speaking and not self._stop_requested:
+                try:
+                    data = stream.read(1024, exception_on_overflow=False)
+                    shorts = struct.unpack(f"{len(data)//2}h", data)
+                    rms = math.sqrt(sum(s*s for s in shorts) / len(shorts)) if shorts else 0
+                    if rms > energy_threshold:
+                        speech_count += 1
+                        if speech_count >= 4:  # ~256ms de fala sustentada = interrupção
+                            self.stop()
+                            from voice.stt import _record_until_silence, _pcm_to_wav, _transcribe_groq
+                            pcm = _record_until_silence(max_seconds=15, silence_threshold=300)
+                            if pcm:
+                                wav = _pcm_to_wav(pcm)
+                                text = _transcribe_groq(wav)
+                                if text:
+                                    print(f"[BARGE-IN] Usuário interrompeu: '{text}'")
+                                    barge_in_callback(text)
+                            break
+                    else:
+                        speech_count = 0
+                except Exception:
+                    break
+                time.sleep(0.008)
+            stream.close()
+            pa.terminate()
+        except Exception as e:
+            print(err("TTS_BARGE_IN_FAILED", str(e)))
+
+    def _speak_sync(self, text: str, barge_in_callback=None) -> None:
         """Executa TTS com pré-processamento: gera próximo chunk enquanto o atual toca."""
         with self._lock:
             self._stop_requested = False
@@ -206,6 +247,14 @@ class TTSEngine:
                 # Gera o primeiro chunk (bloqueante)
                 data, sr = self._generate_chunk_audio(chunks[0])
 
+                # Inicia monitor de interrupção se houver callback
+                if barge_in_callback:
+                    threading.Thread(
+                        target=self._barge_in_monitor,
+                        args=(barge_in_callback,),
+                        daemon=True,
+                    ).start()
+
                 for i in range(len(chunks)):
                     if getattr(self, '_stop_requested', False):
                         break
@@ -215,11 +264,14 @@ class TTSEngine:
                     if i + 1 < len(chunks):
                         prefetch = self._thread_pool.submit(self._generate_chunk_audio, chunks[i + 1])
 
-                    # Toca o chunk atual
+                    # Toca o chunk atual (polling loop para respeitar stop_requested)
                     if data is not None:
                         try:
                             sd.play(data, sr)
-                            sd.wait()
+                            while sd.get_stream().active and not self._stop_requested:
+                                time.sleep(0.05)
+                            if self._stop_requested:
+                                sd.stop()
                         except Exception as e:
                             print(err("TTS_PLAYBACK_FAILED", str(e)))
 
@@ -246,7 +298,7 @@ class TTSEngine:
         """Gera o arquivo de áudio tentando os motores na ordem da prioridade configurada."""
         if output_path is None:
             output_path = TTS_TEMP_FILE
-        priority = getattr(config, "TTS_PRIORITY", ["google_cloud", "f5", "edge_tts", "elevenlabs", "azure", "pyttsx3"])
+        priority = getattr(config, "TTS_PRIORITY", ["edge_tts", "google_cloud", "f5", "elevenlabs", "azure", "pyttsx3"])
         
         for engine_name in priority:
             engine_name = engine_name.strip().lower()

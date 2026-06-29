@@ -104,7 +104,7 @@ VOICE_CONFIG = {
 
 # --- MOTOR DE TTS ---
 # Prioridade de motores de voz
-TTS_PRIORITY = os.getenv("LUNA_TTS_PRIORITY", "google_cloud,f5,edge_tts,elevenlabs,azure,pyttsx3").split(",")
+TTS_PRIORITY = os.getenv("LUNA_TTS_PRIORITY", "edge_tts,google_cloud,f5,elevenlabs,azure,pyttsx3").split(",")
 
 # Credenciais e vozes de outros motores
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")

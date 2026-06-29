@@ -1,7 +1,7 @@
 # Maintainer: Pera <pera@example.com>
 pkgname=luna-desktop-git
 _pkgname=luna-desktop
-pkgver=0.1.0.r4.a180ecb
+pkgver=0.1.0.r11.8fb51b2
 pkgrel=1
 pkgdesc="A modern and efficient desktop client for LunaOS"
 arch=('x86_64')

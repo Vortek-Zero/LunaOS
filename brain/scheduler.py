@@ -173,7 +173,7 @@ def _fallback_tools(user_input: str) -> list:
     rules = [
         (["pasta", "pastas", "arquivo", "arquivos", "home", "diretório", "diretorio", "lista", "listar"],
          {"tool_name": "filesystem", "parameters": {"action": "list", "path": "~"}}),
-        (["luz", "lâmpada", "lampada", "iluminação", "sala"],
+        (["luz", "lâmpada", "lampada", "iluminação", "iluminacao", "sala"],
          {"tool_name": "control_lights", "parameters": {"state": "off" if any(w in tl for w in ["apaga", "desliga", "desligar", "apagar"]) else "on"}}),
         (["processo", "processador", "cpu", "memória", "memoria", "ram", "desempenho", "performance", "status do pc"],
          {"tool_name": "system_control", "parameters": {"action": "status"}}),
