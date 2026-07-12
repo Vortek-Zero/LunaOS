@@ -50,6 +50,7 @@ class NotesManager:
         return "\n".join(lines)
 
     def delete(self, index: int) -> str:
+        index = int(index)
         if index < 1 or index > len(self._notes):
             return f"Nota {index} não existe. Você tem {len(self._notes)} nota(s)."
         removed = self._notes.pop(index - 1)
