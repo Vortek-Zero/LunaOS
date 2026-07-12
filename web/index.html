@@ -754,6 +754,8 @@
       <button class="nav-btn" onclick="showTab('wiki')" id="nav-wiki"><i data-lucide="book-open"></i> Wiki</button>
       <button class="nav-btn" onclick="showTab('coding')" id="nav-coding" style="color:#fd9644;border-color:transparent"><i data-lucide="code-2"></i> Coding</button>
       <button class="nav-btn" onclick="showTab('joy')" id="nav-joy" style="color:#fd79a8;border-color:transparent"><i data-lucide="gamepad-2"></i> Joy 🎮</button>
+      <div class="nav-sep"></div>
+      <button class="nav-btn" onclick="showTab('gallery')" id="nav-gallery"><i data-lucide="image"></i> Galeria</button>
     </div>
     <div id="sessionList" style="display:none"></div>
     <button id="newChatBtn" style="display:none" onclick="newSession()"><i data-lucide="plus"></i> Nova conversa</button>
@@ -1193,6 +1195,22 @@
     </div>
 
     <!-- ══ JOY MODE ══ -->
+    <!-- ══ GALERIA ══ -->
+    <div class="panel" id="panel-gallery">
+      <div class="panel-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div class="section-title" style="margin:0"><i data-lucide="image"></i> Galeria de Imagens</div>
+          <span id="galleryCount" style="font-size:.78em;color:var(--t2)">0 imagens</span>
+        </div>
+        <div id="galleryGrid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px"></div>
+        <div id="galleryEmpty" style="text-align:center;padding:60px 20px;color:var(--t3)">
+          <i data-lucide="image-off" style="width:48px;height:48px;opacity:.3;margin-bottom:12px"></i>
+          <p>Nenhuma imagem gerada ainda.</p>
+          <p style="font-size:.82em;margin-top:6px">Peça para a Luna gerar imagens no chat!</p>
+        </div>
+      </div>
+    </div>
+
     <div id="panel-joy" class="panel" style="padding:0;overflow:hidden;width:100%;height:100%">
       <iframe id="joyFrame" style="width:100%;height:100%;border:none;background:var(--bg)"></iframe>
     </div>
@@ -1348,7 +1366,7 @@ function showTab(tab){
   document.getElementById('panel-'+tab).classList.add('active');
   document.getElementById('nav-'+tab).classList.add('active');
   document.getElementById('topbarTitle').textContent=
-    {chat:'Chat',voice:'Voz',media:'Mídia',widgets:'Widgets',system:'Sistema',control:'Controle',wiki:'Wiki',coding:'Coding',write:'Write',joy:'Joy'}[tab]||'Luna';
+    {chat:'Chat',voice:'Voz',media:'Mídia',widgets:'Widgets',system:'Sistema',control:'Controle',wiki:'Wiki',coding:'Coding',write:'Write',joy:'Joy',gallery:'Galeria'}[tab]||'Luna';
   // Show/hide session list only on chat tab
   document.getElementById('sessionList').style.display=tab==='chat'?'flex':'none';
   document.getElementById('newChatBtn').style.display=tab==='chat'?'':'none';
@@ -1368,6 +1386,7 @@ function showTab(tab){
     const key = localStorage.getItem('luna_key') || '';
     document.getElementById('joyFrame').src = `/joy?token=${encodeURIComponent(token)}&base=${encodeURIComponent(base)}&key=${encodeURIComponent(key)}`;
   }
+  if(tab==='gallery'){loadGallery()}
   if(typeof lucide!=='undefined') lucide.createIcons();
 }
 
@@ -1476,6 +1495,7 @@ async function sendChat(){
   sendBtn().disabled=false;
   document.getElementById('stopBtn').style.display='none';
   chatEl().scrollTop=chatEl().scrollHeight;
+  loadSessions();
 }
 // ── Stop all ─────────────────────────────────────────────────
 async function stopAll(){
@@ -1697,6 +1717,50 @@ async function addTimer(){
     loadTimers();
   }catch{}
 }
+// ── Gallery ──────────────────────────────────────────────────
+async function loadGallery(){
+  try{
+    const d=await api('GET','/api/images');
+    renderGallery(d.images||[]);
+  }catch{}
+}
+function renderGallery(images){
+  const grid=document.getElementById('galleryGrid');
+  const empty=document.getElementById('galleryEmpty');
+  const count=document.getElementById('galleryCount');
+  grid.innerHTML='';
+  if(!images.length){
+    grid.style.display='none';
+    empty.style.display='block';
+    count.textContent='0 imagens';
+    if(typeof lucide!=='undefined')lucide.createIcons();
+    return;
+  }
+  grid.style.display='grid';
+  empty.style.display='none';
+  count.textContent=images.length+' imagem'+(images.length!==1?'ens':'');
+  images.forEach(img=>{
+    const el=document.createElement('div');
+    el.style.cssText='border-radius:12px;overflow:hidden;border:1px solid var(--b2);background:var(--bg2);position:relative;aspect-ratio:1;cursor:pointer;transition:transform .2s';
+    el.innerHTML=`<img src="${esc(img.url)}" alt="${esc(img.prompt)}" loading="lazy" style="width:100%;height:100%;object-fit:cover;display:block">
+      <div style="position:absolute;bottom:0;left:0;right:0;padding:8px;background:linear-gradient(transparent,rgba(0,0,0,.7));font-size:.72em;color:#fff;line-height:1.3">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(img.prompt)}</div>
+      </div>`;
+    el.addEventListener('click',()=>{
+      const overlay=document.createElement('div');
+      overlay.style.cssText='position:fixed;top:0;left:0;right:0;bottom:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:20px';
+      overlay.innerHTML=`<img src="${esc(img.url)}" style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+        <div style="position:absolute;bottom:30px;left:50%;transform:translateX(-50%);display:flex;gap:12px">
+          <a href="${esc(img.url)}" download="${esc(img.name)}" style="padding:10px 20px;background:var(--a);color:#fff;border-radius:8px;text-decoration:none;font-size:.85em;font-weight:600">⬇ Baixar</a>
+        </div>`;
+      overlay.onclick=e=>{if(e.target===overlay)overlay.remove()};
+      document.body.appendChild(overlay);
+    });
+    grid.appendChild(el);
+  });
+  if(typeof lucide!=='undefined')lucide.createIcons();
+}
+
 async function loadTimers(){
   try{
     const d=await api('GET','/api/timer');
