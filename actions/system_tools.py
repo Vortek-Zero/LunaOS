@@ -128,7 +128,7 @@ class SystemTools:
         if not parts:
             return "FALHOU: Comando vazio."
         cmd_name = parts[0]
-        if cmd_name not in self.COMMAND_WHITELIST:
+        if cmd_name not in COMMAND_WHITELIST:
             return f"FALHOU: Comando '{cmd_name}' não está na whitelist de segurança."
         try:
             res = subprocess.run(

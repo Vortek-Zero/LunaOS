@@ -1534,7 +1534,7 @@ def execute_tool_call(executor, tool_call) -> str:
         elif name == "see_screen":
             from vision.screen import get_vision
             try:
-                result = get_vision().analyze_screen()
+                result = get_vision().capture_and_describe()
                 return _format_result(result[:3000] if len(str(result)) > 3000 else result)
             except Exception as e:
                 return _format_result(f"FALHOU: Não foi possível analisar a tela: {e}")
