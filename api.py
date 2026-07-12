@@ -11,6 +11,7 @@ import hashlib
 import logging
 import logging as _logging
 import secrets as _secrets
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -505,6 +506,11 @@ async def chat(request: Request, req: ChatRequest, _key: str = Depends(verify_ap
     )
 
     elapsed_ms = (time.time() - start) * 1000
+
+    try:
+        _auto_name_session(getattr(luna._memory, 'current_session_id', 'default'))
+    except Exception:
+        pass
 
     return ChatResponse(
         response=response,
@@ -1041,6 +1047,10 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
                     continue
                 if kind == "done":
                     yield f"data: {_json.dumps({'type': 'done', 'text': data}, ensure_ascii=False)}\n\n"
+                    try:
+                        _auto_name_session(getattr(luna._memory, 'current_session_id', 'default'))
+                    except Exception:
+                        pass
                 else:
                     yield f"data: {_json.dumps({'type': 'error', 'content': data}, ensure_ascii=False)}\n\n"
                 break
@@ -1467,9 +1477,35 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
 if _web_dir.exists():
     app.mount("/static", StaticFiles(directory=str(_web_dir)), name="static")
 
+# ── Imagens ─────────────────────────────────────────────────────
+PICTURES_DIR = Path.home() / "Pictures" / "Luna"
+
+@app.get("/api/images")
+async def list_images(_key: str = Depends(verify_api_key)):
+    if not PICTURES_DIR.exists():
+        return {"images": []}
+    images = []
+    for f in sorted(PICTURES_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+            images.append({
+                "name": f.name,
+                "path": str(f),
+                "url": f"/api/images/{f.name}",
+                "size": f.stat().st_size,
+                "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                "prompt": " ".join(f.stem.split("_")[:-1]) or f.stem,
+            })
+    return {"images": images}
+
+@app.get("/api/images/{filename}")
+async def serve_image(filename: str, _key: str = Depends(verify_api_key)):
+    filepath = PICTURES_DIR / filename
+    if not filepath.exists() or filepath.parent.resolve() != PICTURES_DIR.resolve():
+        raise HTTPException(status_code=404, detail="Imagem não encontrada.")
+    return FileResponse(str(filepath), media_type="image/png")
+
 @app.post("/api/image/generate")
 async def api_generate_image(req: Request, _key: str = Depends(verify_api_key)):
-    """Gera imagem via Google Gemini (Imagen). Gratuito com a API key do Gemini."""
     try:
         body = await req.json()
         prompt = body.get("prompt", "")
@@ -1480,10 +1516,45 @@ async def api_generate_image(req: Request, _key: str = Depends(verify_api_key)):
         result = generate_image(prompt, size)
         if result.startswith("SUCESSO:"):
             path = result.replace("SUCESSO: Imagem gerada e salva em ", "").strip()
-            return {"success": True, "path": path, "message": f"Imagem salva em {path}"}
+            fname = Path(path).name
+            return {"success": True, "path": path, "url": f"/api/images/{fname}", "message": f"Imagem salva em {path}"}
         return {"success": False, "error": result}
     except Exception as e:
         return {"success": False, "error": str(e)}
+
+# ── Auto-nomeação de sessão ─────────────────────────────────────
+def _auto_name_session(session_id: str):
+    """Gera nome para sessão baseado nos primeiros diálogos."""
+    if session_id == "default":
+        return
+    from brain.chat_db import get_chat_db
+    db = get_chat_db()
+    msgs = db.get_history(session_id, last_n=6)
+    user_msgs = [m for m in msgs if m["role"] == "user"]
+    if len(user_msgs) < 3:
+        return
+    # Pega título existente, se já foi renomeado (não é timestamp) não renomeia
+    sessions = db.list_sessions()
+    current = next((s for s in sessions if s["id"] == session_id), None)
+    if current and current["title"] and not current["title"].startswith("Conversa "):
+        return
+    exchange_text = "\n".join(f"{m['role']}: {m['text'][:80]}" for m in msgs[:6])
+    prompt_text = f"Resuma o assunto desta conversa em no máximo 4 palavras. Apenas o título, sem pontuação.\n\n{exchange_text}"
+    try:
+        from brain.llm import LLMWrapper
+        llm = LLMWrapper()
+        title = llm.generate(prompt_text, task_type="fast", model="fast")
+        if isinstance(title, dict):
+            title = title.get("message", "")
+            if hasattr(title, "content"):
+                title = title.content
+            elif isinstance(title, dict):
+                title = title.get("content", "")
+        title = str(title).strip().strip('"').strip("'")[:50]
+        if title and not title.startswith("[LLM"):
+            db.rename_session(session_id, title)
+    except Exception:
+        pass
 
 @app.post("/api/shutdown")
 async def shutdown(request: Request, _key: str = Depends(verify_api_key)):
