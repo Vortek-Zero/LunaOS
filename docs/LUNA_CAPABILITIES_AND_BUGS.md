@@ -55,6 +55,21 @@ python tests/system_audit.py
 4. **Conversas 20+ trocas** — contexto truncado em ~2800 chars de memória
 5. **Sem LLM offline** — nenhuma ação no PC (intencional)
 
+## Sistema de Personalidade (12/07/2026)
+
+A personalidade da Luna é configurável via `config/personality.json` — sem mexer em código.
+
+| Componente | Descrição |
+|------------|-----------|
+| `identity` | Nome, versão, criador, idioma |
+| `personality` | Traços: sincera, empática, madura, direta, proativa, inteligente |
+| `emotional_rules` | Modo sério (luto/tristeza), modo leve (comemorações), modo normal |
+| `safety_rules` | Tópicos proibidos, recusa segura, autoajuda (CVV 188) |
+| `behavioral_rules` | Sem alucinação, sem "ahah", fala natural, honestidade |
+| `response_style` | **Novo.** Estilo Jarvis + Grok: resposta direta 1º, parágrafos curtos, **negrito** em pontos-chave, fechamento com próximo passo |
+
+O `luna_core.py` carrega tudo automaticamente e injeta no system prompt do LLM. Para alterar o tom, edite só o JSON.
+
 ## Segurança
 
 - Nunca commitar `.env`, `token.json`, `credentials.json`
