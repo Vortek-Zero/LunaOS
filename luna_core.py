@@ -525,8 +525,10 @@ class LunaCore:
     def _load_persona(self) -> str:
         try:
             data = json.loads(PERSONALITY_FILE.read_text(encoding="utf-8"))
+            self._personality_data = data
             return data.get("identity", {}).get("name", "Luna")
         except Exception:
+            self._personality_data = {}
             return "Luna"
 
     def _load_user_profile(self) -> dict:
@@ -676,6 +678,44 @@ class LunaCore:
             "- Se o usuário pedir busca/pesquisa, faça (search_web) e explique o que encontrou.",
             "- No final, sugira algo criativo relacionado ao assunto — nunca apenas 'mais algo?'.",
         ]
+
+        # ── Injeta regras de estilo do personality.json ──
+        style = self._personality_data.get("response_style", {}) if hasattr(self, '_personality_data') else {}
+        if style:
+            system_parts.extend([
+                "",
+                "ESTILO DE RESPOSTA (Jarvis + Grok):",
+            ])
+            principles = style.get("principles", [])
+            if principles:
+                system_parts.append("Princípios:")
+                for p in principles:
+                    system_parts.append(f"- {p}")
+            flow = style.get("flow", [])
+            if flow:
+                system_parts.append("")
+                system_parts.append("Estrutura da sua resposta (nesta ordem):")
+                for f in flow:
+                    system_parts.append(f"- {f}")
+            lang = style.get("language", {})
+            if lang:
+                system_parts.append("")
+                system_parts.append(f"Tom: {lang.get('tone', 'Amigável e confiante')}")
+                system_parts.append(f"Máx {lang.get('max_lines_per_paragraph', 5)} linhas por parágrafo")
+                system_parts.append(f"Vocabulário: {lang.get('vocabulary', 'Natural')}")
+            rules = style.get("rules", {})
+            always = rules.get("always", [])
+            if always:
+                system_parts.append("")
+                system_parts.append("Sempre faça:")
+                for r in always:
+                    system_parts.append(f"- {r}")
+            never = rules.get("never", [])
+            if never:
+                system_parts.append("")
+                system_parts.append("Nunca faça:")
+                for r in never:
+                    system_parts.append(f"- {r}")
 
         if mode == "code":
             system_parts.extend([
