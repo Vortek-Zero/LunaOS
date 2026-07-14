@@ -12,7 +12,7 @@
     ],
     "days": null,
     "enabled": true,
-    "last_fired": "2026-06-26"
+    "last_fired": "2026-07-13"
   },
   {
     "id": "calendar_check_morning",
@@ -33,7 +33,7 @@
       4
     ],
     "enabled": true,
-    "last_fired": "2026-06-26"
+    "last_fired": "2026-07-13"
   },
   {
     "id": "evening_wind_down",

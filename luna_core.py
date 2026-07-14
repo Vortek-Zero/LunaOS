@@ -457,8 +457,9 @@ class LunaCore:
     Use `get_luna()` para obter a instância singleton.
     """
 
-    def __init__(self):
+    def __init__(self, test_mode: bool = False):
         print("\n[Luna] Iniciando sistema...")
+        self.test_mode = test_mode
         
         # Módulos
         self._llm = get_llm()
@@ -470,6 +471,16 @@ class LunaCore:
         self._writer = get_writer()
         self._dictionary = get_dictionary()
         self._vision = get_vision()
+
+        # Barramento de Eventos (Event Bus) e Memória Hierárquica
+        try:
+            from brain.event_bus import get_event_bus
+            from brain.hierarchical_memory import HierarchicalMemory
+            self._event_bus = get_event_bus()
+            self._hierarchical_memory = HierarchicalMemory(self._memory)
+            print("[Luna] ✓ Barramento de Eventos (EventBus) e Memória Hierárquica carregados.")
+        except Exception as e:
+            print(f"[Luna] ⚠️ Erro ao inicializar EventBus ou Memória Hierárquica: {e}")
 
         # Cache + Performance + Parser
         self._cache = SmartCache()
@@ -605,7 +616,28 @@ class LunaCore:
             self.processing = True
             self._progress_callback = progress_callback
             try:
-                return self._run_autonomous_loop(text, mode=mode, extra_context=extra_context)
+                response = self._run_autonomous_loop(text, mode=mode, extra_context=extra_context)
+                
+                # 4. Atualiza perfil do usuário assincronamente a partir da fala
+                try:
+                    from brain.user_model import get_user_model
+                    get_user_model().update_from_text(text)
+                except Exception as e:
+                    print(f"[Core] Erro ao atualizar perfil do usuário: {e}")
+
+                # 5. Registra o episódio ocorrido na memória episódica
+                try:
+                    from brain.episodic_memory import get_episodic_memory
+                    get_episodic_memory().log_episode(
+                        text=text,
+                        response_summary=response,
+                        action_type="conversa" if mode == "" else mode,
+                        outcome="sucesso" if response and "erro" not in response.lower() else "falha"
+                    )
+                except Exception as e:
+                    print(f"[Core] Erro ao registrar episódio: {e}")
+
+                return response
             except Exception as e:
                 print(f"[Luna] Erro no loop autônomo: {e}")
                 import traceback; traceback.print_exc()
@@ -647,6 +679,20 @@ class LunaCore:
         query_info = classify_query(text)
         self._trace_logger.set_model(query_info.get("model_tier", "main"))
 
+        # ══ PLANEJAMENTO EXPLICÍTO (Planner) ══
+        plan_str = ""
+        is_complex = query_info.get("complexity") == "high" or mode == "code" or any(kw in text.lower() for kw in ["crie", "faça", "construa", "projeto", "desenvolva"])
+        if is_complex:
+            try:
+                from brain.planner import generate_plan, format_plan_for_prompt
+                self._emit_progress("thinking", label="Planejando ações...")
+                plan_json = generate_plan(text, context)
+                if plan_json and plan_json.get("needs_tools"):
+                    plan_str = format_plan_for_prompt(plan_json)
+                    print(f"[Planner] Novo plano gerado:\n{plan_str}")
+            except Exception as e:
+                print(f"[Planner] Erro ao gerar plano: {e}")
+
         # ── Sistema: prompt + ferramentas nativas ──
         from brain.agent_tools import LUNA_TOOLS, execute_tool_call, is_tool_success
 
@@ -667,7 +713,7 @@ class LunaCore:
             "read_webpage, system_control, google_services, get_weather, control_spotify, manage_reminder, "
             "manage_notes, manage_shopping_list, set_timer, manage_focus, take_screenshot, see_screen, "
             "clipboard_action, control_media, kill_process, send_notification, control_window, "
-            "desktop_type, desktop_hotkey, whatsapp_action, image_generate.",
+            "desktop_type, desktop_hotkey, whatsapp_action, image_generate, manage_goals, semantic_memory, recall_episodes.",
             "",
             "REGRAS ABSOLUTAS:",
             "- Se você precisa executar algo, USE A FERRAMENTA. NUNCA escreva *faz ação* no texto.",
@@ -678,6 +724,9 @@ class LunaCore:
             "- Se o usuário pedir busca/pesquisa, faça (search_web) e explique o que encontrou.",
             "- No final, sugira algo criativo relacionado ao assunto — nunca apenas 'mais algo?'.",
         ]
+
+        if plan_str:
+            system_parts.append(plan_str)
 
         # ── Injeta regras de estilo do personality.json ──
         style = self._personality_data.get("response_style", {}) if hasattr(self, '_personality_data') else {}
@@ -834,6 +883,19 @@ class LunaCore:
                 if "<think>" in cleaned:
                     cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL).strip()
                 final_response = _sanitize_user_response(cleaned)
+
+                # Auto-avaliação (Reflexão) se alguma ferramenta foi executada
+                if tools_executed_count > 0 and step < max_steps - 1:
+                    self._emit_progress("thinking", label="Auto-avaliando resultado...")
+                    reflection = self._reflect(text, messages)
+                    if reflection.get("action_required") or not reflection.get("goal_achieved"):
+                        critique = reflection.get("critique", "O objetivo não foi totalmente cumprido.")
+                        print(f"[Reflection] Crítica/Correção sugerida: {critique}")
+                        messages.append({"role": "assistant", "content": assistant_content})
+                        feedback_msg = f"CRÍTICA DE AUTO-AVALIAÇÃO/REFLEXÃO: {critique} Alguma ferramenta necessária falhou ou o objetivo não foi cumprido. Corrija seu plano e execute a ação correta."
+                        messages.append({"role": "user", "content": feedback_msg})
+                        final_response = ""
+                        continue
                 break
 
             # Executa cada tool call
@@ -878,7 +940,10 @@ class LunaCore:
                             self._emit_progress("tool_done", name=name, label=label, ok=False)
                             continue
 
-                res = execute_tool_call(self._executor, tc)
+                if self.test_mode:
+                    res = f"SUCESSO: [TEST MODE] Simulação da execução de {name}"
+                else:
+                    res = execute_tool_call(self._executor, tc)
                 success = is_tool_success(res)
 
                 # Captura código escrito para modo code
@@ -1358,6 +1423,70 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
 
         return response or "Não consegui gerar o briefing agora. Tente novamente."
 
+    def _reflect(self, user_input: str, messages: list) -> dict:
+        """
+        Executa a auto-avaliação (Reflexão) para validar se a tarefa foi cumprida de verdade.
+        """
+        llm = self._llm
+        
+        # Filtra apenas o histórico desta interação para não poluir
+        recent_history = []
+        for m in messages:
+            if not isinstance(m, dict):
+                continue
+            role = m.get("role")
+            content = m.get("content")
+            if role == "user":
+                recent_history.append(f"Usuário: {content}")
+            elif role == "assistant" and content:
+                recent_history.append(f"Luna: {content}")
+            elif role == "tool":
+                recent_history.append(f"Ferramenta ({m.get('name')}): {content}")
+                
+        history_str = "\n".join(recent_history)
+        
+        prompt = f"""Você é o validador de qualidade da Luna (Self-Reflection Layer).
+Analise o histórico da execução recente e responda de forma ultra precisa.
+
+Histórico Recente:
+{history_str}
+
+Pergunta Original do Usuário: "{user_input}"
+
+Avalie:
+1. O objetivo principal do usuário foi de fato cumprido/resolvido com sucesso?
+2. Alguma ferramenta crítica falhou ou deu erro?
+3. A resposta final fornecida é completa, honesta e livre de alucinações de sucesso?
+
+Você deve responder APENAS com um JSON estruturado:
+{{
+  "goal_achieved": true|false,
+  "failed_tools": ["nome_da_ferramenta_que_falhou"],
+  "critique": "Breve justificativa/crítica se o objetivo não foi cumprido ou se há erros/omissões na resposta.",
+  "action_required": true|false
+}}
+"""
+        try:
+            raw = llm.generate(
+                messages=[
+                    {"role": "system", "content": "Você é um validador de qualidade JSON rigoroso."},
+                    {"role": "user", "content": prompt}
+                ],
+                task_type="utility",
+                model=self._writing_model
+            )
+            content = raw.get("message", {}).get("content", "") if isinstance(raw, dict) else (raw or "")
+            
+            import re
+            m = re.search(r'(\{.*\})', str(content), re.DOTALL)
+            if m:
+                import json as _json
+                return _json.loads(m.group(1))
+        except Exception as e:
+            print(f"[Reflection] Erro ao auto-avaliar: {e}")
+            
+        return {"goal_achieved": True, "failed_tools": [], "critique": "", "action_required": False}
+
     def _build_context(self, text: str, mode: str = "", extra_context: str = "") -> str:
         """Monta contexto enxuto — memória + estado; vision/web só quando pedido.
         mode: "code", "write", "joy", ou "" (normal)
@@ -1367,11 +1496,13 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         if extra_context:
             parts.append(f"[CONTEXTO DO MODO {mode.upper()}]\n{extra_context}")
 
-        mem_ctx = self._memory.get_context_for_prompt(text)
-        if mem_ctx:
-            if len(mem_ctx) > 2800:
-                mem_ctx = mem_ctx[:2800] + "\n[... memória truncada]"
-            parts.append(mem_ctx)
+        # Consulta a memória hierárquica unificada (curta, perfil, objetivos, episódica, semântica)
+        try:
+            unified_ctx = self._hierarchical_memory.get_unified_context(text)
+            if unified_ctx:
+                parts.append(unified_ctx)
+        except Exception as e:
+            print(f"[Core] Erro ao obter contexto da memória hierárquica: {e}")
 
         vision_triggers = [
             "tela", "vendo", "enxerga", "print", "screen", "vê", "monitor",
@@ -1940,13 +2071,13 @@ _luna_instance: Optional[LunaCore] = None
 _luna_lock = threading.Lock()
 
 
-def get_luna() -> LunaCore:
+def get_luna(test_mode: bool = False) -> LunaCore:
     """Retorna a instância singleton de LunaCore."""
     global _luna_instance
     if _luna_instance is None:
         with _luna_lock:
             if _luna_instance is None:
-                _luna_instance = LunaCore()
+                _luna_instance = LunaCore(test_mode=test_mode)
     return _luna_instance
 
 

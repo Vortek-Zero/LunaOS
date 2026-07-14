@@ -1,0 +1,44 @@
+[
+  {
+    "id": "ep_1783987975566",
+    "ts": "2026-07-13T21:12:55.566753",
+    "date": "2026-07-13",
+    "hour": 21,
+    "weekday": "Monday",
+    "text": "Me lembra amanhã às 10h de estudar programação em Rust.",
+    "summary": "Certo! Já anotei aqui para te lembrar **amanhã às 10h** de estudar programação em Rust.\n\nTem mais alguma coisa que eu possa fazer por você hoje?",
+    "topics": [
+      "programação"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1783987977922",
+    "ts": "2026-07-13T21:12:57.922071",
+    "date": "2026-07-13",
+    "hour": 21,
+    "weekday": "Monday",
+    "text": "Continue o que estávamos falando ontem sobre Python.",
+    "summary": "E aí, Pera! Que bom te ver de novo.\n\nOntem estávamos falando sobre **loops e condicionais em Python**, e chegamos a ver como usar o `for` para iterar sobre listas.\n\nQuer continuar de onde paramos com ",
+    "topics": [
+      "programação"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1783987980435",
+    "ts": "2026-07-13T21:13:00.435079",
+    "date": "2026-07-13",
+    "hour": 21,
+    "weekday": "Monday",
+    "text": "Passei a usar Firefox no lugar do Chrome. Não uso mais o Chrome para trabalhar.",
+    "summary": "Entendi, Pera! Anotei aqui que você está usando o **Firefox no lugar do Chrome** para trabalhar. Bom saber para te ajudar melhor com as tarefas!\n\nTem mais alguma coisa que eu possa fazer por você?",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  }
+]

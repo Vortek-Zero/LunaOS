@@ -1,0 +1,96 @@
+body {
+    margin: 0;
+    overflow: hidden;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #222;
+    font-family: 'Arial', sans-serif;
+    color: #fff;
+}
+
+#game-container {
+    width: 800px;
+    height: 600px;
+    border: 5px solid #333;
+    overflow: hidden;
+    position: relative;
+    background-color: #87CEEB; /* Cor do céu */
+}
+
+#sky {
+    width: 100%;
+    height: 100%;
+    position: relative;
+}
+
+#bird {
+    width: 40px;
+    height: 30px;
+    background-color: #FFD700; /* Amarelo dourado para o pássaro */
+    position: absolute;
+    top: 250px;
+    left: 100px;
+    border-radius: 50%;
+    /* Adicionando um pequeno bico */
+    &::after {
+        content: '';
+        position: absolute;
+        width: 0;
+        height: 0;
+        border-left: 15px solid #FFA500; /* Laranja para o bico */
+        border-top: 8px solid transparent;
+        border-bottom: 8px solid transparent;
+        left: 40px;
+        top: 7px;
+    }
+}
+
+.obstacle {
+    width: 50px;
+    background-color: #228B22; /* Verde floresta para os obstáculos */
+    position: absolute;
+    right: -50px; /* Começa fora da tela */
+    border-radius: 5px;
+}
+
+#score {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-size: 24px;
+    font-weight: bold;
+    color: #fff;
+    text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+}
+
+.game-screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    font-size: 2em;
+    z-index: 100;
+}
+
+.game-screen h1 {
+    color: #FFD700;
+    margin-bottom: 20px;
+}
+
+.game-screen p {
+    font-size: 0.6em;
+    color: #eee;
+}
+
+.hidden {
+    display: none;
+}

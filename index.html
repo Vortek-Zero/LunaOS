@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voo de Pássaro 3D</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="start-screen" class="game-screen">
+            <h1>Voo de Pássaro 3D</h1>
+            <p>Pressione ESPAÇO para começar e voar</p>
+        </div>
+        <div id="game-over-screen" class="game-screen hidden">
+            <h1>Game Over!</h1>
+            <p>Sua pontuação: <span id="final-score">0</span></p>
+            <p>Pressione ESPAÇO para jogar novamente</p>
+        </div>
+        <div id="score">Pontos: 0</div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.159.0/three.min.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

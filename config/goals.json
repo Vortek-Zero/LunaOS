@@ -1,0 +1,34 @@
+[
+    {
+        "id": "goal_1",
+        "title": "Evoluir Luna",
+        "priority": "alta",
+        "status": "em_progresso",
+        "created_at": "2026-07-13",
+        "notes": "Adicionar recursos avançados de memória, inteligência e proatividade"
+    },
+    {
+        "id": "goal_2",
+        "title": "Passar na ETEC",
+        "priority": "alta",
+        "status": "planejado",
+        "created_at": "2026-07-13",
+        "notes": "Foco nos estudos para exames de admissão"
+    },
+    {
+        "id": "goal_3",
+        "title": "Conseguir clientes",
+        "priority": "media",
+        "status": "em_progresso",
+        "created_at": "2026-07-13",
+        "notes": "Fazer trabalhos freelancer de desenvolvimento de software"
+    },
+    {
+        "id": "goal_4",
+        "title": "Aprender Rust",
+        "priority": "alta",
+        "status": "em_progresso",
+        "created_at": "2026-07-13",
+        "notes": "Entender ownership, borrowing e concorrência na linguagem"
+    }
+]
