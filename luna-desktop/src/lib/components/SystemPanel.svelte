@@ -12,6 +12,7 @@
   let factsHeader = $state('0 fatos');
   let perfInfo = $state({ avg_request_ms: 0, cache_hits: 0, cache_misses: 0, total_entries: 0 });
   let providers = $state<Array<{ name: string; active: boolean; available: boolean; rate_limited_for: number; model?: string; models?: Record<string, { name: string; rate_limited_for: number }> }>>([]);
+  let upd = $state({ current: '', latest: '', commits_ahead: 0, update_available: false, commits: [] as string[], checking: false, applying: false, result: '' });
 
   async function loadMetrics() {
     const res = await luna.fetchSystemMetrics();
@@ -72,6 +73,32 @@
     if (res && res.providers) {
       providers = res.providers;
     }
+  }
+
+  async function checkUpdate() {
+    upd.checking = true;
+    upd.result = '';
+    const res = await luna.checkUpdate();
+    if (res && !res.error) {
+      upd = { ...upd, ...res, checking: false };
+    } else {
+      upd.checking = false;
+      upd.result = 'Erro ao verificar atualizações';
+    }
+  }
+
+  async function applyUpdate() {
+    if (!confirm('Aplicar atualização? O backend será reiniciado.')) return;
+    upd.applying = true;
+    upd.result = '';
+    const res = await luna.applyUpdate();
+    if (res && res.success) {
+      upd.result = '✅ Atualização aplicada! Reinicie o backend.';
+      upd.update_available = false;
+    } else {
+      upd.result = '❌ ' + (res?.error || 'Falha ao atualizar');
+    }
+    upd.applying = false;
   }
 
   onMount(() => {
@@ -255,6 +282,49 @@
         </div>
       </div>
     </div>
+
+    <!-- Bloco 6: Atualizações -->
+    <div class="panel-section">
+      <div class="section-title">
+        <Icon name="git-branch" size="14" />
+        <span>Atualizações</span>
+      </div>
+      <div class="card">
+        <div class="update-row">
+          <span class="perf-label">Commit atual</span>
+          <span class="perf-val mono">{upd.current || '---'}</span>
+        </div>
+        <div class="update-row">
+          <span class="perf-label">Último commit</span>
+          <span class="perf-val mono">{upd.latest || '---'}</span>
+        </div>
+        {#if upd.commits_ahead > 0}
+          <div class="update-available-badge">
+            {upd.commits_ahead} novo{upd.commits_ahead > 1 ? 's' : ''} commit{upd.commits_ahead > 1 ? 's' : ''} disponível{upd.commits_ahead > 1 ? 's' : ''}
+          </div>
+          <div class="commits-list">
+            {#each upd.commits as c}
+              <div class="commit-item">{c}</div>
+            {/each}
+          </div>
+          <button class="btn primary sm" onclick={applyUpdate} disabled={upd.applying}>
+            <Icon name="download" size="14" />
+            {upd.applying ? 'Atualizando...' : 'Atualizar Agora'}
+          </button>
+        {:else if upd.current}
+          <div class="update-ok">✓ Você está na versão mais recente</div>
+        {:else if !upd.checking}
+          <button class="btn sm" onclick={checkUpdate}>
+            <Icon name="refresh-cw" size="14" /> Verificar atualizações
+          </button>
+        {:else}
+          <div class="update-checking">Verificando...</div>
+        {/if}
+        {#if upd.result}
+          <div class="update-result">{upd.result}</div>
+        {/if}
+      </div>
+    </div>
   </div>
 </div>
 
@@ -329,4 +399,15 @@
   .perf-row:last-of-type { border-bottom: none; }
   .perf-label { font-size: 12px; color: rgba(255,255,255,0.4); }
   .perf-val { font-size: 12px; color: white; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+  /* Update */
+  .update-row { display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; }
+  .mono { font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .update-available-badge { background: rgba(34,197,94,0.12); color: #4ade80; font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 20px; text-align: center; }
+  .update-ok { color: rgba(255,255,255,0.3); font-size: 12px; text-align: center; padding: 8px; }
+  .update-checking { color: rgba(255,255,255,0.4); font-size: 12px; text-align: center; padding: 8px; }
+  .update-result { font-size: 11px; color: rgba(255,255,255,0.6); text-align: center; padding: 6px; background: rgba(0,0,0,0.15); border-radius: 8px; }
+  .commits-list { max-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.1); border-radius: 8px; padding: 6px; }
+  .commit-item { font-size: 10px; color: rgba(255,255,255,0.5); font-family: 'JetBrains Mono', monospace; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>

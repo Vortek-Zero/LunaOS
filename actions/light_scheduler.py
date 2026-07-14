@@ -3,13 +3,13 @@
 actions/light_scheduler.py — Agendamentos programáveis para as luzes.
 Persiste em data/light_schedules.json e roda monitor em background.
 """
+
 import json
 import re
 import threading
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 try:
     from config import DATA_DIR
@@ -28,20 +28,19 @@ class LightScheduler:
 
     # ── CRUD ──────────────────────────────────────────────────
 
-    def add(self, hour: int, minute: int, state: bool,
-            days: list[int] = None, label: str = "") -> str:
+    def add(self, hour: int, minute: int, state: bool, days: list[int] = None, label: str = "") -> str:
         """
         Adiciona agendamento.
         days: lista de dias da semana (0=seg..6=dom), None = todos os dias.
         state: True=ligar, False=apagar.
         """
-        sid = f"ls_{int(time.time()*1000)}"
+        sid = f"ls_{int(time.time() * 1000)}"
         entry = {
             "id": sid,
             "hour": hour,
             "minute": minute,
             "state": state,
-            "days": days,          # None = todos
+            "days": days,  # None = todos
             "enabled": True,
             "label": label or f"{'Ligar' if state else 'Apagar'} às {hour:02d}:{minute:02d}",
         }
@@ -57,7 +56,7 @@ class LightScheduler:
             self._save()
         return len(self._schedules) < before
 
-    def toggle(self, sid: str) -> Optional[str]:
+    def toggle(self, sid: str) -> str | None:
         with self._lock:
             for s in self._schedules:
                 if s["id"] == sid:
@@ -75,10 +74,9 @@ class LightScheduler:
             if not self._schedules:
                 return "Nenhum agendamento de luz configurado."
             lines = ["📅 Agendamentos de luz:"]
-            days_names = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"]
+            days_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
             for s in self._schedules:
-                days_str = "todos os dias" if s["days"] is None else \
-                           ", ".join(days_names[d] for d in s["days"])
+                days_str = "todos os dias" if s["days"] is None else ", ".join(days_names[d] for d in s["days"])
                 status = "✓" if s["enabled"] else "⏸"
                 action = "Ligar" if s["state"] else "Apagar"
                 lines.append(f"  {status} {s['hour']:02d}:{s['minute']:02d} — {action} ({days_str})")
@@ -116,11 +114,13 @@ class LightScheduler:
     def _fire(self, schedule: dict):
         try:
             from actions.lights import _set_light
+
             result = _set_light(schedule["state"])
             print(f"[LightScheduler] Disparado: {schedule['label']} → {result}")
             # Notificação TTS
             try:
                 from voice.tts import get_tts
+
                 action = "ligada" if schedule["state"] else "apagada"
                 get_tts().speak(f"Luz da sala {action} automaticamente.", blocking=False)
             except Exception:
@@ -139,13 +139,11 @@ class LightScheduler:
 
     def _save(self):
         SCHEDULES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        SCHEDULES_FILE.write_text(
-            json.dumps(self._schedules, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        SCHEDULES_FILE.write_text(json.dumps(self._schedules, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # ── Parser de linguagem natural ───────────────────────────
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower().strip()
 
         # Listar
@@ -153,14 +151,14 @@ class LightScheduler:
             return self.list_text()
 
         # Remover
-        m = re.search(r'(?:remove|cancela|apaga)\s+agendamento\s+(\S+)', tl)
+        m = re.search(r"(?:remove|cancela|apaga)\s+agendamento\s+(\S+)", tl)
         if m:
             ok = self.remove(m.group(1))
             return "Agendamento removido." if ok else "Agendamento não encontrado."
 
         # Detecta hora + ação
         # Ex: "apagar a luz às 21h", "ligar a luz às 7:30", "luz apagada às 22:00"
-        time_m = re.search(r'(\d{1,2})[h:](\d{0,2})', tl)
+        time_m = re.search(r"(\d{1,2})[h:](\d{0,2})", tl)
         if not time_m:
             return None
 
@@ -170,7 +168,7 @@ class LightScheduler:
             return None
 
         # Detecta ação
-        _on_kw  = ["liga", "ligar", "acende", "acender", "ativa", "ativar", "ligue", "acenda"]
+        _on_kw = ["liga", "ligar", "acende", "acender", "ativa", "ativar", "ligue", "acenda"]
         _off_kw = ["apaga", "apagar", "desliga", "desligar", "apague", "desligue"]
         state = None
         if any(w in tl for w in _on_kw):
@@ -195,7 +193,8 @@ class LightScheduler:
 
 
 # Singleton
-_instance: Optional[LightScheduler] = None
+_instance: LightScheduler | None = None
+
 
 def get_light_scheduler() -> LightScheduler:
     global _instance

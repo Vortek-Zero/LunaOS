@@ -6,22 +6,32 @@ Não carrega luna_core, modelos Qwen ou automações.
 
 Iniciar: python orchestrator.py
 """
-import sys
+
 import json
+import sys
 import threading
 from pathlib import Path
 
 import requests
-from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLineEdit, QPushButton, QTextEdit, QLabel, QComboBox, QMessageBox,
-)
-from PyQt6.QtCore import Qt, QThread, QTimer, pyqtSignal, QObject
+from PyQt6.QtCore import QObject, QThread, QTimer, pyqtSignal
 from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
 # ══════════════════════════════════════════════════════════════
 #  DEVICE MANAGER
 # ══════════════════════════════════════════════════════════════
+
 
 class DeviceManager:
     """
@@ -46,6 +56,7 @@ class DeviceManager:
         if not self._devices:
             try:
                 import config
+
                 self._devices["default"] = {
                     "id": "default",
                     "name": "Worker (config.py)",
@@ -87,8 +98,10 @@ class DeviceManager:
 #  STATUS BRIDGE — emite sinais na main thread (thread-safe)
 # ══════════════════════════════════════════════════════════════
 
+
 class StatusBridge(QObject):
     """Ponte thread-safe para atualizar o status_label na main thread."""
+
     status_changed = pyqtSignal(str, str)  # (texto, cor_css)
 
 
@@ -96,10 +109,12 @@ class StatusBridge(QObject):
 #  RELAY WORKER (QThread — não bloqueia a UI)
 # ══════════════════════════════════════════════════════════════
 
+
 class RelayWorker(QThread):
     """Envia mensagem ao Worker HTTP e devolve a resposta via signal."""
+
     result_signal = pyqtSignal(str)
-    error_signal  = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
 
     def __init__(self, device_manager: DeviceManager, message: str):
         super().__init__()
@@ -126,8 +141,8 @@ class RelayWorker(QThread):
 #  JANELA PRINCIPAL
 # ══════════════════════════════════════════════════════════════
 
-class OrchestratorWindow(QMainWindow):
 
+class OrchestratorWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.dm = DeviceManager()
@@ -174,9 +189,7 @@ class OrchestratorWindow(QMainWindow):
         self.chat_area = QTextEdit()
         self.chat_area.setReadOnly(True)
         self.chat_area.setFont(QFont("Courier New", 10))
-        self.chat_area.setStyleSheet(
-            "background:#0d0d1a; color:#c8c8e8; border:1px solid #333;"
-        )
+        self.chat_area.setStyleSheet("background:#0d0d1a; color:#c8c8e8; border:1px solid #333;")
         layout.addWidget(self.chat_area, 1)
 
         # ── Input ─────────────────────────────────────────────
@@ -199,6 +212,7 @@ class OrchestratorWindow(QMainWindow):
 
     def _check_worker_health(self):
         """Verifica saúde do worker em thread de background (thread-safe via signal)."""
+
         def _ping():
             try:
                 url = f"{self.dm.base_url()}/health"

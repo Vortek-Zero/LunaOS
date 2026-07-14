@@ -1,5 +1,7 @@
 import os
+
 from groq import Groq
+
 from brain.agent_tools import LUNA_TOOLS
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -10,7 +12,7 @@ try:
         messages=[{"role": "user", "content": "hello"}],
         max_tokens=300,
         tools=LUNA_TOOLS,
-        tool_choice="auto"
+        tool_choice="auto",
     )
     print("SUCCESS!")
     print(completion.choices[0].message)

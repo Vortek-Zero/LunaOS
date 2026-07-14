@@ -2,9 +2,10 @@
 actions/ui.py — Automação de teclado/mouse (X11 + Wayland).
 Gratuito: xdotool (X11/XWayland), ydotool + wtype (Wayland), pyautogui fallback.
 """
+
 import os
-import subprocess
 import shutil
+import subprocess
 import time
 
 
@@ -24,7 +25,8 @@ class UIManager:
             try:
                 r = subprocess.run(
                     ["ydotool", "mousemove", "--absolute", str(x), str(y), "click", "0x40"],
-                    capture_output=True, timeout=3,
+                    capture_output=True,
+                    timeout=3,
                 )
                 if r.returncode == 0:
                     return {"success": True, "message": f"Clicado em ({x},{y}) via ydotool"}
@@ -34,13 +36,15 @@ class UIManager:
         if shutil.which("xdotool"):
             r = subprocess.run(
                 ["xdotool", "mousemove", str(x), str(y), "click", "1"],
-                capture_output=True, timeout=2,
+                capture_output=True,
+                timeout=2,
             )
             if r.returncode == 0:
                 return {"success": True, "message": f"Clicado em ({x},{y}) via xdotool"}
 
         try:
             import pyautogui
+
             pyautogui.click(x, y)
             return {"success": True, "message": f"Clicado em ({x},{y})"}
         except Exception as e:
@@ -49,6 +53,7 @@ class UIManager:
 
     def click_text(self, text: str) -> dict:
         from vision.screen import get_vision
+
         vision = get_vision()
         elem = vision.get_screen_context_for_click(text)
         if elem:
@@ -68,23 +73,26 @@ class UIManager:
             try:
                 r = subprocess.run(
                     ["ydotool", "type", "--", text],
-                    capture_output=True, timeout=8,
+                    capture_output=True,
+                    timeout=8,
                 )
                 if r.returncode == 0:
-                    return {"success": True, "message": f"Digitado via ydotool"}
+                    return {"success": True, "message": "Digitado via ydotool"}
             except Exception as e:
                 print(f"[UI] ydotool type: {e}")
 
         if shutil.which("xdotool"):
             r = subprocess.run(
                 ["xdotool", "type", "--delay", "30", "--", text],
-                capture_output=True, timeout=8,
+                capture_output=True,
+                timeout=8,
             )
             if r.returncode == 0:
                 return {"success": True, "message": f"Digitado: '{text[:40]}...'"}
 
         try:
             import pyautogui
+
             pyautogui.typewrite(text, interval=0.03)
             return {"success": True, "message": f"Digitado: '{text[:40]}...'"}
         except Exception as e:
@@ -92,19 +100,33 @@ class UIManager:
 
     def press_key(self, key: str) -> dict:
         key_map = {
-            "enter": "Return", "return": "Return",
-            "escape": "Escape", "esc": "Escape",
-            "tab": "Tab", "space": "space",
-            "backspace": "BackSpace", "delete": "Delete",
-            "ctrl+c": "ctrl+c", "ctrl+v": "ctrl+v",
-            "ctrl+a": "ctrl+a", "ctrl+z": "ctrl+z",
-            "ctrl+f": "ctrl+f", "ctrl+shift+f": "ctrl+shift+f",
-            "ctrl+shift+a": "ctrl+shift+a", "ctrl+w": "ctrl+w",
-            "ctrl+t": "ctrl+t", "ctrl+l": "ctrl+l",
-            "ctrl+enter": "ctrl+Return", "alt+tab": "alt+Tab",
-            "super": "super", "win": "super",
-            "f11": "F11", "up": "Up", "down": "Down",
-            "left": "Left", "right": "Right",
+            "enter": "Return",
+            "return": "Return",
+            "escape": "Escape",
+            "esc": "Escape",
+            "tab": "Tab",
+            "space": "space",
+            "backspace": "BackSpace",
+            "delete": "Delete",
+            "ctrl+c": "ctrl+c",
+            "ctrl+v": "ctrl+v",
+            "ctrl+a": "ctrl+a",
+            "ctrl+z": "ctrl+z",
+            "ctrl+f": "ctrl+f",
+            "ctrl+shift+f": "ctrl+shift+f",
+            "ctrl+shift+a": "ctrl+shift+a",
+            "ctrl+w": "ctrl+w",
+            "ctrl+t": "ctrl+t",
+            "ctrl+l": "ctrl+l",
+            "ctrl+enter": "ctrl+Return",
+            "alt+tab": "alt+Tab",
+            "super": "super",
+            "win": "super",
+            "f11": "F11",
+            "up": "Up",
+            "down": "Down",
+            "left": "Left",
+            "right": "Right",
         }
         mapped = key_map.get(key.lower().replace(" ", ""), key)
 
@@ -128,6 +150,7 @@ class UIManager:
 
         try:
             import pyautogui
+
             pyautogui.hotkey(*mapped.split("+"))
             return {"success": True, "message": f"Tecla: {mapped}"}
         except Exception as e:

@@ -4,11 +4,12 @@ brain/planner.py — Camada 1: Planner (Llama 70B - Groq)
 Responsável por entender o pedido e criar um plano estratégico em JSON.
 Não chama ferramentas.
 """
+
 import json
 import logging
-from typing import Dict, Any, Optional
+from typing import Any
 
-from brain.llm import get_llm, GROQ_MODELS
+from brain.llm import GROQ_MODELS, get_llm
 
 logger = logging.getLogger("luna.planner")
 
@@ -40,6 +41,7 @@ Você deve retornar APENAS um JSON válido:
 }
 """
 
+
 def _repair_json(text: str) -> str:
     """Tenta reparar JSON truncado ou malformado de forma agressiva."""
     if not text:
@@ -54,12 +56,13 @@ def _repair_json(text: str) -> str:
 
     # Extrai o primeiro bloco JSON { ... } via regex (remove texto antes/depois)
     import re
-    m = re.search(r'(\{.*\})', text, re.DOTALL)
+
+    m = re.search(r"(\{.*\})", text, re.DOTALL)
     if m:
         text = m.group(1).strip()
     else:
         # Tenta extrair array
-        m = re.search(r'(\[.*\])', text, re.DOTALL)
+        m = re.search(r"(\[.*\])", text, re.DOTALL)
         if m:
             text = m.group(1).strip()
         else:
@@ -74,28 +77,36 @@ def _repair_json(text: str) -> str:
             text += '"'
     return text
 
-def generate_plan(user_input: str, context: str = "") -> Dict[str, Any]:
+
+def generate_plan(user_input: str, context: str = "") -> dict[str, Any]:
     """
     Gera um plano estratégico usando Llama 70B com reparo de JSON.
     """
     llm = get_llm()
-    
+
     messages = [
         {"role": "system", "content": PLANNER_PROMPT},
-        {"role": "user", "content": f"Contexto Recente:\n{context}\n\nPedido do Usuário: {user_input}\n\nResponda APENAS o JSON puro:"}
+        {
+            "role": "user",
+            "content": f"Contexto Recente:\n{context}\n\nPedido do Usuário: {user_input}\n\nResponda APENAS o JSON puro:",
+        },
     ]
-    
+
     model = GROQ_MODELS.get("heavy", "llama-3.3-70b-versatile")
-    
+
     content = ""
     try:
         raw_response = llm.generate(messages=messages, task_type="planning", model=model)
-        content = raw_response.get("message", {}).get("content", "") if isinstance(raw_response, dict) else (raw_response or "")
-        
+        content = (
+            raw_response.get("message", {}).get("content", "")
+            if isinstance(raw_response, dict)
+            else (raw_response or "")
+        )
+
         # Repara e limpa
         repaired_content = _repair_json(str(content))
         return json.loads(repaired_content)
-        
+
     except Exception as e:
         logger.error(f"Erro no Planner: {e}. Raw: {str(content)[:100]}")
         return {
@@ -104,10 +115,11 @@ def generate_plan(user_input: str, context: str = "") -> Dict[str, Any]:
             "plan": [f"Executar: {user_input}"],
             "complexity": "medium",
             "needs_tools": True,
-            "reasoning": "Fallback de erro."
+            "reasoning": "Fallback de erro.",
         }
 
-def format_plan_for_prompt(plan_json: Dict[str, Any]) -> str:
+
+def format_plan_for_prompt(plan_json: dict[str, Any]) -> str:
     """Formata o plano JSON para ser incluído no prompt do Executor."""
     steps = "\n".join([f"- {s}" for s in plan_json.get("plan", [])])
     return (
@@ -117,15 +129,19 @@ def format_plan_for_prompt(plan_json: Dict[str, Any]) -> str:
         f"Análise: {plan_json.get('analysis')}\n"
     )
 
+
 # Para manter compatibilidade temporária com o resto do código se necessário
 def split_steps(text: str):
     return [text]
 
+
 def is_multi_step(text: str):
     return False
 
+
 def format_plan(text: str):
     return ""
+
 
 def step_count(text: str):
     return 1

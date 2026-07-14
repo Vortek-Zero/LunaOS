@@ -6,17 +6,16 @@ Capacidades COMPLETAS:
   Calendar: ler, criar, editar, deletar eventos, buscar por data
   Gmail: ler, enviar, enviar com anexo, responder, encaminhar, buscar, deletar, marcar lido
 """
-import os
-import re
+
 import base64
 import datetime
 import mimetypes
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.base import MIMEBase
+import re
 from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 from pathlib import Path
-from typing import Optional, List
 
 try:
     from google.auth.transport.requests import Request
@@ -25,16 +24,17 @@ try:
     from googleapiclient.discovery import build
     from googleapiclient.errors import HttpError
     from googleapiclient.http import MediaFileUpload
+
     HAS_GOOGLE = True
 except ImportError:
     HAS_GOOGLE = False
 
 # Escopos completos — leitura E escrita
 SCOPES = [
-    'https://www.googleapis.com/auth/calendar',        # Calendar full
-    'https://www.googleapis.com/auth/gmail.modify',     # Gmail modify
-    'https://www.googleapis.com/auth/gmail.send',       # Gmail send
-    'https://www.googleapis.com/auth/drive',            # Drive full (leitura, escrita, exclusão)
+    "https://www.googleapis.com/auth/calendar",  # Calendar full
+    "https://www.googleapis.com/auth/gmail.modify",  # Gmail modify
+    "https://www.googleapis.com/auth/gmail.send",  # Gmail send
+    "https://www.googleapis.com/auth/drive",  # Drive full (leitura, escrita, exclusão)
 ]
 
 BASE_DIR = Path(__file__).parent.parent
@@ -42,17 +42,20 @@ CREDENTIALS_FILE = BASE_DIR / "credentials.json"
 TOKEN_FILE = BASE_DIR / "token.json"
 from config import WORKSPACE_DIR
 
+
 class GoogleManager:
     def __init__(self):
         self.creds = None
         self.available = False
 
         if not HAS_GOOGLE:
-            print("[Google] ⚠ Bibliotecas não instaladas. (pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib)")
+            print(
+                "[Google] ⚠ Bibliotecas não instaladas. (pip install google-api-python-client google-auth-httplib2 google-auth-oauthlib)"
+            )
             return
 
         if not CREDENTIALS_FILE.exists():
-            print(f"[Google] ⚠ credentials.json não encontrado. Google Calendar/Gmail desabilitados.")
+            print("[Google] ⚠ credentials.json não encontrado. Google Calendar/Gmail desabilitados.")
             return
 
         self._authenticate()
@@ -97,10 +100,11 @@ class GoogleManager:
         try:
             service = self._cal()
             now = datetime.datetime.utcnow().isoformat() + "Z"
-            events_result = service.events().list(
-                calendarId="primary", timeMin=now,
-                maxResults=max_results, singleEvents=True, orderBy="startTime"
-            ).execute()
+            events_result = (
+                service.events()
+                .list(calendarId="primary", timeMin=now, maxResults=max_results, singleEvents=True, orderBy="startTime")
+                .execute()
+            )
             events = events_result.get("items", [])
             if not events:
                 return "Não há compromissos próximos no seu calendário."
@@ -108,7 +112,7 @@ class GoogleManager:
             for ev in events:
                 start = ev["start"].get("dateTime", ev["start"].get("date"))
                 try:
-                    dt = datetime.datetime.fromisoformat(start.replace('Z', '+00:00'))
+                    dt = datetime.datetime.fromisoformat(start.replace("Z", "+00:00"))
                     t = dt.strftime("%d/%m %H:%M")
                 except Exception:
                     t = start
@@ -126,17 +130,26 @@ class GoogleManager:
             today = datetime.date.today().isoformat()
             time_min = today + "T00:00:00Z"
             time_max = today + "T23:59:59Z"
-            events = service.events().list(
-                calendarId="primary", timeMin=time_min, timeMax=time_max,
-                maxResults=15, singleEvents=True, orderBy="startTime"
-            ).execute().get("items", [])
+            events = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    maxResults=15,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+                .get("items", [])
+            )
             if not events:
                 return ""
             lines = []
             for ev in events:
                 start = ev["start"].get("dateTime", ev["start"].get("date"))
                 try:
-                    t = datetime.datetime.fromisoformat(start.replace('Z', '+00:00')).strftime("%H:%M")
+                    t = datetime.datetime.fromisoformat(start.replace("Z", "+00:00")).strftime("%H:%M")
                 except Exception:
                     t = "Dia inteiro"
                 lines.append(f"  • {t} — {ev['summary']}")
@@ -153,10 +166,18 @@ class GoogleManager:
             dt = datetime.datetime.fromisoformat(date_str)
             time_min = dt.replace(hour=0, minute=0, second=0).isoformat() + "Z"
             time_max = dt.replace(hour=23, minute=59, second=59).isoformat() + "Z"
-            result = service.events().list(
-                calendarId="primary", timeMin=time_min, timeMax=time_max,
-                maxResults=max_results, singleEvents=True, orderBy="startTime"
-            ).execute()
+            result = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    maxResults=max_results,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
             events = result.get("items", [])
             if not events:
                 return f"Nenhum compromisso encontrado para {date_str}."
@@ -164,7 +185,7 @@ class GoogleManager:
             for ev in events:
                 start = ev["start"].get("dateTime", ev["start"].get("date"))
                 try:
-                    t = datetime.datetime.fromisoformat(start.replace('Z', '+00:00')).strftime("%H:%M")
+                    t = datetime.datetime.fromisoformat(start.replace("Z", "+00:00")).strftime("%H:%M")
                 except Exception:
                     t = "Dia inteiro"
                 lines.append(f"  • {t} - {ev['summary']} (ID: {ev['id'][:8]})")
@@ -174,9 +195,15 @@ class GoogleManager:
 
     # ── Criar evento ──────────────────────────────────────────────
 
-    def create_calendar_event(self, summary: str, start_time: str, end_time: str = None,
-                               description: str = "", location: str = "",
-                               attendees: str = "") -> str:
+    def create_calendar_event(
+        self,
+        summary: str,
+        start_time: str,
+        end_time: str = None,
+        description: str = "",
+        location: str = "",
+        attendees: str = "",
+    ) -> str:
         """Cria um evento. attendees = emails separados por vírgula."""
         if not self.available:
             return "Google Calendar não configurado."
@@ -215,9 +242,15 @@ class GoogleManager:
 
     # ── Editar evento ─────────────────────────────────────────────
 
-    def edit_calendar_event(self, event_id: str, summary: str = None,
-                             start_time: str = None, end_time: str = None,
-                             description: str = None, location: str = None) -> str:
+    def edit_calendar_event(
+        self,
+        event_id: str,
+        summary: str = None,
+        start_time: str = None,
+        end_time: str = None,
+        description: str = None,
+        location: str = None,
+    ) -> str:
         """Edita campos de um evento existente pelo ID."""
         if not self.available:
             return "Google Calendar não configurado."
@@ -269,21 +302,26 @@ class GoogleManager:
             return "Gmail não configurado."
         try:
             service = self._gmail()
-            results = service.users().messages().list(
-                userId="me", labelIds=["INBOX", "UNREAD"], maxResults=max_results
-            ).execute()
+            results = (
+                service.users()
+                .messages()
+                .list(userId="me", labelIds=["INBOX", "UNREAD"], maxResults=max_results)
+                .execute()
+            )
             messages = results.get("messages", [])
             if not messages:
                 return "Você não tem emails não lidos no momento."
             lines = [f"📧 {len(messages)} emails não lidos:"]
             for msg in messages:
-                meta = service.users().messages().get(
-                    userId="me", id=msg["id"], format="metadata",
-                    metadataHeaders=["Subject", "From", "Date"]
-                ).execute()
+                meta = (
+                    service.users()
+                    .messages()
+                    .get(userId="me", id=msg["id"], format="metadata", metadataHeaders=["Subject", "From", "Date"])
+                    .execute()
+                )
                 headers = {h["name"]: h["value"] for h in meta.get("payload", {}).get("headers", [])}
                 sender = headers.get("From", "Desconhecido")
-                m = re.search(r'([^<]+)', sender)
+                m = re.search(r"([^<]+)", sender)
                 if m:
                     sender = m.group(1).strip()
                 lines.append(f"  • De {sender}: {headers.get('Subject', 'Sem Assunto')} (ID: {msg['id'][:8]})")
@@ -299,21 +337,21 @@ class GoogleManager:
             return "Gmail não configurado."
         try:
             service = self._gmail()
-            results = service.users().messages().list(
-                userId="me", q=query, maxResults=max_results
-            ).execute()
+            results = service.users().messages().list(userId="me", q=query, maxResults=max_results).execute()
             messages = results.get("messages", [])
             if not messages:
                 return f"Nenhum email encontrado para: '{query}'"
             lines = [f"🔍 {len(messages)} resultados para '{query}':"]
             for msg in messages:
-                meta = service.users().messages().get(
-                    userId="me", id=msg["id"], format="metadata",
-                    metadataHeaders=["Subject", "From", "Date"]
-                ).execute()
+                meta = (
+                    service.users()
+                    .messages()
+                    .get(userId="me", id=msg["id"], format="metadata", metadataHeaders=["Subject", "From", "Date"])
+                    .execute()
+                )
                 headers = {h["name"]: h["value"] for h in meta.get("payload", {}).get("headers", [])}
                 sender = headers.get("From", "?")
-                m = re.search(r'([^<]+)', sender)
+                m = re.search(r"([^<]+)", sender)
                 if m:
                     sender = m.group(1).strip()
                 lines.append(f"  • {sender}: {headers.get('Subject', 'Sem Assunto')} (ID: {msg['id'][:8]})")
@@ -336,8 +374,8 @@ class GoogleManager:
                 f"📧 Email de {headers.get('From', '?')}",
                 f"📌 Assunto: {headers.get('Subject', 'Sem Assunto')}",
                 f"📅 Data: {headers.get('Date', '?')}",
-                f"---",
-                body_text[:3000] if body_text else "(sem conteúdo de texto)"
+                "---",
+                body_text[:3000] if body_text else "(sem conteúdo de texto)",
             ]
             return "\n".join(lines)
         except Exception as e:
@@ -354,7 +392,7 @@ class GoogleManager:
         if payload.get("body", {}).get("data"):
             raw = base64.urlsafe_b64decode(payload["body"]["data"]).decode("utf-8", errors="replace")
             # Strip HTML tags for readability
-            return re.sub(r'<[^>]+>', '', raw)
+            return re.sub(r"<[^>]+>", "", raw)
         return ""
 
     # ── Enviar email ──────────────────────────────────────────────
@@ -395,8 +433,12 @@ class GoogleManager:
             return "Gmail não configurado."
         try:
             service = self._gmail()
-            original = service.users().messages().get(userId="me", id=message_id, format="metadata",
-                metadataHeaders=["Subject", "From", "Message-ID"]).execute()
+            original = (
+                service.users()
+                .messages()
+                .get(userId="me", id=message_id, format="metadata", metadataHeaders=["Subject", "From", "Message-ID"])
+                .execute()
+            )
             headers = {h["name"]: h["value"] for h in original.get("payload", {}).get("headers", [])}
             to = headers.get("From", "")
             subject = headers.get("Subject", "")
@@ -454,9 +496,7 @@ class GoogleManager:
             return "Gmail não configurado."
         try:
             service = self._gmail()
-            service.users().messages().modify(
-                userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}
-            ).execute()
+            service.users().messages().modify(userId="me", id=message_id, body={"removeLabelIds": ["UNREAD"]}).execute()
             return f"✅ Email marcado como lido (ID: {message_id[:8]}…)"
         except Exception as e:
             return f"Erro ao marcar email: {e}"
@@ -478,7 +518,7 @@ class GoogleManager:
     #                     ANEXOS / ARQUIVOS
     # ══════════════════════════════════════════════════════════════
 
-    def _resolve_attachments(self, attachments_str: str) -> List[Path]:
+    def _resolve_attachments(self, attachments_str: str) -> list[Path]:
         """Resolve nomes de arquivo: caminho absoluto ou arquivo no workspace."""
         paths = []
         for name in attachments_str.split(","):
@@ -531,7 +571,7 @@ class GoogleManager:
             elif size < 1024 * 1024:
                 sz = f"{size // 1024}KB"
             else:
-                sz = f"{size // (1024*1024)}MB"
+                sz = f"{size // (1024 * 1024)}MB"
             lines.append(f"  • {f.name} ({sz})")
         return "\n".join(lines)
 
@@ -549,34 +589,30 @@ class GoogleManager:
             paths = self._resolve_attachments(filepath_or_name)
             if not paths:
                 return f"⚠ Arquivo '{filepath_or_name}' não encontrado no workspace ou sistema."
-            
+
             filepath = paths[0]
             filename = filepath.name
-            
+
             content_type, _ = mimetypes.guess_type(str(filepath))
             if content_type is None:
                 content_type = "application/octet-stream"
 
-            file_metadata = {'name': filename}
+            file_metadata = {"name": filename}
             if folder_id:
-                file_metadata['parents'] = [folder_id]
+                file_metadata["parents"] = [folder_id]
 
             print(f"[Google Drive] Subindo arquivo {filename} ({content_type})...")
             media = MediaFileUpload(str(filepath), mimetype=content_type, resumable=True)
-            file = service.files().create(
-                body=file_metadata, media_body=media, 
-                fields='id, name, webViewLink'
-            ).execute()
-            
+            file = (
+                service.files().create(body=file_metadata, media_body=media, fields="id, name, webViewLink").execute()
+            )
+
             file_id = file.get("id")
             web_link = file.get("webViewLink", "N/A")
 
             # Torna o link legível/público (compartilha como leitor com qualquer um)
             try:
-                service.permissions().create(
-                    fileId=file_id,
-                    body={'type': 'anyone', 'role': 'reader'}
-                ).execute()
+                service.permissions().create(fileId=file_id, body={"type": "anyone", "role": "reader"}).execute()
                 share_status = "🔓 Link público ativado!"
             except Exception as e:
                 share_status = f"⚠ Não foi possível ativar link público: {e}"
@@ -591,18 +627,21 @@ class GoogleManager:
             return "Google Drive não configurado."
         try:
             service = self._drive()
-            results = service.files().list(
-                pageSize=max_results, 
-                fields="nextPageToken, files(id, name, mimeType, webViewLink)"
-            ).execute()
-            items = results.get('files', [])
+            results = (
+                service.files()
+                .list(pageSize=max_results, fields="nextPageToken, files(id, name, mimeType, webViewLink)")
+                .execute()
+            )
+            items = results.get("files", [])
             if not items:
                 return "Nenhum arquivo encontrado no seu Google Drive."
-            
+
             lines = ["🗂 Seus arquivos recentes no Google Drive:"]
             for item in items:
-                icon = "📁" if item['mimeType'] == 'application/vnd.google-apps.folder' else "📄"
-                lines.append(f"  • {icon} {item['name']} (ID: {item['id'][:8]}...) - {item.get('webViewLink', 'Sem link')}")
+                icon = "📁" if item["mimeType"] == "application/vnd.google-apps.folder" else "📄"
+                lines.append(
+                    f"  • {icon} {item['name']} (ID: {item['id'][:8]}...) - {item.get('webViewLink', 'Sem link')}"
+                )
             return "\n".join(lines)
         except Exception as e:
             return f"Erro ao listar arquivos do Google Drive: {e}"
@@ -616,19 +655,22 @@ class GoogleManager:
             # Escapa aspas simples na query
             safe_query = query.replace("'", "\\'")
             q_str = f"name contains '{safe_query}' and trashed = false"
-            
-            results = service.files().list(
-                q=q_str, pageSize=max_results,
-                fields="files(id, name, mimeType, webViewLink)"
-            ).execute()
-            items = results.get('files', [])
+
+            results = (
+                service.files()
+                .list(q=q_str, pageSize=max_results, fields="files(id, name, mimeType, webViewLink)")
+                .execute()
+            )
+            items = results.get("files", [])
             if not items:
                 return f"Nenhum arquivo encontrado para a busca '{query}'."
-            
+
             lines = [f"🔍 Resultados no Drive para '{query}':"]
             for item in items:
-                icon = "📁" if item['mimeType'] == 'application/vnd.google-apps.folder' else "📄"
-                lines.append(f"  • {icon} {item['name']} (ID: {item['id'][:8]}...) - {item.get('webViewLink', 'Sem link')}")
+                icon = "📁" if item["mimeType"] == "application/vnd.google-apps.folder" else "📄"
+                lines.append(
+                    f"  • {icon} {item['name']} (ID: {item['id'][:8]}...) - {item.get('webViewLink', 'Sem link')}"
+                )
             return "\n".join(lines)
         except Exception as e:
             return f"Erro ao buscar no Google Drive: {e}"
@@ -639,14 +681,11 @@ class GoogleManager:
             return "Google Drive não configurado."
         try:
             service = self._drive()
-            metadata = {
-                'name': folder_name,
-                'mimeType': 'application/vnd.google-apps.folder'
-            }
+            metadata = {"name": folder_name, "mimeType": "application/vnd.google-apps.folder"}
             if parent_id:
-                metadata['parents'] = [parent_id]
-                
-            folder = service.files().create(body=metadata, fields='id, name, webViewLink').execute()
+                metadata["parents"] = [parent_id]
+
+            folder = service.files().create(body=metadata, fields="id, name, webViewLink").execute()
             return f"✅ Pasta '{folder_name}' criada com sucesso no Google Drive!\n🆔 ID: {folder.get('id')}\n🔗 Link: {folder.get('webViewLink')}"
         except Exception as e:
             return f"Erro ao criar pasta no Google Drive: {e}"
@@ -657,17 +696,19 @@ class GoogleManager:
             return "Google Drive não configurado."
         try:
             service = self._drive()
-            service.files().update(fileId=file_id, body={'trashed': True}).execute()
+            service.files().update(fileId=file_id, body={"trashed": True}).execute()
             return f"✅ Arquivo/Pasta movido para a lixeira com sucesso! (ID: {file_id[:8]}...)"
         except Exception as e:
             return f"Erro ao deletar arquivo no Google Drive: {e}"
 
     # ── Handler de texto natural ──────────────────────────────────
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower()
         # Calendar - leitura
-        if any(w in tl for w in ["compromisso", "compromissos", "calendário", "calendario", "agenda", "reunião", "reuniao"]):
+        if any(
+            w in tl for w in ["compromisso", "compromissos", "calendário", "calendario", "agenda", "reunião", "reuniao"]
+        ):
             return self.get_calendar_events()
         # Gmail - leitura
         if any(w in tl for w in ["email", "emails", "e-mail", "e-mails"]):
@@ -678,7 +719,8 @@ class GoogleManager:
 
 
 # Singleton
-_google_instance: Optional[GoogleManager] = None
+_google_instance: GoogleManager | None = None
+
 
 def get_google() -> GoogleManager:
     global _google_instance

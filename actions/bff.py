@@ -3,15 +3,14 @@
 actions/bff.py — Luna BFF
 Modo amiga: hobbys, apoio emocional e wiki rápida.
 """
+
 import json
-import os
 from pathlib import Path
-from typing import Optional
 
 try:
-    from brain.llm import get_llm, MODELS
+    from brain.llm import MODELS, get_llm
 except ImportError:
-    from brain.llm import get_llm, MODELS
+    from brain.llm import MODELS, get_llm
 
 DATA_PATH = Path(__file__).parent.parent / "data" / "bff_profile.json"
 
@@ -68,7 +67,7 @@ class BFFMode:
             hobbies_ctx = f"Hobbys do usuário: {', '.join(self._profile['hobbies'])}. "
         prompt = (
             f"{BFF_SYSTEM}\n{hobbies_ctx}\n"
-            f"O usuário disse: \"{message}\"\n\n"
+            f'O usuário disse: "{message}"\n\n'
             "Responda com empatia e carinho, como uma boa amiga faria:"
         )
         raw = self._llm.generate(prompt, task_type="conversational", model=MODELS.get("main"))
@@ -85,10 +84,7 @@ class BFFMode:
         if topic in self._profile["wiki_cache"]:
             return self._profile["wiki_cache"][topic]
 
-        prompt = (
-            f"{BFF_SYSTEM}\n"
-            f"Explique \"{topic}\" de forma simples, amigável e resumida (máx 4 frases) em português:"
-        )
+        prompt = f'{BFF_SYSTEM}\nExplique "{topic}" de forma simples, amigável e resumida (máx 4 frases) em português:'
         raw = self._llm.generate(prompt, task_type="factual", model=MODELS.get("main"))
         try:
             data = json.loads(raw)
@@ -110,10 +106,7 @@ class BFFMode:
         hobbies_ctx = ""
         if self._profile["hobbies"]:
             hobbies_ctx = f"Hobbys do usuário: {', '.join(self._profile['hobbies'])}. "
-        prompt = (
-            f"{BFF_SYSTEM}\n{hobbies_ctx}\n"
-            f"Usuário: {message}\nLuna:"
-        )
+        prompt = f"{BFF_SYSTEM}\n{hobbies_ctx}\nUsuário: {message}\nLuna:"
         raw = self._llm.generate(prompt, task_type="conversational", model=MODELS.get("main"))
         try:
             data = json.loads(raw)
@@ -122,7 +115,7 @@ class BFFMode:
             return raw
 
 
-_bff: Optional[BFFMode] = None
+_bff: BFFMode | None = None
 
 
 def get_bff() -> BFFMode:

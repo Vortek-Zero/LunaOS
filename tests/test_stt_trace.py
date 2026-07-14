@@ -1,7 +1,6 @@
-import sys
-import os
 import traceback
-from voice.stt import get_stt, _record_audio, _pcm_to_wav
+
+from voice.stt import _pcm_to_wav, _record_audio, get_stt
 
 stt = get_stt()
 stt._load_model()
@@ -11,5 +10,5 @@ try:
     print("Transcribing:", wav)
     text = stt._transcribe(wav)
     print("Text:", text)
-except Exception as e:
+except Exception:
     traceback.print_exc()

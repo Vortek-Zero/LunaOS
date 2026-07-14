@@ -3,12 +3,12 @@
 brain/episodic_memory.py — Memória Episódica da Luna
 Lembra experiências com timestamp, tópicos e contexto — não só fatos isolados.
 """
+
 import json
 import re
 import threading
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 try:
     from config import DATA_DIR
@@ -19,8 +19,36 @@ EPISODES_FILE = Path(DATA_DIR) / "episodes.json"
 
 # Tópicos reconhecidos automaticamente
 _TOPIC_PATTERNS = {
-    "programação": ["python", "rust", "javascript", "html", "css", "código", "programa", "projeto", "github", "git", "bug", "debug", "api", "backend", "frontend"],
-    "estudo": ["estudei", "estudando", "aprendi", "aprendo", "aula", "etec", "escola", "curso", "módulo", "exercício", "prova"],
+    "programação": [
+        "python",
+        "rust",
+        "javascript",
+        "html",
+        "css",
+        "código",
+        "programa",
+        "projeto",
+        "github",
+        "git",
+        "bug",
+        "debug",
+        "api",
+        "backend",
+        "frontend",
+    ],
+    "estudo": [
+        "estudei",
+        "estudando",
+        "aprendi",
+        "aprendo",
+        "aula",
+        "etec",
+        "escola",
+        "curso",
+        "módulo",
+        "exercício",
+        "prova",
+    ],
     "luna": ["luna", "assistente", "ia", "sistema", "ferramenta", "melhorar", "versão"],
     "jogos": ["jogo", "game", "jogar", "partida", "vencer", "perder"],
     "música": ["música", "tocar", "spotify", "rádio", "playlist"],
@@ -57,7 +85,7 @@ class EpisodicMemory:
         self,
         text: str,
         response_summary: str = "",
-        topics: Optional[list[str]] = None,
+        topics: list[str] | None = None,
         action_type: str = "conversa",
         outcome: str = "ok",
     ) -> None:
@@ -98,7 +126,7 @@ class EpisodicMemory:
         """
         cutoff = datetime.now() - timedelta(days=days)
         query_lower = query.lower()
-        query_words = set(w for w in re.split(r'\W+', query_lower) if len(w) > 3)
+        query_words = set(w for w in re.split(r"\W+", query_lower) if len(w) > 3)
         query_topics = _extract_topics(query)
 
         scored = []
@@ -120,7 +148,7 @@ class EpisodicMemory:
                 score += topic_overlap * 3
 
                 # Pontos por palavras em comum
-                ep_words = set(w for w in re.split(r'\W+', ep_text) if len(w) > 3)
+                ep_words = set(w for w in re.split(r"\W+", ep_text) if len(w) > 3)
                 word_overlap = len(query_words & ep_words)
                 score += word_overlap
 
@@ -195,13 +223,11 @@ class EpisodicMemory:
 
     def _save(self):
         EPISODES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        EPISODES_FILE.write_text(
-            json.dumps(self._episodes, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        EPISODES_FILE.write_text(json.dumps(self._episodes, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # Singleton
-_instance: Optional[EpisodicMemory] = None
+_instance: EpisodicMemory | None = None
 
 
 def get_episodic_memory() -> EpisodicMemory:

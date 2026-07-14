@@ -2,10 +2,10 @@
 """
 actions/window_manager.py — Controle avançado de janelas via hyprctl + xdotool.
 """
+
 import re
 import shutil
 import subprocess
-from typing import Optional
 
 
 def _run(cmd: list[str], timeout: int = 3) -> tuple[int, str]:
@@ -127,6 +127,7 @@ class WindowManager:
 
     def list_windows(self) -> str:
         from vision.screen import get_vision
+
         wins = get_vision().list_windows()
         if not wins:
             return "Nenhuma janela visível detectada."
@@ -150,6 +151,7 @@ class WindowManager:
             ok, clients = self._hypr("clients", "-j")
             if ok:
                 import json
+
                 try:
                     for c in json.loads(clients):
                         if title.lower() in c.get("title", "").lower():
@@ -162,16 +164,16 @@ class WindowManager:
 
     # ── Interface natural ──────────────────────────────────────
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower()
 
         # Workspace
-        m = re.search(r'workspace\s+(\d+)|(?:vai para|ir para|muda para)\s+(?:o\s+)?workspace\s+(\d+)', tl)
+        m = re.search(r"workspace\s+(\d+)|(?:vai para|ir para|muda para)\s+(?:o\s+)?workspace\s+(\d+)", tl)
         if m:
             num = int(m.group(1) or m.group(2))
             return self.go_to_workspace(num)
 
-        m = re.search(r'move\s+(?:a\s+janela\s+)?para\s+(?:o\s+)?workspace\s+(\d+)', tl)
+        m = re.search(r"move\s+(?:a\s+janela\s+)?para\s+(?:o\s+)?workspace\s+(\d+)", tl)
         if m:
             return self.move_to_workspace(int(m.group(1)))
 
@@ -194,7 +196,8 @@ class WindowManager:
 
 
 # Singleton
-_wm_instance: Optional[WindowManager] = None
+_wm_instance: WindowManager | None = None
+
 
 def get_window_manager() -> WindowManager:
     global _wm_instance

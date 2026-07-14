@@ -1,9 +1,9 @@
-import wave
 import uuid
-import sys
+import wave
+
 from faster_whisper import WhisperModel
 
-pcm = b'\x00\x00' * 16000 * 2  # 2 seconds of silence
+pcm = b"\x00\x00" * 16000 * 2  # 2 seconds of silence
 sample_rate = 16000
 
 path = f"/tmp/luna_stt_{uuid.uuid4().hex}.wav"
@@ -26,6 +26,7 @@ try:
     print("Transcribed:", text)
 except Exception as e:
     import traceback
+
     traceback.print_exc()
     print("Error type:", type(e))
     print(f"[STT] Erro Whisper: {e}")

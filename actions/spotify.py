@@ -16,32 +16,28 @@ Comportamento:
   - Volume, próxima, anterior, pausar e retomar funcionam sem Spotify aberto
     (o app é aberto se necessário).
 """
+
+import json
 import os
 import re
-import json
-import time
 import subprocess
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
 try:
     import spotipy
     from spotipy.oauth2 import SpotifyOAuth
+
     HAS_SPOTIPY = True
 except ImportError:
     HAS_SPOTIPY = False
 
-SCOPE = (
-    "user-read-playback-state "
-    "user-modify-playback-state "
-    "user-read-currently-playing "
-    "app-remote-control "
-    "streaming"
-)
+SCOPE = "user-read-playback-state user-modify-playback-state user-read-currently-playing app-remote-control streaming"
 
 _CACHE_PATH = os.path.expanduser("~/.cache-luna_spotify")
-_APPS_JSON  = Path(__file__).parent.parent / "config" / "apps.json"
+_APPS_JSON = Path(__file__).parent.parent / "config" / "apps.json"
 
 # Tempo máximo para aguardar o Spotify abrir e aparecer como device (segundos)
 _OPEN_TIMEOUT = 20
@@ -88,7 +84,7 @@ class SpotifyManager:
     """Controla o Spotify via Web API com auto-abertura do app e fallback gracioso."""
 
     def __init__(self):
-        self._sp: Optional["spotipy.Spotify"] = None
+        self._sp: spotipy.Spotify | None = None
         self._ready = False
         self._free_mode = False  # True quando conta é Free (sem API premium)
         self._open_lock = threading.Lock()
@@ -128,10 +124,7 @@ class SpotifyManager:
     def _is_spotify_running(self) -> bool:
         """Verifica se o processo do Spotify está rodando."""
         try:
-            result = subprocess.run(
-                ["pgrep", "-x", "spotify"],
-                capture_output=True, timeout=2
-            )
+            result = subprocess.run(["pgrep", "-x", "spotify"], capture_output=True, timeout=2)
             return result.returncode == 0
         except Exception:
             return False
@@ -151,11 +144,7 @@ class SpotifyManager:
             cmd = _load_spotify_command()
             print(f"[Spotify] Abrindo app: {' '.join(cmd)}")
             try:
-                subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL
-                )
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             except FileNotFoundError:
                 print(f"[Spotify] ⚠ Comando não encontrado: {cmd[0]}")
                 return False
@@ -176,7 +165,7 @@ class SpotifyManager:
             print("[Spotify] ⚠ Timeout: Spotify iniciou mas device não apareceu na API.")
             return False
 
-    def _get_device_id(self) -> Optional[str]:
+    def _get_device_id(self) -> str | None:
         """
         Retorna o ID do device Spotify ativo.
         Prioriza devices ativos (is_active=True), depois qualquer disponível.
@@ -201,7 +190,7 @@ class SpotifyManager:
             print(f"[Spotify] Erro ao listar devices: {e}")
             return None
 
-    def _ensure_device(self) -> Optional[str]:
+    def _ensure_device(self) -> str | None:
         """
         Garante que existe um device disponível e ATIVO.
         Abre o Spotify se necessário e transfere a reprodução para ele.
@@ -357,8 +346,7 @@ class SpotifyManager:
         print(f"[Spotify] Fallback: spotify:track:{track_id}")
         try:
             subprocess.Popen(
-                ["xdg-open", f"spotify:track:{track_id}"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                ["xdg-open", f"spotify:track:{track_id}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
             if autoplay:
                 self._autoplay_next(query, uri)
@@ -376,17 +364,21 @@ class SpotifyManager:
                     print("[Spotify] Conta Free detectada (Erro 403). Usando xdg-open como fallback para tocar música!")
                     if uris:
                         try:
-                            subprocess.Popen(["xdg-open", uris[0]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            subprocess.Popen(
+                                ["xdg-open", uris[0]], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                            )
                             return "ok (fallback free)"
                         except Exception as ex:
                             return f"Erro no fallback: {ex}"
                     return "Nenhuma música para o fallback."
 
-                reason = getattr(e, 'reason', '') or ''
-                is_no_device = (reason == 'NO_ACTIVE_DEVICE' or e.http_status == 404)
+                reason = getattr(e, "reason", "") or ""
+                is_no_device = reason == "NO_ACTIVE_DEVICE" or e.http_status == 404
 
                 if is_no_device and attempt < max_retries - 1:
-                    print(f"[Spotify] NO_ACTIVE_DEVICE — aguardando 3s e tentando novamente... (tentativa {attempt + 1})")
+                    print(
+                        f"[Spotify] NO_ACTIVE_DEVICE — aguardando 3s e tentando novamente... (tentativa {attempt + 1})"
+                    )
                     time.sleep(3)
                     # Tenta reativar o device
                     try:
@@ -401,7 +393,7 @@ class SpotifyManager:
                 raise  # Re-lança para o caller tratar
         return "⚠ Spotify: não foi possível iniciar reprodução após várias tentativas."
 
-    def _search_best_match(self, query: str) -> tuple[Optional[str], str]:
+    def _search_best_match(self, query: str) -> tuple[str | None, str]:
         """
         Busca o melhor resultado para a query.
         Se conta for Free, usa playerctl para pesquisa local ou retorna URI genérico.
@@ -475,25 +467,32 @@ class SpotifyManager:
 
     # ── Autoplay inteligente ───────────────────────────────────
 
-    def _llm_suggest_next(self, current_track: str) -> Optional[str]:
+    def _llm_suggest_next(self, current_track: str) -> str | None:
         """Pede ao LLM uma música que combine com a atual."""
-        import requests as _req, json as _json
+
+        import requests as _req
+
         from config import MODELS, OLLAMA_GENERATE_URL
+
         prompt = (
             f'A música "{current_track}" acabou de tocar. '
-            f'Sugira UMA música diferente que combine com o mesmo ritmo/estilo. '
-            f'Responda APENAS com: NOME DA MÚSICA - ARTISTA. Sem explicações.'
+            f"Sugira UMA música diferente que combine com o mesmo ritmo/estilo. "
+            f"Responda APENAS com: NOME DA MÚSICA - ARTISTA. Sem explicações."
         )
         try:
-            resp = _req.post(OLLAMA_GENERATE_URL, json={
-                "model": MODELS["fast"],
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.7, "num_predict": 30},
-            }, timeout=15)
+            resp = _req.post(
+                OLLAMA_GENERATE_URL,
+                json={
+                    "model": MODELS["fast"],
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 30},
+                },
+                timeout=15,
+            )
             suggestion = resp.json().get("response", "").strip()
             # Remove prefixos como "1.", "*", etc.
-            suggestion = re.sub(r'^[\d\.\*\-\s]+', '', suggestion).strip()
+            suggestion = re.sub(r"^[\d\.\*\-\s]+", "", suggestion).strip()
             return suggestion if len(suggestion) > 3 else None
         except Exception:
             return None
@@ -540,6 +539,7 @@ class SpotifyManager:
 
             print(f"[Spotify] 🎵 Autoplay: {suggestion}")
             from voice.tts import get_tts
+
             get_tts().speak(f"Que tal: {suggestion}?", blocking=False)
 
             if self.available:
@@ -554,8 +554,7 @@ class SpotifyManager:
     def _playerctl(self, *args) -> str:
         try:
             r = subprocess.run(
-                ["playerctl", "--player=spotify"] + list(args),
-                capture_output=True, text=True, timeout=3
+                ["playerctl", "--player=spotify"] + list(args), capture_output=True, text=True, timeout=3
             )
             return r.stdout.strip()
         except Exception:
@@ -575,11 +574,11 @@ class SpotifyManager:
     def search_and_play_local(self, query: str, autoplay: bool = False) -> str:
         """Toca via URI spotify: usando o handler do sistema (xdg-open)."""
         import urllib.parse
+
         self._open_spotify_if_needed()
         encoded = urllib.parse.quote(query)
         subprocess.Popen(
-            ["xdg-open", f"spotify:search:{encoded}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            ["xdg-open", f"spotify:search:{encoded}"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
         for _ in range(8):
             time.sleep(1.5)
@@ -592,11 +591,11 @@ class SpotifyManager:
             self._autoplay_next(query, "")
         return f"▶ Buscando no Spotify: {query}"
 
-    def handle_local(self, text: str) -> Optional[str]:
+    def handle_local(self, text: str) -> str | None:
         """Controles básicos via playerctl quando API não está disponível."""
         tl = text.lower().strip()
 
-        m = re.search(r'volume\s+(?:para\s+|em\s+|no\s+)?(\d+)', tl)
+        m = re.search(r"volume\s+(?:para\s+|em\s+|no\s+)?(\d+)", tl)
         if m:
             self._playerctl("volume", f"{int(m.group(1)) / 100:.2f}")
             return f"🔊 Volume {m.group(1)}%."
@@ -626,9 +625,9 @@ class SpotifyManager:
             return "Nenhuma música tocando."
 
         search_pattern = re.search(
-            r'(?:toca|coloca|play|reproduz|quero ouvir|bota|pe?de?)\s+'
-            r'(?:a m[uú]sica\s+|a faixa\s+|o artista\s+|o album\s+)?(.+)',
-            tl
+            r"(?:toca|coloca|play|reproduz|quero ouvir|bota|pe?de?)\s+"
+            r"(?:a m[uú]sica\s+|a faixa\s+|o artista\s+|o album\s+)?(.+)",
+            tl,
         )
         if search_pattern:
             query = search_pattern.group(1).strip()
@@ -641,7 +640,7 @@ class SpotifyManager:
 
     # ── Interface natural ──────────────────────────────────────
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         """Processa comandos de voz/texto relacionados ao Spotify."""
         if not self.available:
             return self.handle_local(text)
@@ -650,60 +649,66 @@ class SpotifyManager:
 
         # Volume com valor numérico — vários formatos
         # Ex: "volume 70", "volume para 70", "coloca no volume 70", "volume em 70"
-        m = re.search(r'volume\s+(?:para\s+|em\s+|no\s+)?(\d+)', tl)
+        m = re.search(r"volume\s+(?:para\s+|em\s+|no\s+)?(\d+)", tl)
         if m:
             return self.set_volume(int(m.group(1)))
 
         # Volume em formato alternativo: "coloca no 70"
-        m = re.search(r'(?:coloca|deixa|bota)\s+(?:no|em)\s+(\d+)', tl)
+        m = re.search(r"(?:coloca|deixa|bota)\s+(?:no|em)\s+(\d+)", tl)
         if m:
             return self.set_volume(int(m.group(1)))
 
         # Busca por nome específico — DEVE vir antes dos controles genéricos
         # Captura: "toca [nome]", "coloca [nome]", "play [nome]", "quero ouvir [nome]"
         search_pattern = re.search(
-            r'(?:toca|coloca|play|reproduz|quero ouvir|bota|pe?de?)\s+'
-            r'(?:a m[uú]sica\s+|a faixa\s+|o artista\s+|o album\s+)?(.+)',
-            tl
+            r"(?:toca|coloca|play|reproduz|quero ouvir|bota|pe?de?)\s+"
+            r"(?:a m[uú]sica\s+|a faixa\s+|o artista\s+|o album\s+)?(.+)",
+            tl,
         )
         if search_pattern:
             query = search_pattern.group(1).strip()
             # Remove palavras de controle que não são nomes de música
-            generic = {"música", "musica", "uma música", "uma musica", "agora",
-                       "algo", "uma", "um", "o", "a"}
+            generic = {"música", "musica", "uma música", "uma musica", "agora", "algo", "uma", "um", "o", "a"}
             if query and query not in generic and len(query) > 1:
                 self._autoplay_stop.set()  # cancela autoplay anterior
                 return self.search_and_play(query, autoplay=True)
 
         # Controles de faixa — cancelam autoplay em andamento
-        if any(w in tl for w in ["próxima música", "proxima musica", "próxima faixa",
-                                   "proxima faixa", "next", "avança música"]):
+        if any(
+            w in tl
+            for w in ["próxima música", "proxima musica", "próxima faixa", "proxima faixa", "next", "avança música"]
+        ):
             return self.next_track()
 
-        if any(w in tl for w in ["música anterior", "musica anterior", "faixa anterior",
-                                   "voltar música", "anterior"]):
+        if any(w in tl for w in ["música anterior", "musica anterior", "faixa anterior", "voltar música", "anterior"]):
             return self.prev_track()
 
         # Pausa (antes de "toca"/"play" para evitar conflito)
-        if any(w in tl for w in ["pausa", "pause", "pausar", "para a música",
-                                   "para a musica", "parar música", "parar musica"]):
+        if any(
+            w in tl
+            for w in ["pausa", "pause", "pausar", "para a música", "para a musica", "parar música", "parar musica"]
+        ):
             return self.pause()
 
         # Play genérico (retoma)
-        if any(w in tl for w in ["toca música", "toca musica", "play", "reproduz",
-                                   "continua", "continuar música", "retoma"]):
+        if any(
+            w in tl
+            for w in ["toca música", "toca musica", "play", "reproduz", "continua", "continuar música", "retoma"]
+        ):
             return self.play()
 
         # Música atual
-        if any(w in tl for w in ["que música", "que musica", "o que está tocando",
-                                   "qual música", "música atual", "o que toca"]):
+        if any(
+            w in tl
+            for w in ["que música", "que musica", "o que está tocando", "qual música", "música atual", "o que toca"]
+        ):
             return self.now_playing()
 
         return None
 
 
 # Singleton
-_spotify_instance: Optional[SpotifyManager] = None
+_spotify_instance: SpotifyManager | None = None
 
 
 def get_spotify() -> SpotifyManager:

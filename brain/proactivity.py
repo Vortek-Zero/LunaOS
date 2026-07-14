@@ -3,40 +3,42 @@
 brain/proactivity.py — Motor de Proatividade e Iniciativa da Luna
 Gera avisos, sugestões e lembretes automáticos baseado em hábitos e horários do usuário.
 """
+
 import logging
 import time
 from datetime import datetime
-from pathlib import Path
-from typing import Optional, List
 
 logger = logging.getLogger("luna.proactivity")
+
 
 class ProactivityEngine:
     """
     Motor de proatividade da Luna. Periodicamente avalia o contexto do usuário
     (horário, dia da semana, hábitos e metas) e propõe ações proativas.
     """
+
     def __init__(self, luna_core=None):
         self._luna = luna_core
         self._last_suggestion_time = 0
 
-    def evaluate_proactive_actions(self) -> Optional[str]:
+    def evaluate_proactive_actions(self) -> str | None:
         """
         Avalia se a Luna deve tomar iniciativa de sugerir algo baseado em hábitos.
         Retorna a mensagem de sugestão proativa se elegível, None caso contrário.
         """
         now = datetime.now()
         current_timestamp = time.time()
-        
+
         # Só sugere no máximo a cada 2 horas para não ser irritante
         if current_timestamp - self._last_suggestion_time < 7200:
             return None
 
         try:
             from brain.user_model import get_user_model
+
             user_model = get_user_model()
             habits = user_model.profile.get("habits", [])
-            
+
             suggestion = None
 
             # 1. Hábito noturno de programação
@@ -64,6 +66,7 @@ class ProactivityEngine:
                 # Publica no Event Bus
                 try:
                     from brain.event_bus import get_event_bus
+
                     get_event_bus().publish("proactive_suggestion", suggestion)
                 except ImportError:
                     pass
@@ -78,6 +81,7 @@ class ProactivityEngine:
         """Envia notificação via notify-send se disponível."""
         try:
             import subprocess
+
             subprocess.run(["notify-send", "Luna 🌙", message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             logger.info(f"Notificação proativa enviada: '{message}'")
         except Exception:
@@ -89,6 +93,7 @@ class ProactivityEngine:
             return
         try:
             from voice.tts import get_tts
+
             get_tts().speak(suggestion, blocking=False)
         except Exception:
             pass

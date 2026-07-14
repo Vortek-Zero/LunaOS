@@ -3,26 +3,30 @@
 actions/eyes.py — Luna Eyes
 Visão de tela + câmeras de segurança com alertas de risco.
 """
+
+import json
 import threading
 import time
-import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Optional, Callable
 
 try:
     from vision.screen import ScreenVision
+
     HAS_SCREEN = True
 except ImportError:
     HAS_SCREEN = False
 
 try:
-    from brain.llm import get_llm, MODELS
+    from brain.llm import MODELS, get_llm
+
     HAS_LLM = True
 except ImportError:
     HAS_LLM = False
 
 try:
     import cv2
+
     HAS_CV2 = True
 except ImportError:
     HAS_CV2 = False
@@ -38,9 +42,9 @@ class EyesManager:
         self._llm = get_llm() if HAS_LLM else None
         self._screen = ScreenVision() if HAS_SCREEN else None
         self._cameras: dict[int, cv2.VideoCapture] = {}  # {cam_id: cap}
-        self._watch_thread: Optional[threading.Thread] = None
+        self._watch_thread: threading.Thread | None = None
         self._watching = threading.Event()
-        self._alert_cb: Optional[Callable[[str], None]] = None
+        self._alert_cb: Callable[[str], None] | None = None
 
     # ── Visão de tela ─────────────────────────────────────────
 
@@ -87,7 +91,7 @@ class EyesManager:
         del self._cameras[cam_id]
         return f"Câmera {cam_id} desconectada."
 
-    def capture_camera(self, cam_id: int = 0) -> Optional[str]:
+    def capture_camera(self, cam_id: int = 0) -> str | None:
         """Captura frame da câmera e salva. Retorna caminho ou None."""
         if not HAS_CV2 or cam_id not in self._cameras:
             return None
@@ -111,8 +115,7 @@ class EyesManager:
 
     # ── Vigilância contínua ───────────────────────────────────
 
-    def start_watch(self, cam_id: int = 0, interval: float = 5.0,
-                    on_alert: Optional[Callable[[str], None]] = None) -> str:
+    def start_watch(self, cam_id: int = 0, interval: float = 5.0, on_alert: Callable[[str], None] | None = None) -> str:
         """Inicia monitoramento contínuo com detecção de movimento."""
         if not HAS_CV2:
             return "OpenCV não instalado."
@@ -175,7 +178,7 @@ class EyesManager:
         return "\n".join(lines)
 
 
-_eyes: Optional[EyesManager] = None
+_eyes: EyesManager | None = None
 
 
 def get_eyes() -> EyesManager:

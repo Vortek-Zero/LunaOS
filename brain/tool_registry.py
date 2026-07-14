@@ -2,10 +2,11 @@
 brain/tool_registry.py — Sistema de registro de ferramentas inspirado no Agent-S
 Usa decorator @tool_action para auto-registro e documentação dinâmica
 """
-import inspect
+
 import functools
+import inspect
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
 
 
 class ToolRegistry:
@@ -23,8 +24,7 @@ class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, dict] = {}
 
-    def register(self, name: str, description: str, category: str = "geral",
-                 verify_fn: Callable = None):
+    def register(self, name: str, description: str, category: str = "geral", verify_fn: Callable = None):
         """
         Decorator para registrar uma ferramenta.
         Uso:
@@ -32,6 +32,7 @@ class ToolRegistry:
             def write_code(filename, content):
                 ...
         """
+
         def decorator(func: Callable):
             sig = inspect.signature(func)
             params = []
@@ -46,12 +47,14 @@ class ToolRegistry:
                         param_type = "array"
                     elif param.annotation == dict:
                         param_type = "object"
-                params.append({
-                    "name": param_name,
-                    "type": param_type,
-                    "required": param.default == inspect.Parameter.empty,
-                    "description": "",
-                })
+                params.append(
+                    {
+                        "name": param_name,
+                        "type": param_type,
+                        "required": param.default == inspect.Parameter.empty,
+                        "description": "",
+                    }
+                )
 
             self._tools[name] = {
                 "name": name,
@@ -70,15 +73,16 @@ class ToolRegistry:
                     try:
                         # Passa apenas os kwargs que a função de verificação aceita
                         sig = inspect.signature(verify_fn)
-                        filtered_kwargs = {k: v for k, v in kwargs.items()
-                                           if k in sig.parameters}
+                        filtered_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
                         verified = verify_fn(**filtered_kwargs)
                     except Exception:
                         verified = False
                     if not verified:
                         return f"FALHOU: {result} — verificação pós-execução falhou (arquivo não encontrado no disco)."
                 return result
+
             return wrapper
+
         return decorator
 
     def get_tool(self, name: str) -> dict | None:
@@ -101,10 +105,11 @@ class ToolRegistry:
 
         lines = []
         for t in tools:
-            params_str = ", ".join(
-                f"{p['name']}: {p['type']}{' (obrigatório)' if p['required'] else ''}"
-                for p in t["params"]
-            ) if t["params"] else "sem parâmetros"
+            params_str = (
+                ", ".join(f"{p['name']}: {p['type']}{' (obrigatório)' if p['required'] else ''}" for p in t["params"])
+                if t["params"]
+                else "sem parâmetros"
+            )
             lines.append(f"- {t['name']}({params_str}): {t['description']}")
 
         return "\n".join(lines)
@@ -122,8 +127,7 @@ class ToolRegistry:
             verify = tool.get("verify")
             if verify:
                 sig = inspect.signature(verify)
-                filtered_kwargs = {k: v for k, v in kwargs.items()
-                                   if k in sig.parameters}
+                filtered_kwargs = {k: v for k, v in kwargs.items() if k in sig.parameters}
                 verified = verify(**filtered_kwargs)
                 if not verified:
                     return f"FALHOU: Ação executada mas verificação pós-execução falhou. Resultado: {result}"
@@ -136,6 +140,7 @@ class ToolRegistry:
 # ── Funções de verificação ─────────────────────────────────
 
 from config import WORKSPACE_DIR
+
 
 def verify_file_exists(filename: str = "", path: str = "") -> bool:
     """Verifica se um arquivo foi realmente criado no disco."""

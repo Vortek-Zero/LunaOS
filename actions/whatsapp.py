@@ -6,15 +6,16 @@ Estratégias (em ordem):
   1. Bridge local opcional (WHATSAPP_BRIDGE_URL no .env) — ex: whatsapp-web.js
   2. Automação UI do app desktop / WhatsApp Web no navegador (xdotool)
 """
+
 import os
 import re
-import time
 import shutil
 import subprocess
-from typing import Optional
+import time
 
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -37,6 +38,7 @@ class WhatsAppManager:
     def _get_ui(self):
         if self._ui is None:
             from actions.ui import UIManager
+
             self._ui = UIManager()
         return self._ui
 
@@ -46,8 +48,10 @@ class WhatsAppManager:
             if shutil.which(bin_name) or bin_name in ("flatpak", "chromium", "firefox"):
                 try:
                     subprocess.Popen(
-                        cmd, shell=True,
-                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                        cmd,
+                        shell=True,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
                     )
                     time.sleep(3)
                     return True
@@ -80,7 +84,7 @@ class WhatsAppManager:
             "yay -S whatsapp-native ou flatpak install flathub io.github.mimbrero.WhatsAppDesktop"
         )
 
-    def _bridge_send(self, phone_or_chat: str, message: str) -> Optional[str]:
+    def _bridge_send(self, phone_or_chat: str, message: str) -> str | None:
         if not WHATSAPP_BRIDGE_URL or not HAS_REQUESTS:
             return None
         try:
@@ -134,7 +138,7 @@ class WhatsAppManager:
         return "WhatsApp aberto e focado." if focused else "WhatsApp não detectado na tela. Use open primeiro."
 
 
-_wa_instance: Optional[WhatsAppManager] = None
+_wa_instance: WhatsAppManager | None = None
 
 
 def get_whatsapp() -> WhatsAppManager:

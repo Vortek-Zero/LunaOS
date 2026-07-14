@@ -1,8 +1,10 @@
-import subprocess
 import shutil
+import subprocess
 import webbrowser
 from urllib.parse import quote
+
 from actions.apps import AppManager
+
 
 class WebManager:
     """Gerencia a abertura de URLs e navegação na web."""
@@ -18,13 +20,16 @@ class WebManager:
             browser_cmd = self.app_manager.apps.get(browser.lower(), {}).get("command")
             if browser_cmd:
                 subprocess.Popen(
-                    f"{browser_cmd} '{url}'", shell=True,
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    f"{browser_cmd} '{url}'",
+                    shell=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
             elif shutil.which("xdg-open"):
                 subprocess.Popen(
                     ["xdg-open", url],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
                 )
             else:
                 webbrowser.open(url)
@@ -42,6 +47,7 @@ class WebManager:
     def open_search_result(self, index: int = 0, query: str = "") -> dict:
         """Abre o N-ésimo resultado da última busca (ou query informada)."""
         from actions.web_nav import fetch_first_result_url
+
         q = (query or self.last_search_query).strip()
         if not q:
             return {"success": False, "message": "FALHOU: nenhuma pesquisa recente. Diga o que buscar primeiro."}
@@ -53,18 +59,16 @@ class WebManager:
     def read_page(self, url: str) -> str:
         """Lê o conteúdo limpo de uma URL usando a Jina Reader API (Markdown puro)."""
         import urllib.request
+
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
-            
+
         jina_url = f"https://r.jina.ai/{url}"
         print(f"[WebManager] Lendo página via Jina AI: {url}")
         try:
-            req = urllib.request.Request(
-                jina_url, 
-                headers={'User-Agent': 'LunaAI/1.0'}
-            )
+            req = urllib.request.Request(jina_url, headers={"User-Agent": "LunaAI/1.0"})
             with urllib.request.urlopen(req, timeout=10) as response:
-                content = response.read().decode('utf-8')
+                content = response.read().decode("utf-8")
                 return content
         except Exception as e:
             print(f"[WebManager] Erro ao ler página com Jina AI: {e}")

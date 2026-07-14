@@ -3,9 +3,9 @@
 actions/writer.py — Engine de escrita contextual da Luna
 Adapta o estilo de linguagem ao contexto do pedido (adolescente, formal, thriller, etc.)
 """
-from pathlib import Path
-import re
 
+import re
+from pathlib import Path
 
 # ── Planner — extrai estrutura + tom + personagem ───────────────────────────
 
@@ -100,41 +100,72 @@ AÇÕES OBRIGATÓRIAS:
 
 # Palavras-chave que ativam o modo escritor
 WRITER_TRIGGERS = [
-    "escreva", "escreve", "escrever",
-    "crie um texto", "cria um texto", "criar um texto",
-    "crie uma historia", "crie um conto", "crie um poema",
-    "crie um artigo", "crie uma redacao", "crie uma carta",
-    "crie um roteiro", "crie uma cronica",
-    "redija", "redige", "redigir",
-    "componha", "compoe", "compor",
-    "faca um texto", "faz um texto", "fazer um texto",
-    "faca uma historia", "faca um conto", "faca um poema",
-    "faca um artigo", "faca uma redacao",
-    "texto dissertativo", "texto narrativo", "texto argumentativo",
-    "texto descritivo", "texto expositivo",
-    "luna writing", "modo escritora", "modo escritor",
-    "salva um texto", "guarda um texto",
-    "continue a historia", "continua a historia",
-    "proxima cena", "próxima cena",
-    "escreva o capitulo", "escreva o capítulo",
+    "escreva",
+    "escreve",
+    "escrever",
+    "crie um texto",
+    "cria um texto",
+    "criar um texto",
+    "crie uma historia",
+    "crie um conto",
+    "crie um poema",
+    "crie um artigo",
+    "crie uma redacao",
+    "crie uma carta",
+    "crie um roteiro",
+    "crie uma cronica",
+    "redija",
+    "redige",
+    "redigir",
+    "componha",
+    "compoe",
+    "compor",
+    "faca um texto",
+    "faz um texto",
+    "fazer um texto",
+    "faca uma historia",
+    "faca um conto",
+    "faca um poema",
+    "faca um artigo",
+    "faca uma redacao",
+    "texto dissertativo",
+    "texto narrativo",
+    "texto argumentativo",
+    "texto descritivo",
+    "texto expositivo",
+    "luna writing",
+    "modo escritora",
+    "modo escritor",
+    "salva um texto",
+    "guarda um texto",
+    "continue a historia",
+    "continua a historia",
+    "proxima cena",
+    "próxima cena",
+    "escreva o capitulo",
+    "escreva o capítulo",
 ]
 
 
 def _is_writing_verb(text_norm: str) -> bool:
     import re
-    text_objects = r'(?:texto|historia|conto|poema|artigo|redacao|carta|roteiro|cronica|dissertacao|narrativa|ensaio|capitulo|paragrafo|introducao|conclusao|resumo|cena|dialogo|dialogo)'
-    if re.search(r'(?:escreva|escreve|escrever|redija|redige|componha|compoe)\s+(?:um|uma)\s+' + text_objects, text_norm):
+
+    text_objects = r"(?:texto|historia|conto|poema|artigo|redacao|carta|roteiro|cronica|dissertacao|narrativa|ensaio|capitulo|paragrafo|introducao|conclusao|resumo|cena|dialogo|dialogo)"
+    if re.search(
+        r"(?:escreva|escreve|escrever|redija|redige|componha|compoe)\s+(?:um|uma)\s+" + text_objects, text_norm
+    ):
         return True
-    if re.search(r'(?:escreva|escreve|escrever)\s+sobre\s+.{3,}', text_norm):
+    if re.search(r"(?:escreva|escreve|escrever)\s+sobre\s+.{3,}", text_norm):
         return True
-    if re.search(r'(?:quero|preciso|me\s+(?:faz|faca|da|de))\s+(?:um|uma)\s+' + text_objects, text_norm):
+    if re.search(r"(?:quero|preciso|me\s+(?:faz|faca|da|de))\s+(?:um|uma)\s+" + text_objects, text_norm):
         return True
-    if re.search(r'(?:continue|continua|continuar)\s+(?:a\s+)?(?:historia|conto|narrativa|texto)', text_norm):
+    if re.search(r"(?:continue|continua|continuar)\s+(?:a\s+)?(?:historia|conto|narrativa|texto)", text_norm):
         return True
     return False
 
 
 from config import WORKSPACE_DIR
+
 
 class WriterManager:
     """Gerencia a criação de textos longos pela Luna."""
@@ -145,10 +176,11 @@ class WriterManager:
 
     def is_writing_request(self, text: str) -> bool:
         import unicodedata
+
         tl = text.lower()
-        tl_norm = ''.join(c for c in unicodedata.normalize('NFD', tl) if unicodedata.category(c) != 'Mn')
+        tl_norm = "".join(c for c in unicodedata.normalize("NFD", tl) if unicodedata.category(c) != "Mn")
         normalized_triggers = [
-            ''.join(c for c in unicodedata.normalize('NFD', t) if unicodedata.category(c) != 'Mn')
+            "".join(c for c in unicodedata.normalize("NFD", t) if unicodedata.category(c) != "Mn")
             for t in WRITER_TRIGGERS
         ]
         if any(trigger in tl_norm for trigger in normalized_triggers):
@@ -165,7 +197,9 @@ class WriterManager:
     def build_planning_prompt(self, request: str) -> str:
         return f"{PLANNER_PROMPT}\n\nPedido do usuário:\n{request}"
 
-    def build_draft_prompt(self, plan: str, request: str, context_text: str = "", characters: str = "", style: str = "") -> str:
+    def build_draft_prompt(
+        self, plan: str, request: str, context_text: str = "", characters: str = "", style: str = ""
+    ) -> str:
         """Constrói o prompt de rascunho com contexto de personagem e estilo injetados."""
         extra = ""
         if characters:
@@ -174,14 +208,11 @@ class WriterManager:
             extra += f"\n\n[TEXTO JÁ ESCRITO — CONTINUE A PARTIR DAQUI]\n{context_text[-3000:]}"
         if style:
             extra += f"\n\n[ESTILO SOLICITADO]: {style}"
-        return (
-            f"{DRAFTER_SYSTEM_PROMPT}"
-            f"{extra}"
-            f"\n\n[ESTRUTURA E TOM DETECTADO]\n{plan}"
-            f"\n\n[PEDIDO ORIGINAL]\n{request}"
-        )
+        return f"{DRAFTER_SYSTEM_PROMPT}{extra}\n\n[ESTRUTURA E TOM DETECTADO]\n{plan}\n\n[PEDIDO ORIGINAL]\n{request}"
 
-    def build_chapter_prompt(self, plan: str, request: str, context_text: str, chapter_num: int, characters: str = "") -> str:
+    def build_chapter_prompt(
+        self, plan: str, request: str, context_text: str, chapter_num: int, characters: str = ""
+    ) -> str:
         """Prompt para novo capítulo — injeta o contexto acumulado."""
         char_block = f"\n\n[FICHA DOS PERSONAGENS]\n{characters}" if characters else ""
         return (
@@ -198,33 +229,34 @@ class WriterManager:
 
     def clean_chunk(self, chunk: str) -> str:
         """Limpeza de saída — remove markdown e padrões de IA."""
-        chunk = re.sub(r'\*{1,3}', '', chunk)
-        chunk = re.sub(r'#{1,6}\s*', '', chunk)
-        chunk = re.sub(r'_{1,2}', '', chunk)
-        chunk = re.sub(r'`{1,3}', '', chunk)
+        chunk = re.sub(r"\*{1,3}", "", chunk)
+        chunk = re.sub(r"#{1,6}\s*", "", chunk)
+        chunk = re.sub(r"_{1,2}", "", chunk)
+        chunk = re.sub(r"`{1,3}", "", chunk)
         # Padrões de IA a eliminar
         ai_patterns = [
-            r'(?i)em primeiro lugar[,:\s]*',
-            r'(?i)em segundo lugar[,:\s]*',
-            r'(?i)em terceiro lugar[,:\s]*',
-            r'(?i)argumento\s*\d+[,:\s]*',
-            r'(?i)ponto\s*\d+[,:\s]*',
-            r'(?i)em suma[,:\s]*',
-            r'(?i)para concluir[,:\s]*',
-            r'(?i)vale ressaltar(\sque)?[,:\s]*',
-            r'(?i)é importante notar(\sque)?[,:\s]*',
-            r'(?i)nesse sentido[,:\s]*',
-            r'(?i)dessa forma[,:\s]*',
-            r'(?i)portanto[,:\s]*',
-            r'(?i)assim sendo[,:\s]*',
+            r"(?i)em primeiro lugar[,:\s]*",
+            r"(?i)em segundo lugar[,:\s]*",
+            r"(?i)em terceiro lugar[,:\s]*",
+            r"(?i)argumento\s*\d+[,:\s]*",
+            r"(?i)ponto\s*\d+[,:\s]*",
+            r"(?i)em suma[,:\s]*",
+            r"(?i)para concluir[,:\s]*",
+            r"(?i)vale ressaltar(\sque)?[,:\s]*",
+            r"(?i)é importante notar(\sque)?[,:\s]*",
+            r"(?i)nesse sentido[,:\s]*",
+            r"(?i)dessa forma[,:\s]*",
+            r"(?i)portanto[,:\s]*",
+            r"(?i)assim sendo[,:\s]*",
         ]
         for pat in ai_patterns:
-            chunk = re.sub(pat, '', chunk)
+            chunk = re.sub(pat, "", chunk)
         return chunk
 
 
 # Singleton
 _writer_instance = None
+
 
 def get_writer() -> WriterManager:
     global _writer_instance

@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
-import time
-import threading
-import subprocess
 import re
-from typing import Dict, Optional
+import subprocess
+import threading
+import time
+
 from voice.tts import get_tts
+
 
 class TimerManager:
     def __init__(self):
-        self.timers: Dict[str, threading.Timer] = {}
-        self.timer_ends: Dict[str, float] = {}
+        self.timers: dict[str, threading.Timer] = {}
+        self.timer_ends: dict[str, float] = {}
 
     def _notify(self, name: str):
         # Alarme visual (pisca a luz da sala) - REMOVIDO A PEDIDO DO USUÁRIO
@@ -27,7 +28,7 @@ class TimerManager:
             subprocess.run(["notify-send", "-u", "critical", "Luna: Timer Terminou", msg], check=False)
         except Exception:
             pass
-        
+
         # Limpa
         if name in self.timers:
             del self.timers[name]
@@ -56,7 +57,7 @@ class TimerManager:
     def status(self) -> str:
         if not self.timers:
             return "Nenhum timer ativo no momento."
-        
+
         now = time.time()
         lines = ["Timers ativos:"]
         for name, end_t in self.timer_ends.items():
@@ -68,10 +69,10 @@ class TimerManager:
 
     def handle(self, command: str) -> str:
         cmd = command.lower()
-        
+
         if "status" in cmd or "quanto tempo" in cmd:
             return self.status()
-            
+
         if "cancela" in cmd or "cancelar" in cmd or "para o timer" in cmd:
             if self.timers:
                 # Cancela o primeiro ou todos
@@ -83,23 +84,23 @@ class TimerManager:
         # Extrai duração
         minutes = 0
         seconds = 0
-        
-        m_min = re.search(r'(\d+)\s*(?:minuto|minutos|min|m\b)', cmd)
+
+        m_min = re.search(r"(\d+)\s*(?:minuto|minutos|min|m\b)", cmd)
         if m_min:
             minutes = int(m_min.group(1))
-            
-        m_sec = re.search(r'(\d+)\s*(?:segundo|segundos|seg\b)', cmd)
+
+        m_sec = re.search(r"(\d+)\s*(?:segundo|segundos|seg\b)", cmd)
         if m_sec:
             seconds = int(m_sec.group(1))
-            
+
         if minutes == 0 and seconds == 0:
-            return "" # não conseguiu parsear o tempo
-            
+            return ""  # não conseguiu parsear o tempo
+
         total_sec = minutes * 60 + seconds
-        
+
         # Extrai nome do timer (ex: "para o macarrão")
         name = "Padrão"
-        m_name = re.search(r'para o (.+)|para a (.+)|do (.+)|da (.+)', cmd)
+        m_name = re.search(r"para o (.+)|para a (.+)|do (.+)|da (.+)", cmd)
         if m_name:
             # Pega o primeiro grupo não nulo
             for g in m_name.groups():
@@ -108,16 +109,19 @@ class TimerManager:
                     break
 
         self.add_timer(total_sec, name)
-        
+
         time_str = []
         if minutes > 0:
             time_str.append(f"{minutes} minutos")
         if seconds > 0:
             time_str.append(f"{seconds} segundos")
-        
+
         return f"Timer de {' e '.join(time_str)} iniciado para: {name}."
 
+
 _instance = None
+
+
 def get_timer() -> TimerManager:
     global _instance
     if _instance is None:

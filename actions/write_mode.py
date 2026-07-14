@@ -3,13 +3,11 @@
 actions/write_mode.py — Gerenciador de projetos de escrita criativa
 Sistema de projetos com fichas de personagem e memória de universo ficcional
 """
-import json
-import re
-import uuid
-from pathlib import Path
-from datetime import datetime
-from typing import Optional
 
+import json
+import uuid
+from datetime import datetime
+from pathlib import Path
 
 DATA_DIR = Path(__file__).parent.parent / "data"
 PROJECTS_FILE = DATA_DIR / "write_projects.json"
@@ -22,9 +20,9 @@ class CharacterSheet:
     def __init__(self, name: str, age: int = 0, voice: str = "", traits: str = "", context: str = ""):
         self.name = name
         self.age = age
-        self.voice = voice        # Como o personagem fala (ex: "direto, curto, usa gírias")
-        self.traits = traits      # Traços de personalidade
-        self.context = context    # Contexto social/situação
+        self.voice = voice  # Como o personagem fala (ex: "direto, curto, usa gírias")
+        self.traits = traits  # Traços de personalidade
+        self.context = context  # Contexto social/situação
 
     def to_dict(self) -> dict:
         return {
@@ -77,11 +75,10 @@ class WriteProject:
         self.project_id = project_id
         self.title = title
         self.genre = genre
-        self.style = style        # adolescente, adulto, thriller, romance, neutro
+        self.style = style  # adolescente, adulto, thriller, romance, neutro
         self.text = text
         self.characters: list[CharacterSheet] = [
-            CharacterSheet.from_dict(c) if isinstance(c, dict) else c
-            for c in (characters or [])
+            CharacterSheet.from_dict(c) if isinstance(c, dict) else c for c in (characters or [])
         ]
         self.chapters: list[dict] = chapters or []
         self.created_at = created_at or datetime.now().isoformat()
@@ -126,12 +123,14 @@ class WriteProject:
         title = title or f"Capítulo {chapter_num}"
         marker = f"\n\n▸ {title.upper()}\n\n"
         self.text += marker
-        self.chapters.append({
-            "number": chapter_num,
-            "title": title,
-            "start_pos": len(self.text) - len(marker),
-            "created_at": datetime.now().isoformat(),
-        })
+        self.chapters.append(
+            {
+                "number": chapter_num,
+                "title": title,
+                "start_pos": len(self.text) - len(marker),
+                "created_at": datetime.now().isoformat(),
+            }
+        )
         self.updated_at = datetime.now().isoformat()
         return chapter_num
 
@@ -145,7 +144,7 @@ class WriteProject:
             return self.text
         # Pega o início e o final para dar contexto geral + contexto recente
         start = self.text[:1000]
-        end = self.text[-(max_chars - 1000):]
+        end = self.text[-(max_chars - 1000) :]
         return f"{start}\n\n[...]\n\n{end}"
 
 
@@ -170,10 +169,7 @@ class WriteModeManager:
         try:
             PROJECTS_FILE.parent.mkdir(parents=True, exist_ok=True)
             data = {"projects": [p.to_dict() for p in self._projects.values()]}
-            PROJECTS_FILE.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8"
-            )
+            PROJECTS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception as e:
             print(f"[WriteMode] Erro ao salvar projetos: {e}")
 
@@ -210,7 +206,7 @@ class WriteModeManager:
         self._save()
         return proj
 
-    def get_project(self, project_id: str) -> Optional[WriteProject]:
+    def get_project(self, project_id: str) -> WriteProject | None:
         return self._projects.get(project_id)
 
     def update_text(self, project_id: str, new_text: str) -> bool:
@@ -221,7 +217,7 @@ class WriteModeManager:
         self._save()
         return True
 
-    def add_chapter(self, project_id: str, title: str = "") -> Optional[dict]:
+    def add_chapter(self, project_id: str, title: str = "") -> dict | None:
         proj = self.get_project(project_id)
         if not proj:
             return None
@@ -254,6 +250,7 @@ class WriteModeManager:
         """Persiste um fato do universo ficcional no RAG vetorial."""
         try:
             from brain.memory_rag import MemoryRAG
+
             rag = MemoryRAG()
             rag.remember_story_fact(project_id=project_id, fact=fact, category=category)
         except Exception:
@@ -263,6 +260,7 @@ class WriteModeManager:
         """Recupera contexto do universo ficcional para o prompt."""
         try:
             from brain.memory_rag import MemoryRAG
+
             rag = MemoryRAG()
             return rag.recall_story_context(project_id=project_id, query=query)
         except Exception:
@@ -271,6 +269,7 @@ class WriteModeManager:
 
 # Singleton
 _write_mode_instance = None
+
 
 def get_write_mode() -> WriteModeManager:
     global _write_mode_instance

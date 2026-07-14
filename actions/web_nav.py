@@ -8,6 +8,7 @@ Prioridade para resultados de busca:
   3. BrowserAgent Playwright (DOM real)
   4. OCR (último recurso — feito em executor._resolve_click)
 """
+
 from __future__ import annotations
 
 import re
@@ -15,13 +16,25 @@ import shutil
 import subprocess
 import time
 import unicodedata
-from typing import Optional
 from urllib.parse import quote, unquote
 
 _ORDINALS = {
-    "primeiro": 0, "primeira": 0, "1o": 0, "1a": 0, "1º": 0, "1ª": 0,
-    "segundo": 1, "segunda": 1, "2o": 1, "2a": 1, "2º": 1, "2ª": 1,
-    "terceiro": 2, "terceira": 2, "3o": 2, "3º": 2,
+    "primeiro": 0,
+    "primeira": 0,
+    "1o": 0,
+    "1a": 0,
+    "1º": 0,
+    "1ª": 0,
+    "segundo": 1,
+    "segunda": 1,
+    "2o": 1,
+    "2a": 1,
+    "2º": 1,
+    "2ª": 1,
+    "terceiro": 2,
+    "terceira": 2,
+    "3o": 2,
+    "3º": 2,
 }
 
 
@@ -54,7 +67,7 @@ def is_web_result_click(text: str) -> bool:
     return False
 
 
-def fetch_first_result_url(query: str, index: int = 0) -> Optional[str]:
+def fetch_first_result_url(query: str, index: int = 0) -> str | None:
     """Obtém URL do N-ésimo resultado orgânico (DuckDuckGo HTML → fallback Jina/Google)."""
     if not query or not query.strip():
         return None
@@ -70,7 +83,7 @@ def fetch_first_result_url(query: str, index: int = 0) -> Optional[str]:
 
 def _fetch_ddg_result_urls(query: str) -> list[str]:
     import urllib.request
-    from urllib.parse import quote, unquote
+    from urllib.parse import quote
 
     try:
         url = f"https://html.duckduckgo.com/html/?q={quote(query.strip())}"
@@ -103,8 +116,11 @@ def _fetch_google_jina_urls(query: str) -> list[str]:
         return []
 
     skip_domains = (
-        "google.com", "googleusercontent", "gstatic.com",
-        "accounts.google", "support.google",
+        "google.com",
+        "googleusercontent",
+        "gstatic.com",
+        "accounts.google",
+        "support.google",
     )
     urls: list[str] = []
     for m in re.finditer(r"https?://[^\s\)\]\"'<>]+", content):
@@ -142,7 +158,7 @@ def click_via_keyboard(n: int = 0) -> dict:
         return {"success": False, "message": f"FALHOU: teclado: {e}"}
 
 
-def click_via_browser_agent(task: str, executor) -> Optional[dict]:
+def click_via_browser_agent(task: str, executor) -> dict | None:
     """Playwright + visão — DOM real, não OCR da tela inteira."""
     try:
         agent = executor.browser_agent
@@ -158,7 +174,7 @@ def try_click_web_result(
     text: str,
     executor,
     search_query: str = "",
-) -> Optional[dict]:
+) -> dict | None:
     """
     Tenta abrir/clicar resultado de busca sem OCR.
     Retorna dict de resultado ou None para fallback.
@@ -193,10 +209,7 @@ def try_click_web_result(
         f"(link do título, não anúncio). Use target nth-resultado:{n + 1} se necessário."
     )
     if query:
-        task = (
-            f"Vá para https://www.google.com/search?q={quote(query)} e clique no "
-            f"{n + 1}º resultado orgânico."
-        )
+        task = f"Vá para https://www.google.com/search?q={quote(query)} e clique no {n + 1}º resultado orgânico."
     ba = click_via_browser_agent(task, executor)
     if ba and ba.get("success"):
         return ba

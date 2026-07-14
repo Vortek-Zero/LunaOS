@@ -3,34 +3,107 @@
 actions/system_tools.py — Ferramentas de diagnóstico e comandos do sistema operacional.
 Fornece informações de hardware (CPU, RAM, Disco) e permite executar comandos bash de forma controlada.
 """
-import subprocess
-import shutil
+
 import os
 import shlex
+import shutil
+import subprocess
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Any
 
 import psutil
 
 # Substrings bloqueadas para prevenir comandos destrutivos acidentais ou maliciosos
 BANNED_SUBSTRINGS = [
-    "rm -rf", "rm -r", "sudo rm", "mkfs", "dd if=",
-    "shutdown", "reboot", "halt", "poweroff",
-    ":(){:|:&};:", "chmod 777", "chown -R",
-    "curl | sh", "wget | sh", "bash <(",     "init 0", "init 6"
+    "rm -rf",
+    "rm -r",
+    "sudo rm",
+    "mkfs",
+    "dd if=",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    ":(){:|:&};:",
+    "chmod 777",
+    "chown -R",
+    "curl | sh",
+    "wget | sh",
+    "bash <(",
+    "init 0",
+    "init 6",
 ]
 
 COMMAND_WHITELIST = [
-    "echo", "ls", "cat", "pwd", "whoami", "date", "which", "python3", "python",
-    "pip", "pip3", "git", "node", "npm", "npx", "cargo", "rustc", "gcc", "g++",
-    "make", "cmake", "docker", "docker-compose", "ffmpeg", "wget", "curl",
-    "unzip", "tar", "gzip", "zip", "head", "tail", "sort", "grep", "wc",
-    "mkdir", "cp", "mv", "touch", "chmod", "chown", "find", "du", "df",
-    "ps", "top", "htop", "kill", "pkill", "systemctl", "journalctl",
-    "brightnessctl", "playerctl", "nmcli", "ip", "notify-send",
-    "import", "grim", "scrot", "gnome-screenshot", "wmctrl", "xdpyinfo",
-    "xdg-open", "xdotool", "xprop", "xrandr", "xset",
+    "echo",
+    "ls",
+    "cat",
+    "pwd",
+    "whoami",
+    "date",
+    "which",
+    "python3",
+    "python",
+    "pip",
+    "pip3",
+    "git",
+    "node",
+    "npm",
+    "npx",
+    "cargo",
+    "rustc",
+    "gcc",
+    "g++",
+    "make",
+    "cmake",
+    "docker",
+    "docker-compose",
+    "ffmpeg",
+    "wget",
+    "curl",
+    "unzip",
+    "tar",
+    "gzip",
+    "zip",
+    "head",
+    "tail",
+    "sort",
+    "grep",
+    "wc",
+    "mkdir",
+    "cp",
+    "mv",
+    "touch",
+    "chmod",
+    "chown",
+    "find",
+    "du",
+    "df",
+    "ps",
+    "top",
+    "htop",
+    "kill",
+    "pkill",
+    "systemctl",
+    "journalctl",
+    "brightnessctl",
+    "playerctl",
+    "nmcli",
+    "ip",
+    "notify-send",
+    "import",
+    "grim",
+    "scrot",
+    "gnome-screenshot",
+    "wmctrl",
+    "xdpyinfo",
+    "xdg-open",
+    "xdotool",
+    "xprop",
+    "xrandr",
+    "xset",
 ]
+
 
 class SystemTools:
     """Ferramentas de sistema local para a Luna."""
@@ -38,7 +111,7 @@ class SystemTools:
     def __init__(self):
         pass
 
-    def get_system_status(self) -> Dict[str, Any]:
+    def get_system_status(self) -> dict[str, Any]:
         """
         Retorna informações detalhadas sobre o uso de CPU, Memória RAM e Disco.
         """
@@ -46,41 +119,37 @@ class SystemTools:
             # CPU
             cpu_percent = psutil.cpu_percent(interval=0.5)
             cpu_count = psutil.cpu_count(logical=True)
-            
+
             # RAM
             mem = psutil.virtual_memory()
-            ram_total_gb = round(mem.total / (1024 ** 3), 2)
-            ram_used_gb = round(mem.used / (1024 ** 3), 2)
+            ram_total_gb = round(mem.total / (1024**3), 2)
+            ram_used_gb = round(mem.used / (1024**3), 2)
             ram_percent = mem.percent
-            
+
             # Disco
             usage = shutil.disk_usage("/")
-            disk_total_gb = round(usage.total / (1024 ** 3), 2)
-            disk_used_gb = round(usage.used / (1024 ** 3), 2)
-            disk_free_gb = round(usage.free / (1024 ** 3), 2)
+            disk_total_gb = round(usage.total / (1024**3), 2)
+            disk_used_gb = round(usage.used / (1024**3), 2)
+            disk_free_gb = round(usage.free / (1024**3), 2)
             disk_percent = round((usage.used / usage.total) * 100, 2)
-            
+
             # Load Average (Linux)
             load1, load5, load15 = os.getloadavg()
-            
+
             return {
                 "success": True,
                 "cpu": {
                     "usage_percent": cpu_percent,
                     "cores": cpu_count,
-                    "load_avg": [round(load1, 2), round(load5, 2), round(load15, 2)]
+                    "load_avg": [round(load1, 2), round(load5, 2), round(load15, 2)],
                 },
-                "ram": {
-                    "total_gb": ram_total_gb,
-                    "used_gb": ram_used_gb,
-                    "usage_percent": ram_percent
-                },
+                "ram": {"total_gb": ram_total_gb, "used_gb": ram_used_gb, "usage_percent": ram_percent},
                 "disk": {
                     "total_gb": disk_total_gb,
                     "used_gb": disk_used_gb,
                     "free_gb": disk_free_gb,
-                    "usage_percent": disk_percent
-                }
+                    "usage_percent": disk_percent,
+                },
             }
         except Exception as e:
             return {"success": False, "message": f"Erro ao coletar status do sistema: {str(e)}"}
@@ -91,28 +160,28 @@ class SystemTools:
         """
         try:
             processes = []
-            for proc in psutil.process_iter(['pid', 'name', 'cpu_percent', 'memory_percent']):
+            for proc in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent"]):
                 try:
                     # Previne falhas se o processo sumir durante a iteração
                     info = proc.info
-                    if info['cpu_percent'] is not None and info['memory_percent'] is not None:
+                    if info["cpu_percent"] is not None and info["memory_percent"] is not None:
                         processes.append(info)
                 except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
                     pass
-            
+
             # Ordena por uso de CPU descrescente
-            top_cpu = sorted(processes, key=lambda x: x['cpu_percent'], reverse=True)[:limit]
-            
+            top_cpu = sorted(processes, key=lambda x: x["cpu_percent"], reverse=True)[:limit]
+
             result_lines = ["PID | Nome | CPU % | Memória %"]
             result_lines.append("-" * 40)
             for p in top_cpu:
                 result_lines.append(f"{p['pid']} | {p['name']} | {p['cpu_percent']:.1f}% | {p['memory_percent']:.1f}%")
-                
+
             return "\n".join(result_lines)
         except Exception as e:
             return f"FALHOU: Erro ao listar processos: {str(e)}"
 
-    def _validate_command(self, command: str) -> Optional[str]:
+    def _validate_command(self, command: str) -> str | None:
         cmd_clean = command.strip()
         if not cmd_clean:
             return "FALHOU: comando vazio."
@@ -123,7 +192,6 @@ class SystemTools:
         return None
 
     def _run_command_safe(self, command: str) -> str:
-        import shlex
         parts = shlex.split(command)
         if not parts:
             return "FALHOU: Comando vazio."
@@ -163,6 +231,7 @@ class SystemTools:
 
         if visible:
             from actions.gnome import open_terminal_zsh
+
             return open_terminal_zsh(command, title="Luna")
 
         return self._run_command_safe(command)
@@ -184,7 +253,11 @@ class SystemTools:
                     if name.lower() in proc.info["name"].lower():
                         proc.terminate()
                         killed += 1
-                return f"{killed} processo(s) '{name}' encerrado(s)." if killed else f"Nenhum processo '{name}' encontrado."
+                return (
+                    f"{killed} processo(s) '{name}' encerrado(s)."
+                    if killed
+                    else f"Nenhum processo '{name}' encontrado."
+                )
             return "FALHOU: informe pid ou name."
         except psutil.NoSuchProcess:
             return f"FALHOU: PID {pid} não existe."
@@ -221,16 +294,19 @@ class SystemTools:
 
     def take_screenshot(self, path: str = "") -> str:
         from datetime import datetime
+
         dest = path or str(Path.home() / "Pictures" / f"luna_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
         dest = str(Path(dest).expanduser())
         Path(dest).parent.mkdir(parents=True, exist_ok=True)
 
         # Preferência: mss (vision) — funciona em X11 e Wayland
         try:
-            from vision.screen import get_vision, SCREENSHOT_PATH
+            from vision.screen import SCREENSHOT_PATH, get_vision
+
             vision = get_vision()
             if vision.capture():
                 import shutil as _sh
+
                 _sh.copy2(SCREENSHOT_PATH, dest)
                 return f"Screenshot salvo: {dest}"
         except Exception:
@@ -253,6 +329,7 @@ class SystemTools:
 
 # Singleton helper
 _system_tools_instance = None
+
 
 def get_system_tools() -> SystemTools:
     global _system_tools_instance

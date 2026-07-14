@@ -3,15 +3,17 @@
 brain/memory_rag.py — Memória de longo prazo via ChromaDB
 Coleções: luna_memory (fatos do usuário) + write_universe (fatos ficcionais)
 """
-import os
-import chromadb
-from pathlib import Path
-import urllib.request
+
 import json
 import time
+import urllib.request
+from pathlib import Path
+
+import chromadb
 
 BASE_DIR = Path(__file__).parent.parent
 DB_DIR = BASE_DIR / "brain" / "chroma_db"
+
 
 class MemoryRAG:
     """Sistema de Memória de Longo Prazo via RAG e embeddings locais."""
@@ -23,7 +25,9 @@ class MemoryRAG:
             self.write_collection = self.client.get_or_create_collection(name="write_universe")
             self.home_collection = self.client.get_or_create_collection(name="home_info")
             self.enabled = True
-            print(f"[MemoryRAG] ✓ Banco Vetorial ChromaDB iniciado (Memórias: {self.collection.count()}, Casa: {self.home_collection.count()}).")
+            print(
+                f"[MemoryRAG] ✓ Banco Vetorial ChromaDB iniciado (Memórias: {self.collection.count()}, Casa: {self.home_collection.count()})."
+            )
         except Exception as e:
             print(f"[MemoryRAG] ⚠ Erro ao iniciar ChromaDB: {e}")
             self.enabled = False
@@ -33,12 +37,9 @@ class MemoryRAG:
         try:
             req = urllib.request.Request(
                 "http://localhost:11434/api/embeddings",
-                data=json.dumps({
-                    "model": "nomic-embed-text",
-                    "prompt": text
-                }).encode("utf-8"),
+                data=json.dumps({"model": "nomic-embed-text", "prompt": text}).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
-                method="POST"
+                method="POST",
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read().decode())
@@ -74,6 +75,7 @@ class MemoryRAG:
         if not self.enabled or not text.strip():
             return
         import uuid
+
         emb = self._get_embedding(text)
         timestamp = time.time()
         doc_id = str(uuid.uuid4())
@@ -83,14 +85,12 @@ class MemoryRAG:
                     documents=[text],
                     embeddings=[emb],
                     metadatas=[{"source": source, "timestamp": timestamp}],
-                    ids=[doc_id]
+                    ids=[doc_id],
                 )
             else:
                 # Salva sem embedding (ChromaDB usa busca por keywords)
                 self.collection.add(
-                    documents=[text],
-                    metadatas=[{"source": source, "timestamp": timestamp}],
-                    ids=[doc_id]
+                    documents=[text], metadatas=[{"source": source, "timestamp": timestamp}], ids=[doc_id]
                 )
         except Exception as e:
             print(f"[MemoryRAG] Erro ao salvar memória: {e}")
@@ -100,18 +100,15 @@ class MemoryRAG:
         if not self.enabled or not fact.strip():
             return
         import uuid
+
         emb = self._get_embedding(fact)
         doc_id = str(uuid.uuid4())
         try:
             meta = {"project_id": project_id, "category": category, "timestamp": time.time()}
             if emb:
-                self.write_collection.add(
-                    documents=[fact], embeddings=[emb], metadatas=[meta], ids=[doc_id]
-                )
+                self.write_collection.add(documents=[fact], embeddings=[emb], metadatas=[meta], ids=[doc_id])
             else:
-                self.write_collection.add(
-                    documents=[fact], metadatas=[meta], ids=[doc_id]
-                )
+                self.write_collection.add(documents=[fact], metadatas=[meta], ids=[doc_id])
         except Exception as e:
             print(f"[MemoryRAG] Erro ao salvar fato de história: {e}")
 
@@ -123,8 +120,7 @@ class MemoryRAG:
         try:
             if emb:
                 results = self.collection.query(
-                    query_embeddings=[emb],
-                    n_results=min(n_results, self.collection.count())
+                    query_embeddings=[emb], n_results=min(n_results, self.collection.count())
                 )
                 docs = results.get("documents", [[]])[0]
             else:
@@ -144,9 +140,7 @@ class MemoryRAG:
             where = {"project_id": project_id}
             if emb:
                 results = self.write_collection.query(
-                    query_embeddings=[emb],
-                    n_results=min(n_results, self.write_collection.count()),
-                    where=where
+                    query_embeddings=[emb], n_results=min(n_results, self.write_collection.count()), where=where
                 )
                 docs = results.get("documents", [[]])[0]
             else:
@@ -163,18 +157,15 @@ class MemoryRAG:
         if not self.enabled or not text.strip():
             return "FALHOU: RAG desabilitado ou texto vazio."
         import uuid
+
         emb = self._get_embedding(text)
         doc_id = str(uuid.uuid4())
         try:
             meta = {"category": category, "timestamp": time.time()}
             if emb:
-                self.home_collection.add(
-                    documents=[text], embeddings=[emb], metadatas=[meta], ids=[doc_id]
-                )
+                self.home_collection.add(documents=[text], embeddings=[emb], metadatas=[meta], ids=[doc_id])
             else:
-                self.home_collection.add(
-                    documents=[text], metadatas=[meta], ids=[doc_id]
-                )
+                self.home_collection.add(documents=[text], metadatas=[meta], ids=[doc_id])
             return f"✓ Informação sobre a casa registrada: '{text}'"
         except Exception as e:
             return f"FALHOU: Erro ao salvar informação da casa: {e}"
@@ -187,11 +178,10 @@ class MemoryRAG:
             self.client.delete_collection(name="luna_memory")
             self.client.delete_collection(name="write_universe")
             self.client.delete_collection(name="home_info")
-            
+
             self.collection = self.client.get_or_create_collection(name="luna_memory")
             self.write_collection = self.client.get_or_create_collection(name="write_universe")
             self.home_collection = self.client.get_or_create_collection(name="home_info")
             print("[MemoryRAG] ✓ Memória RAG resetada.")
         except Exception as e:
             print(f"[MemoryRAG] Erro ao resetar: {e}")
-

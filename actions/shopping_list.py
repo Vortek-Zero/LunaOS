@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import json
-import os
 import re
-from pathlib import Path
+
 from config import DATA_DIR
 from voice.tts import get_tts
 
 SHOPPING_LIST_FILE = DATA_DIR / "shopping_list.json"
+
 
 class ShoppingListManager:
     def __init__(self):
@@ -16,7 +16,7 @@ class ShoppingListManager:
         if not self.file.exists():
             return {"items": []}
         try:
-            with open(self.file, "r", encoding="utf-8") as f:
+            with open(self.file, encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
             return {"items": []}
@@ -40,10 +40,7 @@ class ShoppingListManager:
 
         if "adiciona" in command or "adicionar" in command or "adicione" in command or "coloca" in command:
             # Extrai o item via regex para ser mais robusto
-            m = re.search(
-                r'(?:adiciona|adicione|adicionar|coloca)\s+(.+?)(?:\s+(?:na|à)\s+lista.*)?$',
-                command
-            )
+            m = re.search(r"(?:adiciona|adicione|adicionar|coloca)\s+(.+?)(?:\s+(?:na|à)\s+lista.*)?$", command)
             if m:
                 item = m.group(1).strip()
                 if item:
@@ -71,7 +68,7 @@ class ShoppingListManager:
         if "leia" in command or "ler" in command or "ver" in command or "quais" in command or "lista" in command:
             if not items:
                 return "A sua lista de compras está vazia."
-            
+
             items_str = ", ".join(items)
             if "leia" in command or "ler" in command or "fala" in command:
                 tts.speak(f"Na sua lista de compras tem: {items_str}", blocking=False)
@@ -79,7 +76,10 @@ class ShoppingListManager:
 
         return ""
 
+
 _instance = None
+
+
 def get_shopping_list() -> ShoppingListManager:
     global _instance
     if _instance is None:

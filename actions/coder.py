@@ -1,7 +1,7 @@
-import os
 from pathlib import Path
 
 from config import WORKSPACE_DIR
+
 
 class CoderManager:
     """Gerencia a criação e modificação de código pela IA na sua pasta de trabalho."""
@@ -15,7 +15,7 @@ class CoderManager:
         """Escreve código em um arquivo dentro do workspace."""
         if not filename:
             return {"success": False, "message": "Nome do arquivo não fornecido."}
-        
+
         # Sanitizar nome de arquivo para evitar path traversal
         clean_filename = Path(filename).name
         filepath = self.workspace / clean_filename
@@ -23,7 +23,10 @@ class CoderManager:
         try:
             filepath.write_text(content, encoding="utf-8")
             print(f"[CoderManager] Arquivo salvo em: {filepath}")
-            return {"success": True, "message": f"Código escrito com sucesso no arquivo '{clean_filename}' localizado na pasta 'Luna-programming'."}
+            return {
+                "success": True,
+                "message": f"Código escrito com sucesso no arquivo '{clean_filename}' localizado na pasta 'Luna-programming'.",
+            }
         except Exception as e:
             return {"success": False, "message": f"Erro ao escrever arquivo: {e}"}
 

@@ -1,0 +1,117 @@
+[project]
+name = "luna-os"
+version = "1.5.1"
+description = "Luna — Assistente pessoal autônoma com IA"
+requires-python = ">=3.13"
+dependencies = [
+    "edge-tts",
+    "sounddevice",
+    "soundfile",
+    "SpeechRecognition",
+    "pyaudio",
+    "requests",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "spotipy==2.24.0",
+    "crewai",
+    "browser-use",
+    "google-api-python-client",
+    "google-auth-httplib2",
+    "google-auth-oauthlib",
+    "google-generativeai",
+    "groq",
+    "mistralai",
+    "faster-whisper",
+    "pytesseract",
+    "Pillow",
+    "mss",
+    "langchain-groq",
+    "langchain-community",
+    "langchain-core",
+    "tinytuya",
+    "playwright",
+    "pyttsx3",
+    "openpyxl",
+    "pdfplumber",
+    "pandas",
+    "psutil",
+    "chromadb",
+    "python-dotenv",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "T20",  # flake8-print (print statements)
+]
+ignore = [
+    "E501",     # line too long (handled by formatter)
+    "B904",     # raise without from inside except
+    "SIM115",   # open without context manager
+    "T201",     # allow print (Luna uses print extensively)
+    "N802",     # allow lowercase function names
+    "N803",     # allow uppercase argument names
+    "N806",     # allow uppercase variable names
+    "N815",     # allow mixed-case variables
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*.py" = ["T201"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["luna_core", "config"]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+log_cli = false
+addopts = "-v --tb=short"
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+warn_no_return = false
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = [
+    "edge_tts.*",
+    "sounddevice.*",
+    "soundfile.*",
+    "SpeechRecognition.*",
+    "pyaudio.*",
+    "crewai.*",
+    "browser_use.*",
+    "faster_whisper.*",
+    "tinytuya.*",
+    "playwright.*",
+    "pyttsx3.*",
+    "chromadb.*",
+]
+ignore_missing_imports = true

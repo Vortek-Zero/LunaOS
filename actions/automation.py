@@ -4,13 +4,12 @@ actions/automation.py — Luna Automation
 Placeholder para automação residencial via ESP32.
 Em breve: controle de luzes, tomadas, sensores e alertas.
 """
-from typing import Optional
 
 
 class AutomationManager:
     """
     Gerenciador de automação residencial.
-    
+
     TODO (quando o ESP32 estiver integrado):
     - Conectar via MQTT ou HTTP ao ESP32
     - Controlar luzes, tomadas, ar-condicionado
@@ -22,7 +21,7 @@ class AutomationManager:
         self.connected = False
         self.devices: dict[str, dict] = {}
         # Placeholder: endereço do ESP32
-        self.esp32_host: Optional[str] = None
+        self.esp32_host: str | None = None
 
     def status(self) -> str:
         if not self.connected:
@@ -48,7 +47,7 @@ class AutomationManager:
         return list(self.devices.keys())
 
 
-_manager: Optional[AutomationManager] = None
+_manager: AutomationManager | None = None
 
 
 def get_automation() -> AutomationManager:

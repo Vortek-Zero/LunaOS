@@ -5,18 +5,18 @@ Otimizado para Ubuntu/X11 (GNOME).
 Fallbacks: Wayland/grim, pyautogui, ImageMagick.
 OCR via pytesseract (requer tesseract instalado no sistema).
 """
-import subprocess
-import shutil
+
 import os
-import re
+import shutil
+import subprocess
 from pathlib import Path
-from typing import Optional
 
 from error_codes import err
 
 try:
-    from PIL import Image
     import pytesseract
+    from PIL import Image
+
     HAS_OCR = True
 except ImportError:
     HAS_OCR = False
@@ -24,6 +24,7 @@ except ImportError:
 try:
     import mss
     import mss.tools
+
     HAS_MSS = True
 except ImportError:
     HAS_MSS = False
@@ -35,7 +36,7 @@ SCREENSHOT_PATH = str(TEMP_DIR / "luna_screen.png")
 
 class ScreenVision:
     def __init__(self):
-        self.last_screenshot: Optional[str] = None
+        self.last_screenshot: str | None = None
         self._is_wayland = os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
         self._report_capabilities()
 
@@ -87,8 +88,7 @@ class ScreenVision:
         if not shutil.which("gnome-screenshot"):
             return False
         try:
-            r = subprocess.run(["gnome-screenshot", "-f", SCREENSHOT_PATH],
-                               capture_output=True, timeout=5)
+            r = subprocess.run(["gnome-screenshot", "-f", SCREENSHOT_PATH], capture_output=True, timeout=5)
             if r.returncode == 0 and Path(SCREENSHOT_PATH).exists():
                 self.last_screenshot = SCREENSHOT_PATH
                 print("[Vision] ✓ Captura via gnome-screenshot")
@@ -101,8 +101,7 @@ class ScreenVision:
         if not shutil.which("scrot"):
             return False
         try:
-            r = subprocess.run(["scrot", "-z", "-o", SCREENSHOT_PATH],
-                               capture_output=True, timeout=5)
+            r = subprocess.run(["scrot", "-z", "-o", SCREENSHOT_PATH], capture_output=True, timeout=5)
             if r.returncode == 0 and Path(SCREENSHOT_PATH).exists():
                 self.last_screenshot = SCREENSHOT_PATH
                 print("[Vision] ✓ Captura via scrot")
@@ -115,8 +114,7 @@ class ScreenVision:
         if not shutil.which("grim"):
             return False
         try:
-            r = subprocess.run(["grim", SCREENSHOT_PATH],
-                               capture_output=True, timeout=5, env={**os.environ})
+            r = subprocess.run(["grim", SCREENSHOT_PATH], capture_output=True, timeout=5, env={**os.environ})
             if r.returncode == 0 and Path(SCREENSHOT_PATH).exists():
                 self.last_screenshot = SCREENSHOT_PATH
                 print("[Vision] ✓ Captura via grim (Wayland)")
@@ -128,6 +126,7 @@ class ScreenVision:
     def _capture_pyautogui(self) -> bool:
         try:
             import pyautogui
+
             pyautogui.screenshot(SCREENSHOT_PATH)
             if Path(SCREENSHOT_PATH).exists():
                 self.last_screenshot = SCREENSHOT_PATH
@@ -141,8 +140,7 @@ class ScreenVision:
         if not shutil.which("import"):
             return False
         try:
-            r = subprocess.run(["import", "-window", "root", SCREENSHOT_PATH],
-                               capture_output=True, timeout=5)
+            r = subprocess.run(["import", "-window", "root", SCREENSHOT_PATH], capture_output=True, timeout=5)
             if r.returncode == 0 and Path(SCREENSHOT_PATH).exists():
                 self.last_screenshot = SCREENSHOT_PATH
                 print("[Vision] ✓ Captura via ImageMagick import")
@@ -172,28 +170,30 @@ class ScreenVision:
             return []
         try:
             img = Image.open(self.last_screenshot)
-            data = pytesseract.image_to_data(img, lang="por+eng",
-                                             output_type=pytesseract.Output.DICT,
-                                             config="--psm 11 --oem 3")
+            data = pytesseract.image_to_data(
+                img, lang="por+eng", output_type=pytesseract.Output.DICT, config="--psm 11 --oem 3"
+            )
             elements = []
             for i, word in enumerate(data["text"]):
                 word = word.strip()
                 if not word or int(data["conf"][i]) < 30:
                     continue
-                elements.append({
-                    "text": word,
-                    "x": data["left"][i] + data["width"][i] // 2,
-                    "y": data["top"][i] + data["height"][i] // 2,
-                    "w": data["width"][i],
-                    "h": data["height"][i],
-                    "conf": int(data["conf"][i]),
-                })
+                elements.append(
+                    {
+                        "text": word,
+                        "x": data["left"][i] + data["width"][i] // 2,
+                        "y": data["top"][i] + data["height"][i] // 2,
+                        "w": data["width"][i],
+                        "h": data["height"][i],
+                        "conf": int(data["conf"][i]),
+                    }
+                )
             return elements
         except Exception as e:
             print(err("VIS_OCR_FAILED", f"get_elements: {e}"))
             return []
 
-    def find_element_by_text(self, search: str) -> Optional[dict]:
+    def find_element_by_text(self, search: str) -> dict | None:
         elements = self.get_elements_with_positions()
         if not elements:
             return None
@@ -217,26 +217,26 @@ class ScreenVision:
         """Janela ativa: xdotool (X11) → wmctrl → hyprctl (Wayland fallback)."""
         if shutil.which("xdotool"):
             try:
-                r = subprocess.run(["xdotool", "getactivewindow", "getwindowname"],
-                                   capture_output=True, text=True, timeout=3)
+                r = subprocess.run(
+                    ["xdotool", "getactivewindow", "getwindowname"], capture_output=True, text=True, timeout=3
+                )
                 if r.returncode == 0 and r.stdout.strip():
                     return r.stdout.strip()
             except Exception:
                 pass
         if shutil.which("wmctrl"):
             try:
-                r = subprocess.run(["wmctrl", "-a", ":ACTIVE:"],
-                                   capture_output=True, text=True, timeout=3)
+                r = subprocess.run(["wmctrl", "-a", ":ACTIVE:"], capture_output=True, text=True, timeout=3)
                 # wmctrl não retorna o nome diretamente, usa xprop como fallback
             except Exception:
                 pass
         # Wayland fallback
         if shutil.which("hyprctl"):
             try:
-                r = subprocess.run(["hyprctl", "activewindow", "-j"],
-                                   capture_output=True, text=True, timeout=3)
+                r = subprocess.run(["hyprctl", "activewindow", "-j"], capture_output=True, text=True, timeout=3)
                 if r.returncode == 0:
                     import json
+
                     data = json.loads(r.stdout)
                     return data.get("title", "") or data.get("class", "")
             except Exception:
@@ -276,14 +276,14 @@ class ScreenVision:
         if not shutil.which("xdotool"):
             return []
         try:
-            r = subprocess.run(["xdotool", "search", "--onlyvisible", "--name", ""],
-                               capture_output=True, text=True, timeout=3)
+            r = subprocess.run(
+                ["xdotool", "search", "--onlyvisible", "--name", ""], capture_output=True, text=True, timeout=3
+            )
             if r.returncode != 0:
                 return []
             names = []
             for wid in r.stdout.strip().split()[:10]:
-                r2 = subprocess.run(["xdotool", "getwindowname", wid],
-                                    capture_output=True, text=True, timeout=2)
+                r2 = subprocess.run(["xdotool", "getwindowname", wid], capture_output=True, text=True, timeout=2)
                 if r2.returncode == 0 and r2.stdout.strip():
                     names.append(r2.stdout.strip())
             return names
@@ -294,11 +294,11 @@ class ScreenVision:
         if not shutil.which("hyprctl"):
             return []
         try:
-            r = subprocess.run(["hyprctl", "clients", "-j"],
-                               capture_output=True, text=True, timeout=3)
+            r = subprocess.run(["hyprctl", "clients", "-j"], capture_output=True, text=True, timeout=3)
             if r.returncode != 0:
                 return []
             import json
+
             clients = json.loads(r.stdout)
             names = []
             for c in clients:
@@ -367,9 +367,7 @@ class ScreenVision:
                             {"type": "text", "text": user_prompt},
                             {
                                 "type": "image_url",
-                                "image_url": {
-                                    "url": f"data:image/png;base64,{encoded_string}"
-                                },
+                                "image_url": {"url": f"data:image/png;base64,{encoded_string}"},
                             },
                         ],
                     }
@@ -402,14 +400,17 @@ class ScreenVision:
         if GEMINI_API_KEY:
             try:
                 import google.generativeai as genai
+
                 genai.configure(api_key=GEMINI_API_KEY)
                 model = genai.GenerativeModel("gemini-2.0-flash")
                 with open(self.last_screenshot, "rb") as f:
                     img_bytes = f.read()
-                resp = model.generate_content([
-                    user_prompt,
-                    {"mime_type": "image/png", "data": img_bytes},
-                ])
+                resp = model.generate_content(
+                    [
+                        user_prompt,
+                        {"mime_type": "image/png", "data": img_bytes},
+                    ]
+                )
                 text = getattr(resp, "text", "") or ""
                 if text.strip():
                     print("[Vision] ✓ Gemini Vision")
@@ -437,13 +438,14 @@ class ScreenVision:
 
     def verify_action_result(self, action_desc: str, prev_window: str) -> str:
         import time
+
         time.sleep(0.4)
         current = self.get_active_window()
         if current and current != prev_window:
             return f"✓ Ação executada. Janela mudou para: {current}"
         return f"✓ Ação executada. Janela ativa: {current or prev_window}"
 
-    def get_screen_context_for_click(self, target_text: str) -> Optional[dict]:
+    def get_screen_context_for_click(self, target_text: str) -> dict | None:
         print(f"[Vision] Procurando '{target_text}' na tela...")
         if not self.capture():
             return None
@@ -456,7 +458,8 @@ class ScreenVision:
 
 
 # Singleton
-_vision_instance: Optional[ScreenVision] = None
+_vision_instance: ScreenVision | None = None
+
 
 def get_vision() -> ScreenVision:
     global _vision_instance
@@ -472,7 +475,7 @@ if __name__ == "__main__":
     print("[2] Janelas abertas:")
     for w in v.list_windows():
         print(f"    - {w}")
-    print(f"\n[3] Capturando tela...")
+    print("\n[3] Capturando tela...")
     ok = v.capture()
     print(f"    {'✓ OK' if ok else '✗ Falhou'}\n")
     if ok:

@@ -3,15 +3,17 @@
 actions/document_services.py — Manipulação de documentos, planilhas e arquivos.
 Suporta criação de planilhas Excel, exportação de PDF via Google Drive, e leitura/escrita de arquivos locais.
 """
-import os
-import io
+
 import csv
+import io
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Any
 
 import pandas as pd
+
 from actions.google_services import get_google
 from config import WORKSPACE_DIR
+
 
 class DocumentServices:
     """Serviços de documentos locais e integração com Google Drive."""
@@ -31,7 +33,7 @@ class DocumentServices:
             raise PermissionError("Acesso não autorizado fora do workspace de programação ou diretório home.")
         return resolved
 
-    def create_excel(self, data: List[Dict[str, Any]], filename: str) -> str:
+    def create_excel(self, data: list[dict[str, Any]], filename: str) -> str:
         """
         Cria uma planilha Excel (.xlsx) a partir de uma lista de dicionários.
         Salva no workspace Luna-programming.
@@ -40,11 +42,11 @@ class DocumentServices:
             if not filename.endswith(".xlsx"):
                 filename += ".xlsx"
             path = self._resolve_path(filename)
-            
+
             # Converte dados para DataFrame do Pandas e salva via openpyxl
             df = pd.DataFrame(data)
-            df.to_excel(str(path), index=False, engine='openpyxl')
-            
+            df.to_excel(str(path), index=False, engine="openpyxl")
+
             return f"Planilha Excel criada com sucesso em: {path.name}"
         except Exception as e:
             return f"FALHOU: Erro ao criar planilha Excel: {str(e)}"
@@ -57,39 +59,37 @@ class DocumentServices:
         g = get_google()
         if not g or not g.available:
             return "FALHOU: Google API não está disponível para gerar o PDF."
-        
+
         try:
             # 1. Cria um Google Doc temporário a partir do conteúdo de texto
-            from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+            from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
+
             drive_service = g._drive()
-            
-            file_metadata = {
-                'name': title,
-                'mimeType': 'application/vnd.google-apps.document'
-            }
-            media = MediaIoBaseUpload(io.BytesIO(content.encode('utf-8')), mimetype='text/plain', resumable=True)
-            doc = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-            doc_id = doc.get('id')
-            
+
+            file_metadata = {"name": title, "mimeType": "application/vnd.google-apps.document"}
+            media = MediaIoBaseUpload(io.BytesIO(content.encode("utf-8")), mimetype="text/plain", resumable=True)
+            doc = drive_service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+            doc_id = doc.get("id")
+
             # 2. Exporta o Google Doc como PDF em memória
-            request = drive_service.files().export_media(fileId=doc_id, mimeType='application/pdf')
+            request = drive_service.files().export_media(fileId=doc_id, mimeType="application/pdf")
             pdf_buffer = io.BytesIO()
             downloader = MediaIoBaseDownload(pdf_buffer, request)
             done = False
             while not done:
                 _, done = downloader.next_chunk()
-            
+
             # 3. Salva o PDF localmente no workspace
             pdf_filename = f"{title.replace(' ', '_')}.pdf"
             pdf_path = self._resolve_path(pdf_filename)
             pdf_path.write_bytes(pdf_buffer.getvalue())
-            
+
             # 4. Remove o Google Doc temporário do Drive
             drive_service.files().delete(fileId=doc_id).execute()
-            
+
             # 5. Sobe o arquivo PDF final de volta para o Drive para obter o link público
             res_upload = g.google_drive_upload(str(pdf_path))
-            
+
             return f"PDF '{pdf_filename}' criado e salvo localmente. {res_upload}"
         except Exception as e:
             return f"FALHOU: Erro ao gerar o PDF via Google Drive: {str(e)}"
@@ -102,34 +102,35 @@ class DocumentServices:
             path = self._resolve_path(filepath_or_name)
             if not path.exists():
                 return f"FALHOU: Arquivo não existe: {filepath_or_name}"
-            
+
             ext = path.suffix.lower()
-            
+
             if ext == ".txt":
                 return path.read_text(encoding="utf-8")
-                
+
             elif ext == ".csv":
-                with open(path, mode='r', encoding='utf-8') as f:
+                with open(path, encoding="utf-8") as f:
                     reader = csv.reader(f)
                     lines = [",".join(row) for row in reader]
                 return "\n".join(lines[:100])  # limita a 100 linhas para evitar estouro de contexto
-                
+
             elif ext == ".xlsx":
-                df = pd.read_excel(str(path), engine='openpyxl')
+                df = pd.read_excel(str(path), engine="openpyxl")
                 return df.to_string(index=False)
-                
+
             elif ext == ".pdf":
                 import pdfplumber
+
                 text_content = []
                 with pdfplumber.open(str(path)) as pdf:
                     for i, page in enumerate(pdf.pages):
                         text = page.extract_text()
                         if text:
-                            text_content.append(f"--- Página {i+1} ---\n{text}")
+                            text_content.append(f"--- Página {i + 1} ---\n{text}")
                 if not text_content:
                     return "FALHOU: Não foi possível extrair texto do PDF (pode ser escaneado/imagem)."
                 return "\n\n".join(text_content)
-                
+
             else:
                 return f"FALHOU: Extensão de arquivo não suportada para leitura direta: {ext}"
         except Exception as e:
@@ -150,6 +151,7 @@ class DocumentServices:
 
 # Singleton helper
 _doc_services_instance = None
+
 
 def get_doc_services() -> DocumentServices:
     global _doc_services_instance

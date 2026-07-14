@@ -2,11 +2,11 @@
 """
 actions/weather.py — Clima via wttr.in (sem chave de API).
 """
-import re
-import urllib.request
-import urllib.parse
+
 import json
-from typing import Optional
+import re
+import urllib.parse
+import urllib.request
 
 
 class WeatherManager:
@@ -16,6 +16,7 @@ class WeatherManager:
     def get_weather(self, city: str = "") -> str:
         """Busca clima atual. Se city vazio, usa localização automática via IP."""
         import time
+
         cache_key = city or "_auto"
         cached = self._cache.get(cache_key)
         if cached and time.time() - cached["ts"] < 1800:  # 30min TTL
@@ -66,19 +67,22 @@ class WeatherManager:
         except Exception:
             return "Não consegui interpretar os dados do clima."
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower()
         if not any(w in tl for w in ["tempo", "clima", "temperatura", "chuva", "previsão", "previsao", "vai chover"]):
             return None
 
         # Extrai cidade — busca no texto original para preservar maiúsculas
-        m = re.search(r'(?:em|de|para|no|na)\s+([A-ZÀ-Úa-zà-ú][a-zà-ú]+(?:\s+[A-ZÀ-Úa-zà-ú][a-zà-ú]+)*)', text, re.IGNORECASE)
+        m = re.search(
+            r"(?:em|de|para|no|na)\s+([A-ZÀ-Úa-zà-ú][a-zà-ú]+(?:\s+[A-ZÀ-Úa-zà-ú][a-zà-ú]+)*)", text, re.IGNORECASE
+        )
         city = m.group(1).strip() if m else ""
         return self.get_weather(city)
 
 
 # Singleton
-_weather_instance: Optional[WeatherManager] = None
+_weather_instance: WeatherManager | None = None
+
 
 def get_weather() -> WeatherManager:
     global _weather_instance

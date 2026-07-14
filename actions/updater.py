@@ -1,15 +1,14 @@
 import json
-import subprocess
 import shutil
+import subprocess
 import threading
-from urllib.request import urlopen, Request
 from urllib.error import URLError
-from typing import Optional, Tuple
+from urllib.request import Request, urlopen
 
-from version import __version__, __repo__
+from version import __repo__, __version__
 
 
-def _parse_version(v: str) -> Tuple[int, ...]:
+def _parse_version(v: str) -> tuple[int, ...]:
     v = v.lstrip("vV")
     parts = []
     for p in v.split("."):
@@ -20,7 +19,7 @@ def _parse_version(v: str) -> Tuple[int, ...]:
     return tuple(parts)
 
 
-def get_latest_github_version() -> Optional[str]:
+def get_latest_github_version() -> str | None:
     url = f"https://api.github.com/repos/{__repo__}/releases/latest"
     try:
         req = Request(url, headers={"User-Agent": "LunaOS/updater", "Accept": "application/vnd.github.v3+json"})
@@ -40,7 +39,7 @@ def get_latest_github_version() -> Optional[str]:
     return None
 
 
-def check_for_update() -> Optional[str]:
+def check_for_update() -> str | None:
     latest_tag = get_latest_github_version()
     if latest_tag is None:
         return None
@@ -58,10 +57,7 @@ def notify_update(new_version: str) -> None:
     message = f"Versão {new_version} disponível (atual: {__version__}).\nGostaria de atualizar?"
     if shutil.which("notify-send"):
         try:
-            subprocess.run(
-                ["notify-send", "-u", "normal", "-t", "10000", title, message],
-                check=True, timeout=5
-            )
+            subprocess.run(["notify-send", "-u", "normal", "-t", "10000", title, message], check=True, timeout=5)
         except subprocess.SubprocessError:
             pass
     print(f"\n[Updater] {title}")
@@ -86,6 +82,7 @@ def test_notification() -> str:
 
 if __name__ == "__main__":
     import sys
+
     if "--test" in sys.argv:
         print(test_notification())
     else:

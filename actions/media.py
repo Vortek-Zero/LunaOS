@@ -3,10 +3,10 @@
 actions/media.py — Controle de mídia via playerctl + pactl/amixer.
 Controla qualquer player MPRIS (Spotify, VLC, navegadores, etc.)
 """
+
 import re
 import shutil
 import subprocess
-from typing import Optional
 
 
 def _run(cmd: list[str], timeout: int = 3) -> tuple[int, str]:
@@ -108,7 +108,7 @@ class MediaManager:
             return f"🔊 Volume aumentado +{step}%." if code == 0 else "Erro."
         if self._has_amixer:
             code, _ = _run(["amixer", "-q", "sset", "Master", f"{step}%+"])
-            return f"🔊 Volume aumentado." if code == 0 else "Erro."
+            return "🔊 Volume aumentado." if code == 0 else "Erro."
         return "Nenhuma ferramenta de volume disponível."
 
     def volume_down(self, step: int = 10) -> str:
@@ -117,7 +117,7 @@ class MediaManager:
             return f"🔉 Volume reduzido -{step}%." if code == 0 else "Erro."
         if self._has_amixer:
             code, _ = _run(["amixer", "-q", "sset", "Master", f"{step}%-"])
-            return f"🔉 Volume reduzido." if code == 0 else "Erro."
+            return "🔉 Volume reduzido." if code == 0 else "Erro."
         return "Nenhuma ferramenta de volume disponível."
 
     def mute(self) -> str:
@@ -128,19 +128,19 @@ class MediaManager:
 
     # ── Interface natural ──────────────────────────────────────
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower()
 
         # Volume com valor específico
-        m = re.search(r'volume\s+(?:para\s+)?(\d+)', tl)
+        m = re.search(r"volume\s+(?:para\s+)?(\d+)", tl)
         if m:
             return self.set_volume(int(m.group(1)))
 
         # Volume up/down com step
-        m = re.search(r'(?:aumenta|sobe)\s+(?:o\s+)?volume\s+(?:em\s+)?(\d+)', tl)
+        m = re.search(r"(?:aumenta|sobe)\s+(?:o\s+)?volume\s+(?:em\s+)?(\d+)", tl)
         if m:
             return self.volume_up(int(m.group(1)))
-        m = re.search(r'(?:diminui|baixa|reduz)\s+(?:o\s+)?volume\s+(?:em\s+)?(\d+)', tl)
+        m = re.search(r"(?:diminui|baixa|reduz)\s+(?:o\s+)?volume\s+(?:em\s+)?(\d+)", tl)
         if m:
             return self.volume_down(int(m.group(1)))
 
@@ -167,22 +167,35 @@ class MediaManager:
             self.loop_track()
             return self.play()
 
-        m_seek = re.search(r'(volta|avanca|avança)\s*(?:a\s+m[uú]sica\s+em\s+|o\s+tempo\s+em\s+|em\s+)?(\d+)\s*(segundo|minuto)', tl)
+        m_seek = re.search(
+            r"(volta|avanca|avança)\s*(?:a\s+m[uú]sica\s+em\s+|o\s+tempo\s+em\s+|em\s+)?(\d+)\s*(segundo|minuto)", tl
+        )
         if m_seek:
             direction, val, unit = m_seek.groups()
-            secs = int(val) * (60 if unit.startswith('minuto') else 1)
-            if direction == 'volta':
+            secs = int(val) * (60 if unit.startswith("minuto") else 1)
+            if direction == "volta":
                 secs = -secs
             return self.seek(secs)
-        if any(w in tl for w in ["que música", "que musica", "o que está tocando", "qual música",
-                                   "qual musica", "música atual", "musica atual"]):
+        if any(
+            w in tl
+            for w in [
+                "que música",
+                "que musica",
+                "o que está tocando",
+                "qual música",
+                "qual musica",
+                "música atual",
+                "musica atual",
+            ]
+        ):
             return self.now_playing()
 
         return None
 
 
 # Singleton
-_media_instance: Optional[MediaManager] = None
+_media_instance: MediaManager | None = None
+
 
 def get_media() -> MediaManager:
     global _media_instance
@@ -196,23 +209,26 @@ def get_media() -> MediaManager:
 import difflib
 
 _RADIOS: dict[str, str] = {
-    "metropolitana":  "https://ice.fabricahost.com.br/metropolitana985sp",
-    "jovem pan":      "https://8062.brasilstream.com.br/stream",
-    "band":           "https://stm28.xcast.com.br:11364/stream",
-    "mix":            "https://stream-29.zeno.fm/na3vpvn10qruv",
-    "antena 1":       "https://streamingcwsradio30.com:7093/;",
-    "transamérica":   "http://9595.brasilstream.com.br/stream",
-    "transamerica":   "http://9595.brasilstream.com.br/stream",
-    "cultura":        "https://stream.zeno.fm/clxflencimitv",
-    "cbn":            "http://209.126.124.126:8852/stream",
-    "globo":          "http://178.33.72.12/globorm64",
+    "metropolitana": "https://ice.fabricahost.com.br/metropolitana985sp",
+    "jovem pan": "https://8062.brasilstream.com.br/stream",
+    "band": "https://stm28.xcast.com.br:11364/stream",
+    "mix": "https://stream-29.zeno.fm/na3vpvn10qruv",
+    "antena 1": "https://streamingcwsradio30.com:7093/;",
+    "transamérica": "http://9595.brasilstream.com.br/stream",
+    "transamerica": "http://9595.brasilstream.com.br/stream",
+    "cultura": "https://stream.zeno.fm/clxflencimitv",
+    "cbn": "http://209.126.124.126:8852/stream",
+    "globo": "http://178.33.72.12/globorm64",
 }
 
 
-def _search_radio_url(name: str) -> Optional[str]:
+def _search_radio_url(name: str) -> str | None:
     """Busca URL de stream via radio-browser.info como fallback."""
     try:
-        import urllib.parse, urllib.request, json as _json
+        import json as _json
+        import urllib.parse
+        import urllib.request
+
         encoded = urllib.parse.quote(name)
         url = f"https://de1.api.radio-browser.info/json/stations/search?name={encoded}&countrycode=BR&limit=1"
         with urllib.request.urlopen(url, timeout=5) as r:
@@ -226,19 +242,18 @@ def _search_radio_url(name: str) -> Optional[str]:
 
 class RadioManager:
     def __init__(self):
-        self._proc: Optional[subprocess.Popen] = None
-        self._has_mpv  = bool(shutil.which("mpv"))
+        self._proc: subprocess.Popen | None = None
+        self._has_mpv = bool(shutil.which("mpv"))
         self._has_cvlc = bool(shutil.which("cvlc"))
 
     def _player_cmd(self, url: str) -> list[str]:
         if self._has_mpv:
-            return ["mpv", "--no-video", "--really-quiet",
-                    "--stream-lavf-o=reconnect=1", url]
+            return ["mpv", "--no-video", "--really-quiet", "--stream-lavf-o=reconnect=1", url]
         if self._has_cvlc:
             return ["cvlc", "--intf", "dummy", "--no-video", url]
         return []
 
-    def _find_radio(self, name: str) -> Optional[tuple[str, str]]:
+    def _find_radio(self, name: str) -> tuple[str, str] | None:
         name = name.lower().strip()
         if name in _RADIOS:
             return name, _RADIOS[name]
@@ -272,17 +287,18 @@ class RadioManager:
             self._proc = None
         return "📻 Rádio parada."
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower()
-        m = re.search(r'(?:toca|abre|coloca|liga|inicia|sintoniza)\s+(?:a\s+)?r[aá]dio\s+(.+)', tl)
+        m = re.search(r"(?:toca|abre|coloca|liga|inicia|sintoniza)\s+(?:a\s+)?r[aá]dio\s+(.+)", tl)
         if m:
             return self.play(m.group(1).strip())
-        if re.search(r'(?:para|fecha|desliga|para a)\s+(?:a\s+)?r[aá]dio', tl):
+        if re.search(r"(?:para|fecha|desliga|para a)\s+(?:a\s+)?r[aá]dio", tl):
             return self.stop()
         return None
 
 
-_radio_instance: Optional[RadioManager] = None
+_radio_instance: RadioManager | None = None
+
 
 def get_radio() -> RadioManager:
     global _radio_instance

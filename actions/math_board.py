@@ -3,22 +3,26 @@
 actions/math_board.py — Luna Math
 Lousa digital matemática: avalia expressões e pede ajuda à Luna.
 """
-import re
+
 import json
-from typing import Optional
+import re
 
 try:
-    from brain.llm import get_llm, MODELS
+    from brain.llm import MODELS, get_llm
 except ImportError:
-    from brain.llm import get_llm, MODELS
+    from brain.llm import MODELS, get_llm
 
 
 class MathBoard:
     """Avalia expressões matemáticas e explica via LLM."""
 
     _SAFE_NAMES = {
-        "abs": abs, "round": round, "min": min, "max": max,
-        "sum": sum, "pow": pow,
+        "abs": abs,
+        "round": round,
+        "min": min,
+        "max": max,
+        "sum": sum,
+        "pow": pow,
     }
 
     def __init__(self):
@@ -33,8 +37,15 @@ class MathBoard:
         # Normaliza: vírgula → ponto, × → *, ÷ → /
         expr = expression.replace(",", ".").replace("×", "*").replace("÷", "/").replace("^", "**")
         # Remove caracteres não permitidos
-        if re.search(r"[a-zA-Z_]", expr.replace("abs", "").replace("round", "")
-                     .replace("min", "").replace("max", "").replace("sum", "").replace("pow", "")):
+        if re.search(
+            r"[a-zA-Z_]",
+            expr.replace("abs", "")
+            .replace("round", "")
+            .replace("min", "")
+            .replace("max", "")
+            .replace("sum", "")
+            .replace("pow", ""),
+        ):
             return "Expressão inválida", False
         try:
             result = eval(expr, {"__builtins__": {}}, self._SAFE_NAMES)  # noqa: S307
@@ -82,7 +93,7 @@ class MathBoard:
         self.history.clear()
 
 
-_board: Optional[MathBoard] = None
+_board: MathBoard | None = None
 
 
 def get_math_board() -> MathBoard:

@@ -3,11 +3,12 @@
 brain/user_model.py — Modelo Interno do Usuário
 Rastreia dinamicamente conhecimentos, preferências, habilidades e fatos do usuário.
 """
+
 import json
 import logging
 import threading
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Any
 
 try:
     from config import PERSONALITY_FILE, USER_PROFILE_FILE
@@ -16,39 +17,34 @@ except ImportError:
 
 logger = logging.getLogger("luna.user_model")
 
+
 class UserModel:
     """
     Mantém o perfil dinâmico do usuário, adaptando as explicações
     e a postura da Luna de acordo com o nível de conhecimento, preferências e hábitos.
     """
+
     def __init__(self):
         self.file_path = Path(USER_PROFILE_FILE)
         self._lock = threading.Lock()
         self.profile = self._load()
 
-    def _load(self) -> Dict[str, Any]:
+    def _load(self) -> dict[str, Any]:
         default_profile = {
             "user_name": "Pera",
             "assistant_name": "Luna",
             "personality_mode": "atenciosa, feminina, amigável e solta",
             "preferences": [],
-            "skills": {
-                "python": "avançado",
-                "html/css": "avançado"
-            },
+            "skills": {"python": "avançado", "html/css": "avançado"},
             "hobbies": ["Programação", "IAs", "música", "robótica", "Histórias", "Ficção científica"],
             "habits": [],
             "notes": "Lembre-se sempre de ler o contexto de histórico antes de dar uma resposta. Se o modo conversa for iniciado, não procure executar aplicativos nem vasculhar a internet.",
-            "system_rules": {
-                "emotion_adaptation": True,
-                "forbid_robotic_tone": True,
-                "empathy_first": True
-            }
+            "system_rules": {"emotion_adaptation": True, "forbid_robotic_tone": True, "empathy_first": True},
         }
-        
+
         if not self.file_path.exists():
             return default_profile
-            
+
         try:
             data = json.loads(self.file_path.read_text(encoding="utf-8"))
             # Garante campos novos
@@ -70,10 +66,7 @@ class UserModel:
         with self._lock:
             try:
                 self.file_path.parent.mkdir(parents=True, exist_ok=True)
-                self.file_path.write_text(
-                    json.dumps(self.profile, ensure_ascii=False, indent=4), 
-                    encoding="utf-8"
-                )
+                self.file_path.write_text(json.dumps(self.profile, ensure_ascii=False, indent=4), encoding="utf-8")
             except Exception as e:
                 logger.error(f"Erro ao salvar user_profile.json: {e}")
 
@@ -96,11 +89,13 @@ class UserModel:
         Gera um update assíncrono analisando a entrada do usuário para descobrir novos fatos.
         Usa o LLM principal de forma rápida para extrair fatos de perfil.
         """
+
         def _async_extract():
             try:
                 from brain.llm import get_llm
+
                 llm = get_llm()
-                
+
                 prompt = f"""Analise a frase do usuário e extraia de forma extremamente objetiva novas informações sobre ele.
 Proprocione as informações APENAS se houver autodeclarações explícitas de preferências, conhecimentos/habilidades novas ou hábitos.
 
@@ -115,15 +110,16 @@ Responda APENAS um JSON com os campos que encontrar ou vazio {{}} se não houver
 }}"""
                 messages = [
                     {"role": "system", "content": "Você é um extrator de metadados JSON silencioso e preciso."},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ]
-                
+
                 raw = llm.generate(messages=messages, task_type="utility", model="main")
                 content = raw.get("message", {}).get("content", "") if isinstance(raw, dict) else (raw or "")
-                
+
                 # Limpa markdown e parseia
                 import re
-                m = re.search(r'(\{.*\})', str(content), re.DOTALL)
+
+                m = re.search(r"(\{.*\})", str(content), re.DOTALL)
                 if m:
                     extracted = json.loads(m.group(1))
                     if extracted:
@@ -157,11 +153,13 @@ Responda APENAS um JSON com os campos que encontrar ou vazio {{}} se não houver
             ctx += f"Hábitos: {habits_str}\n"
         if pref_str:
             ctx += f"Preferências:\n{pref_str}\n"
-            
+
         return ctx
 
+
 # Singleton
-_user_model_instance: Optional[UserModel] = None
+_user_model_instance: UserModel | None = None
+
 
 def get_user_model() -> UserModel:
     global _user_model_instance

@@ -3,11 +3,11 @@
 actions/filesystem.py — Acesso ao sistema de arquivos do usuário (Arch/home).
 Sem API keys — opera direto no disco local.
 """
+
+import fnmatch
 import os
 import shutil
-import fnmatch
 from pathlib import Path
-from typing import Optional
 
 try:
     from config import WORKSPACE_DIR
@@ -111,12 +111,7 @@ class FilesystemManager:
                 return f"FALHOU: não existe: {path}"
             st = target.stat()
             kind = "pasta" if target.is_dir() else "arquivo"
-            return (
-                f"{target}\n"
-                f"Tipo: {kind}\n"
-                f"Tamanho: {st.st_size} bytes\n"
-                f"Modificado: {st.st_mtime}"
-            )
+            return f"{target}\nTipo: {kind}\nTamanho: {st.st_size} bytes\nModificado: {st.st_mtime}"
         except Exception as e:
             return f"FALHOU: {e}"
 
@@ -147,7 +142,7 @@ class FilesystemManager:
             return f"FALHOU: {e}"
 
 
-_fs_instance: Optional[FilesystemManager] = None
+_fs_instance: FilesystemManager | None = None
 
 
 def get_filesystem() -> FilesystemManager:

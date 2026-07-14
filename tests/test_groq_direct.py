@@ -1,5 +1,7 @@
 import os
+
 from groq import Groq
+
 from brain.agent_tools import LUNA_TOOLS
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -12,7 +14,7 @@ try:
         max_tokens=1500,
         top_p=0.95,
         tools=LUNA_TOOLS,
-        tool_choice="auto"
+        tool_choice="auto",
     )
     print(completion.choices[0].message)
 except Exception as e:

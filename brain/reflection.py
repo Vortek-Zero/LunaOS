@@ -2,10 +2,11 @@
 brain/reflection.py — Sistema de Reflexão e Verificação (inspirado no Agent-S)
 Após executar ações, verifica se o resultado é real e detecta alucinações.
 """
-import re
+
 from pathlib import Path
-from typing import Optional
+
 from config import WORKSPACE_DIR
+
 
 class OutputValidator:
     """
@@ -14,8 +15,7 @@ class OutputValidator:
     """
 
     @staticmethod
-    def check_hallucination(response: str, observations: list[str],
-                            user_text: str = "") -> Optional[str]:
+    def check_hallucination(response: str, observations: list[str], user_text: str = "") -> str | None:
         """
         Verifica se a resposta do LLM contém alegações não suportadas pelas observações.
         Retorna feedback de correção se detectar problema, None se ok.
@@ -25,18 +25,26 @@ class OutputValidator:
 
         # Detecta alegações de criação sem evidência nas observações
         creation_claims = [
-            "criei", "criado", "criei o arquivo", "arquivo criado",
-            "projeto criado", "pasta criada", "foi criado",
-            "salvei o arquivo", "arquivo salvo", "escrevi", "enviei", "mandei"
+            "criei",
+            "criado",
+            "criei o arquivo",
+            "arquivo criado",
+            "projeto criado",
+            "pasta criada",
+            "foi criado",
+            "salvei o arquivo",
+            "arquivo salvo",
+            "escrevi",
+            "enviei",
+            "mandei",
         ]
-        
+
         # Se alegou criação/ação
         has_claimed_creation = any(claim in resp_lower for claim in creation_claims)
-        
+
         # Se temos evidência de sucesso nas observações
-        has_evidence = (
-            "sucesso" in obs_text
-            and any(kw in obs_text for kw in ["arquivo", "código", "criado", "projeto", "bytes", "enviado", "salvo"])
+        has_evidence = "sucesso" in obs_text and any(
+            kw in obs_text for kw in ["arquivo", "código", "criado", "projeto", "bytes", "enviado", "salvo"]
         )
 
         if has_claimed_creation and not has_evidence and observations:

@@ -1,5 +1,7 @@
 import os
+
 import requests
+
 from brain.agent_tools import LUNA_TOOLS
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -18,7 +20,7 @@ payload = {
     "max_tokens": 1500,
     "top_p": 0.95,
     "tools": LUNA_TOOLS,
-    "tool_choice": "auto"
+    "tool_choice": "auto",
 }
 
 resp = requests.post(f"{OPENROUTER_BASE_URL}/chat/completions", headers=headers, json=payload, timeout=60)

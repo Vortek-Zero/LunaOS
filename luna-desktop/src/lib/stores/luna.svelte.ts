@@ -487,6 +487,15 @@ async function shutdownBackend() {
   try { await api('/api/shutdown', { method: 'POST' }); } catch {}
 }
 
+// ── Update ───────────────────────────────────────────────
+async function checkUpdate() {
+  try { return await api('/api/update/check'); } catch { return { update_available: false, error: 'Conexão falhou' }; }
+}
+
+async function applyUpdate() {
+  try { return await api('/api/update/apply', { method: 'POST' }); } catch { return { success: false, error: 'Conexão falhou' }; }
+}
+
 // ── Export ───────────────────────────────────────────────
 export function useLuna() {
   return {
@@ -513,8 +522,8 @@ export function useLuna() {
     fetchSystemApps, openSystemApp, sendWriteChat, fetchModelsStatus, fetchLightsStatus, setLightsState,
     fetchSchedules, addSchedule, deleteSchedule, toggleSchedule,
     fetchControlSummary, fetchProcesses, killProcess, sendCodeChat,
-    clearCodeSession, fetchWriteProjects, createWriteProject, getWriteProject,
+    clearCodeSession,     fetchWriteProjects, createWriteProject, getWriteProject,
     updateWriteProjectText, addWriteChapter, addWriteCharacter, deleteWriteProject,
-    streamWrite, shutdownBackend,
+    streamWrite, shutdownBackend, checkUpdate, applyUpdate,
   };
 }
