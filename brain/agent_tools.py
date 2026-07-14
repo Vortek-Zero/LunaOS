@@ -937,6 +937,55 @@ LUNA_TOOLS = [
                 "required": ["prompt"]
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "manage_goals",
+            "description": "Gerencia os objetivos permanentes de longo prazo do usuário (ex: evoluir Luna, aprender Rust, passar na ETEC). Ações: 'list' (ver todos), 'add' (adicionar novo), 'remove' (remover por id), 'update' (alterar status/prioridade/notas).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["list", "add", "remove", "update"]},
+                    "title": {"type": "string", "description": "Título do objetivo (para action=add)."},
+                    "priority": {"type": "string", "enum": ["baixa", "media", "alta"], "description": "Prioridade (para action=add/update)."},
+                    "status": {"type": "string", "enum": ["planejado", "em_progresso", "concluido"], "description": "Status (para action=update)."},
+                    "goal_id": {"type": "string", "description": "ID do objetivo (para action=remove/update)."},
+                    "notes": {"type": "string", "description": "Notas adicionais (para action=add/update)."}
+                },
+                "required": ["action"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "semantic_memory",
+            "description": "Acessa a memória semântica vetorial profunda (ChromaDB) da Luna para buscar conceitos, fatos passados não óbvios ou guardar informações importantes. Ações: 'search' (buscar memórias), 'remember' (guardar nova memória).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "enum": ["search", "remember"]},
+                    "query": {"type": "string", "description": "Termo de busca ou memória a guardar."}
+                },
+                "required": ["action", "query"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "recall_episodes",
+            "description": "Busca experiências e episódios passados no histórico de atividades recentes da Luna por tópicos ou palavras-chave (ex: 'meu progresso em Rust').",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string", "description": "Termo de busca para recuperar experiências."},
+                    "days": {"type": "integer", "description": "Número de dias para buscar no passado. Padrão 30.", "default": 30}
+                },
+                "required": ["query"]
+            }
+        }
     }
 ]
 
@@ -1283,8 +1332,8 @@ def _run_diagnostics() -> str:
     return header + "\n".join(results)
 
 
-def execute_tool_call(executor, tool_call) -> str:
-    """Executa o comando interno enviado pelo LLM. Retorna resultado imediatamente."""
+def _execute_tool_call_inner(executor, tool_call) -> str:
+    """Executa o comando interno enviado pelo LLM. Função interna."""
     try:
         # Suporta tanto NormalizedToolCall (dataclass) quanto dict
         if isinstance(tool_call, dict):
@@ -1380,6 +1429,100 @@ def execute_tool_call(executor, tool_call) -> str:
                 if sub == "add": return _format_result(executor.notes.add(args.get("content")))
                 if sub == "list": return _format_result(executor.notes.list_notes())
             return _format_result(f"FALHOU: Ação '{action}' inválida para productivity_manage.")
+
+        elif name == "manage_goals":
+            goals_file = Path(__file__).parent.parent / "config" / "goals.json"
+            action = args.get("action")
+            try:
+                goals_file.parent.mkdir(parents=True, exist_ok=True)
+                goals = []
+                if goals_file.exists():
+                    goals = json.loads(goals_file.read_text(encoding="utf-8"))
+                
+                if action == "list":
+                    if not goals:
+                        return "SUCESSO: Nenhum objetivo cadastrado."
+                    lines = ["🎯 Objetivos permanentes:"]
+                    for g in goals:
+                        lines.append(f"  [{g.get('id')}] {g.get('title')} - Prioridade: {g.get('priority')} | Status: {g.get('status')} ({g.get('notes', '')})")
+                    return "SUCESSO: " + "\n".join(lines)
+                
+                elif action == "add":
+                    title = args.get("title")
+                    if not title:
+                        return "FALHOU: Título é obrigatório para adicionar objetivo."
+                    gid = f"goal_{int(time.time())}"
+                    new_goal = {
+                        "id": gid,
+                        "title": title,
+                        "priority": args.get("priority", "media"),
+                        "status": "planejado",
+                        "created_at": time.strftime("%Y-%m-%d"),
+                        "notes": args.get("notes", "")
+                    }
+                    goals.append(new_goal)
+                    goals_file.write_text(json.dumps(goals, ensure_ascii=False, indent=4), encoding="utf-8")
+                    return f"SUCESSO: Objetivo '{title}' adicionado com ID {gid}."
+                
+                elif action == "remove":
+                    gid = args.get("goal_id")
+                    if not gid:
+                        return "FALHOU: goal_id é necessário para remover."
+                    before = len(goals)
+                    goals = [g for g in goals if g.get("id") != gid]
+                    if len(goals) == before:
+                        return f"FALHOU: Objetivo {gid} não encontrado."
+                    goals_file.write_text(json.dumps(goals, ensure_ascii=False, indent=4), encoding="utf-8")
+                    return f"SUCESSO: Objetivo {gid} removido."
+                
+                elif action == "update":
+                    gid = args.get("goal_id")
+                    if not gid:
+                        return "FALHOU: goal_id é necessário para atualizar."
+                    found = False
+                    for g in goals:
+                        if g.get("id") == gid:
+                            if "priority" in args: g["priority"] = args["priority"]
+                            if "status" in args: g["status"] = args["status"]
+                            if "notes" in args: g["notes"] = args["notes"]
+                            found = True
+                            break
+                    if not found:
+                        return f"FALHOU: Objetivo {gid} não encontrado."
+                    goals_file.write_text(json.dumps(goals, ensure_ascii=False, indent=4), encoding="utf-8")
+                    return f"SUCESSO: Objetivo {gid} atualizado."
+            except Exception as e:
+                return f"FALHOU: Erro ao gerenciar objetivos: {e}"
+
+        elif name == "semantic_memory":
+            action = args.get("action")
+            query = args.get("query", "")
+            if not query:
+                return "FALHOU: query vazia."
+            try:
+                from brain.memory_rag import MemoryRAG
+                rag = MemoryRAG()
+                if action == "search":
+                    res = rag.retrieve_context(query)
+                    return f"SUCESSO: Memórias encontradas:\n{res}" if res else "SUCESSO: Nenhuma memória relevante encontrada."
+                elif action == "remember":
+                    rag.remember(query)
+                    return f"SUCESSO: Fato registrado na memória semântica: '{query}'"
+            except Exception as e:
+                return f"FALHOU: Erro na memória semântica: {e}"
+
+        elif name == "recall_episodes":
+            query = args.get("query", "")
+            days = args.get("days", 30)
+            if not query:
+                return "FALHOU: query vazia."
+            try:
+                from brain.episodic_memory import get_episodic_memory
+                mem = get_episodic_memory()
+                eps = mem.recall(query, days=days)
+                return f"SUCESSO:\n{mem.format_for_user(eps)}"
+            except Exception as e:
+                return f"FALHOU: Erro na memória episódica: {e}"
 
         # ── Outros ───────────────────────────────────────────
         elif name == "check_project":
@@ -1834,5 +1977,32 @@ def execute_tool_call(executor, tool_call) -> str:
         return _format_result(f"FALHOU: Ferramenta '{name}' desconhecida.")
 
     except Exception as e:
-        logger.exception("Erro em execute_tool_call")
+        logger.exception("Erro em execute_tool_call_inner")
         return _format_result(f"FALHOU: Erro interno: {e}")
+
+def execute_tool_call(executor, tool_call) -> str:
+    """Executa a ferramenta e publica o evento no EventBus."""
+    from brain.event_bus import get_event_bus
+    import time
+    
+    start_time = time.time()
+    
+    if isinstance(tool_call, dict):
+        name = tool_call.get("function", {}).get("name", "")
+        raw_args = tool_call.get("function", {}).get("arguments", {})
+    else:
+        name = getattr(tool_call.function, "name", "")
+        raw_args = getattr(tool_call.function, "arguments", {})
+        
+    result = _execute_tool_call_inner(executor, tool_call)
+    
+    duration = time.time() - start_time
+    
+    get_event_bus().publish("tool_executed", {
+        "tool_name": name,
+        "arguments": raw_args,
+        "result": result,
+        "duration": duration
+    })
+    
+    return result

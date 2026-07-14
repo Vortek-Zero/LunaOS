@@ -456,6 +456,23 @@ class BackgroundWorker:
         except Exception:
             pass
 
+        # 2. Aprendizado de hábitos avançado (HabitLearner)
+        try:
+            from brain.habit_learner import learn_user_habits
+            learn_user_habits()
+        except Exception as e:
+            print(f"[BackgroundWorker] Erro no aprendizado de hábitos automático: {e}")
+
+        # 3. Motor de proatividade (ProactivityEngine)
+        try:
+            from brain.proactivity import ProactivityEngine
+            engine = ProactivityEngine(self._luna)
+            suggestion = engine.evaluate_proactive_actions()
+            if suggestion:
+                print(f"[BackgroundWorker] Ação proativa disparada: '{suggestion}'")
+        except Exception as e:
+            print(f"[BackgroundWorker] Erro no motor de proatividade: {e}")
+
     def _speak(self, text: str):
         try:
             from voice.tts import get_tts
