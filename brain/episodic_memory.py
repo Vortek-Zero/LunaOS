@@ -181,6 +181,11 @@ class EpisodicMemory:
             lines.append(f"📅 {date_str} às {hour}h [{topics}]\n   {text}")
         return "\n\n".join(lines)
 
+    def get_episode_count(self) -> int:
+        """Retorna a quantidade de episódios armazenados (thread-safe)."""
+        with self._lock:
+            return len(self._episodes)
+
     def _load(self):
         try:
             if EPISODES_FILE.exists():
