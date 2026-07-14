@@ -2,11 +2,14 @@
 Tenta modelos com suporte nativo a imagem: gemini-2.5-flash-image (grátis, rate-limited)
 e Imagen 4.0 (requer plano pago).
 """
+
 import uuid
 from pathlib import Path
+
 from config import GEMINI_API_KEY
 
 PICTURES_DIR = Path.home() / "Pictures" / "Luna"
+
 
 def generate_image(prompt: str, size: str = "1024x1024") -> str:
     if not GEMINI_API_KEY:
@@ -38,7 +41,11 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
                     config={"response_modalities": ["Text", "Image"]},
                 )
                 for part in response.candidates[0].content.parts:
-                    if part.inline_data and part.inline_data.mime_type and part.inline_data.mime_type.startswith("image/"):
+                    if (
+                        part.inline_data
+                        and part.inline_data.mime_type
+                        and part.inline_data.mime_type.startswith("image/")
+                    ):
                         image_data = part.inline_data.data
                         return _save_image(image_data, prompt)
                 last_error = f"{model_name}: não retornou imagem"

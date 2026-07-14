@@ -6,11 +6,11 @@ actions/gnome.py — Integração com GNOME no Arch Linux.
 - Terminal padrão do sistema (gsettings) com zsh
 - Fallback para subprocess quando gio não estiver disponível
 """
+
 import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 DESKTOP_DIRS = (
     Path.home() / ".local/share/applications",
@@ -45,7 +45,9 @@ def _gsettings_get(schema: str, key: str) -> str:
     try:
         r = subprocess.run(
             ["gsettings", "get", schema, key],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=3,
         )
         if r.returncode == 0:
             return r.stdout.strip().strip("'\"")
@@ -81,7 +83,7 @@ def _desktop_paths() -> list[Path]:
     return found
 
 
-def find_desktop_file(name: str) -> Optional[str]:
+def find_desktop_file(name: str) -> str | None:
     """Resolve nome fuzzy → caminho absoluto do .desktop."""
     q = name.lower().strip().replace("_", "-")
     aliases = DESKTOP_ALIASES.get(q, [])
@@ -130,8 +132,10 @@ def launch_app(name: str, fallback_cmd: str = "") -> tuple[bool, str]:
     if fallback_cmd:
         try:
             subprocess.Popen(
-                fallback_cmd, shell=True,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                fallback_cmd,
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
                 env={**os.environ},
             )
             return True, f"Abrindo {name}"
@@ -141,7 +145,7 @@ def launch_app(name: str, fallback_cmd: str = "") -> tuple[bool, str]:
     return False, f"App '{name}' não encontrado."
 
 
-def open_terminal_zsh(command: str, title: str = "Luna", cwd: Optional[str] = None) -> str:
+def open_terminal_zsh(command: str, title: str = "Luna", cwd: str | None = None) -> str:
     """
     Abre terminal visível com zsh e executar comando.
     O usuário vê a saída no GNOME Terminal (ou terminal padrão).
@@ -162,7 +166,8 @@ def open_terminal_zsh(command: str, title: str = "Luna", cwd: Optional[str] = No
                     f"--title={safe_title}",
                     f"--working-directory={workdir}",
                     "--",
-                    "zsh", "-lc",
+                    "zsh",
+                    "-lc",
                     f"{cmd_clean}; echo; echo '[Luna] Comando concluído.'; exec zsh -i",
                 ],
                 stdout=subprocess.DEVNULL,
@@ -173,9 +178,13 @@ def open_terminal_zsh(command: str, title: str = "Luna", cwd: Optional[str] = No
             subprocess.Popen(
                 [
                     term if shutil.which(term) else "xdg-terminal-exec",
-                    "--working-directory", workdir,
-                    "--title", safe_title,
-                    "--", "zsh", "-lc",
+                    "--working-directory",
+                    workdir,
+                    "--title",
+                    safe_title,
+                    "--",
+                    "zsh",
+                    "-lc",
                     f"{cmd_clean}; echo; echo '[Luna] Comando concluído.'; exec zsh -i",
                 ],
                 stdout=subprocess.DEVNULL,
@@ -184,24 +193,34 @@ def open_terminal_zsh(command: str, title: str = "Luna", cwd: Optional[str] = No
             )
         elif term == "kitty":
             subprocess.Popen(
-                ["kitty", "--directory", workdir, "zsh", "-lc",
-                 f"{cmd_clean}; echo; echo '[Luna] Comando concluído.'; exec zsh -i"],
+                [
+                    "kitty",
+                    "--directory",
+                    workdir,
+                    "zsh",
+                    "-lc",
+                    f"{cmd_clean}; echo; echo '[Luna] Comando concluído.'; exec zsh -i",
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 env={**os.environ},
             )
         elif term == "kgx":
             subprocess.Popen(
-                ["kgx", "--", "zsh", "-lc",
-                 f"cd {workdir}; {cmd_clean}; echo; echo '[Luna] Comando concluído.'; exec zsh -i"],
+                [
+                    "kgx",
+                    "--",
+                    "zsh",
+                    "-lc",
+                    f"cd {workdir}; {cmd_clean}; echo; echo '[Luna] Comando concluído.'; exec zsh -i",
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 env={**os.environ},
             )
         else:
             subprocess.Popen(
-                [term, "-e", "zsh", "-lc",
-                 f"cd {workdir}; {cmd_clean}; echo; read -p 'Enter para fechar...'"],
+                [term, "-e", "zsh", "-lc", f"cd {workdir}; {cmd_clean}; echo; read -p 'Enter para fechar...'"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 env={**os.environ},

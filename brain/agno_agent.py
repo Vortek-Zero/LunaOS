@@ -2,8 +2,9 @@
 """
 brain/agno_agent.py — Integração com Agno (anteriormente Phidata) para agentes de alta performance.
 """
-import sys
+
 import os
+import sys
 
 # Ajusta path para importar Agno da pasta libs
 AGNO_PATH = os.path.abspath(os.path.join(os.getcwd(), "agno/libs/agno"))
@@ -12,14 +13,16 @@ if AGNO_PATH not in sys.path:
 
 try:
     from agno.agent import Agent
-    from agno.models.openai import OpenAIChat
     from agno.models.google import Gemini
     from agno.models.groq import Groq
+    from agno.models.openai import OpenAIChat
+
     HAS_AGNO = True
 except ImportError:
     HAS_AGNO = False
 
-from config import GROQ_API_KEY, GEMINI_API_KEY, GROQ_MODELS
+from config import GEMINI_API_KEY, GROQ_API_KEY, GROQ_MODELS
+
 
 def get_agno_agent(name: str = "Luna-Specialist", instructions: list = None):
     if not HAS_AGNO:
@@ -37,16 +40,18 @@ def get_agno_agent(name: str = "Luna-Specialist", instructions: list = None):
         name=name,
         model=model,
         instructions=instructions or ["Você é uma extensão especializada da Luna."],
-        markdown=True
+        markdown=True,
     )
+
 
 def run_agno_task(task: str) -> str:
     agent = get_agno_agent(instructions=["Você é um agente executor sênior da Luna. Resolva a tarefa de forma direta."])
     if not agent:
         return "FALHOU: Agno não configurado ou sem API Keys."
-    
+
     response = agent.run(task)
     return response.content
+
 
 if __name__ == "__main__":
     if HAS_AGNO:

@@ -2,14 +2,15 @@
 brain/loop_guard.py — Detecção e prevenção de loops infinitos de ferramentas (inspirado no OpenJarvis)
 Previne que o agente entre em ciclos degenerados de tool_calls.
 """
+
 import hashlib
 import re
 from collections import deque
-from typing import Optional
 
 
 class LoopVerdict:
     """Resultado de uma verificação do loop guard."""
+
     def __init__(self, blocked: bool = False, reason: str = "", warned: bool = False):
         self.blocked = blocked
         self.reason = reason
@@ -52,9 +53,7 @@ class LoopGuard:
 
     def _python_check(self, tool_name: str, arguments: str) -> LoopVerdict:
         # 1. Hash tracking — chamadas idênticas
-        call_hash = hashlib.sha256(
-            f"{tool_name}:{arguments}".encode()
-        ).hexdigest()[:16]
+        call_hash = hashlib.sha256(f"{tool_name}:{arguments}".encode()).hexdigest()[:16]
         self._call_counts[call_hash] = self._call_counts.get(call_hash, 0) + 1
         if self._call_counts[call_hash] > self._max_identical:
             reason = (
@@ -70,8 +69,7 @@ class LoopGuard:
         recent_count = recent_tools.count(tool_name)
         if recent_count > self._poll_budget:
             reason = (
-                f"Ferramenta '{tool_name}' excedeu o budget "
-                f"({self._poll_budget} nas últimas {window_size} chamadas)."
+                f"Ferramenta '{tool_name}' excedeu o budget ({self._poll_budget} nas últimas {window_size} chamadas)."
             )
             return self._wrap_verdict(LoopVerdict(blocked=True, reason=reason))
         self._per_tool_counts[tool_name] = recent_count + 1
@@ -108,7 +106,7 @@ class LoopGuard:
                 return True
         for period in (2, 3):
             if n >= period * 2:
-                tail = seq[-period * 2:]
+                tail = seq[-period * 2 :]
                 pattern = tail[:period]
                 if all(tail[i] == pattern[i % period] for i in range(len(tail))):
                     return True
@@ -124,12 +122,14 @@ class LoopGuard:
         compressed = []
         for i, msg in enumerate(messages):
             if i < threshold and msg.get("role") == "tool":
-                compressed.append({
-                    "role": "tool",
-                    "content": "[Resultado truncado]",
-                    "tool_call_id": msg.get("tool_call_id", ""),
-                    "name": msg.get("name"),
-                })
+                compressed.append(
+                    {
+                        "role": "tool",
+                        "content": "[Resultado truncado]",
+                        "tool_call_id": msg.get("tool_call_id", ""),
+                        "name": msg.get("name"),
+                    }
+                )
             else:
                 compressed.append(msg)
 

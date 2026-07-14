@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import json
-import re
 import logging
+import re
 import time
 
 logger = logging.getLogger("luna.agent_tools")
@@ -10,30 +10,32 @@ logger = logging.getLogger("luna.agent_tools")
 # executor.py returns dict {"success": bool, "message": str}.
 # output_parser.py returns dict {"acoes": [...], "resposta": str}.
 
+
 # Importações protegidas
 def safe_import(module_path, class_name):
     try:
         import importlib
+
         mod = importlib.import_module(module_path)
         return getattr(mod, class_name)
     except (ImportError, AttributeError):
         return None
 
+
 # Funções reais
-from actions.google_services import get_google
-from actions.document_services import get_doc_services
-from actions.system_tools import get_system_tools
-from actions.filesystem import get_filesystem
+from pathlib import Path
+
 from actions.browser_task import get_browser_task_manager
+from actions.document_services import get_doc_services
+from actions.filesystem import get_filesystem
+from actions.google_services import get_google
+from actions.system_tools import get_system_tools
 from brain.agno_agent import run_agno_task
 from brain.crew import run_crew_task
-from brain.daily_routine import get_routine_manager, get_activity_logger
-from brain.skills.skill_manager import get_skill_manager
-from brain.reflection import VerificationSystem
+from brain.daily_routine import get_routine_manager
 from brain.memory import get_memory
-from pathlib import Path
+from brain.skills.skill_manager import get_skill_manager
 from config import WORKSPACE_DIR
-
 
 LUNA_TOOLS = [
     {
@@ -45,11 +47,11 @@ LUNA_TOOLS = [
                 "type": "object",
                 "properties": {
                     "path": {"type": "string", "description": "Caminho do webhook no n8n."},
-                    "data": {"type": "object", "description": "Dados JSON para o workflow."}
+                    "data": {"type": "object", "description": "Dados JSON para o workflow."},
                 },
-                "required": ["path", "data"]
-            }
-        }
+                "required": ["path", "data"],
+            },
+        },
     },
     {
         "type": "function",
@@ -58,12 +60,10 @@ LUNA_TOOLS = [
             "description": "Executa um agente Agno (Phidata) de alta performance para tarefas que exigem raciocínio estruturado ou especializado.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "task": {"type": "string", "description": "Descrição da tarefa para o agente Agno."}
-                },
-                "required": ["task"]
-            }
-        }
+                "properties": {"task": {"type": "string", "description": "Descrição da tarefa para o agente Agno."}},
+                "required": ["task"],
+            },
+        },
     },
     {
         "type": "function",
@@ -75,11 +75,11 @@ LUNA_TOOLS = [
                 "properties": {
                     "name": {"type": "string", "description": "Nome da skill (ex: 'organizar_downloads')."},
                     "description": {"type": "string", "description": "O que a skill faz."},
-                    "steps": {"type": "array", "items": {"type": "string"}, "description": "Lista de passos."}
+                    "steps": {"type": "array", "items": {"type": "string"}, "description": "Lista de passos."},
                 },
-                "required": ["name", "description", "steps"]
-            }
-        }
+                "required": ["name", "description", "steps"],
+            },
+        },
     },
     {
         "type": "function",
@@ -93,11 +93,11 @@ LUNA_TOOLS = [
                     "service": {"type": "string", "enum": ["calendar", "gmail"]},
                     "query": {"type": "string", "description": "Termo de busca ou ID."},
                     "date": {"type": "string", "description": "Data YYYY-MM-DD."},
-                    "max_results": {"type": "integer", "default": 5}
+                    "max_results": {"type": "integer", "default": 5},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -113,11 +113,11 @@ LUNA_TOOLS = [
                     "start_time": {"type": "string", "description": "ISO 8601"},
                     "end_time": {"type": "string"},
                     "description": {"type": "string"},
-                    "location": {"type": "string"}
+                    "location": {"type": "string"},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -133,11 +133,11 @@ LUNA_TOOLS = [
                     "body": {"type": "string"},
                     "message_id": {"type": "string"},
                     "extra_text": {"type": "string"},
-                    "attachments": {"type": "string", "description": "Nomes de arquivos separados por vírgula."}
+                    "attachments": {"type": "string", "description": "Nomes de arquivos separados por vírgula."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -153,11 +153,11 @@ LUNA_TOOLS = [
                     "folder_name": {"type": "string"},
                     "file_id": {"type": "string"},
                     "parent_id": {"type": "string"},
-                    "max_results": {"type": "integer", "default": 10}
+                    "max_results": {"type": "integer", "default": 10},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -169,12 +169,12 @@ LUNA_TOOLS = [
                 "properties": {
                     "task_description": {
                         "type": "string",
-                        "description": "Descrição completa da tarefa que a Crew deve executar."
+                        "description": "Descrição completa da tarefa que a Crew deve executar.",
                     }
                 },
-                "required": ["task_description"]
-            }
-        }
+                "required": ["task_description"],
+            },
+        },
     },
     {
         "type": "function",
@@ -189,11 +189,11 @@ LUNA_TOOLS = [
                     "content": {"type": "string"},
                     "filename": {"type": "string"},
                     "filepath": {"type": "string"},
-                    "title": {"type": "string"}
+                    "title": {"type": "string"},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -203,7 +203,20 @@ LUNA_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "action": {"type": "string", "enum": ["status", "processes", "bash", "terminal", "kill", "notification", "brightness", "network", "screenshot"]},
+                    "action": {
+                        "type": "string",
+                        "enum": [
+                            "status",
+                            "processes",
+                            "bash",
+                            "terminal",
+                            "kill",
+                            "notification",
+                            "brightness",
+                            "network",
+                            "screenshot",
+                        ],
+                    },
                     "command": {"type": "string"},
                     "visible": {"type": "boolean", "default": False},
                     "limit": {"type": "integer", "default": 10},
@@ -212,11 +225,11 @@ LUNA_TOOLS = [
                     "title": {"type": "string"},
                     "message": {"type": "string"},
                     "level": {"type": "integer"},
-                    "path": {"type": "string"}
+                    "path": {"type": "string"},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -228,11 +241,11 @@ LUNA_TOOLS = [
                 "properties": {
                     "city": {
                         "type": "string",
-                        "description": "Cidade opcional (ex: 'São Paulo'). Vazio = localização automática."
+                        "description": "Cidade opcional (ex: 'São Paulo'). Vazio = localização automática.",
                     }
-                }
-            }
-        }
+                },
+            },
+        },
     },
     {
         "type": "function",
@@ -245,15 +258,15 @@ LUNA_TOOLS = [
                     "action": {
                         "type": "string",
                         "enum": ["start", "status", "cancel"],
-                        "description": "start=iniciar, status=ver ativos, cancel=cancelar todos."
+                        "description": "start=iniciar, status=ver ativos, cancel=cancelar todos.",
                     },
                     "minutes": {"type": "integer", "description": "Minutos (para action=start)."},
                     "seconds": {"type": "integer", "description": "Segundos extras (para action=start)."},
-                    "name": {"type": "string", "description": "Nome do timer (ex: 'macarrão')."}
+                    "name": {"type": "string", "description": "Nome do timer (ex: 'macarrão')."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -265,11 +278,14 @@ LUNA_TOOLS = [
                 "properties": {
                     "action": {"type": "string", "enum": ["add", "list", "cancel"]},
                     "message": {"type": "string", "description": "Texto do lembrete."},
-                    "when": {"type": "string", "description": "Quando lembrar em linguagem natural (ex: 'às 20h', 'em 2 horas', 'amanhã às 9h')."}
+                    "when": {
+                        "type": "string",
+                        "description": "Quando lembrar em linguagem natural (ex: 'às 20h', 'em 2 horas', 'amanhã às 9h').",
+                    },
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -282,11 +298,11 @@ LUNA_TOOLS = [
                     "action": {"type": "string", "enum": ["add", "list", "search", "delete"]},
                     "content": {"type": "string", "description": "Texto da nota (add)."},
                     "query": {"type": "string", "description": "Termo de busca (search)."},
-                    "index": {"type": "integer", "description": "Número da nota (delete)."}
+                    "index": {"type": "integer", "description": "Número da nota (delete)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -297,11 +313,11 @@ LUNA_TOOLS = [
                 "type": "object",
                 "properties": {
                     "action": {"type": "string", "enum": ["add", "remove", "list", "clear"]},
-                    "item": {"type": "string", "description": "Item da lista (add/remove)."}
+                    "item": {"type": "string", "description": "Item da lista (add/remove)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -312,11 +328,11 @@ LUNA_TOOLS = [
                 "type": "object",
                 "properties": {
                     "action": {"type": "string", "enum": ["start", "break", "cancel", "status"]},
-                    "minutes": {"type": "integer", "description": "Duração em minutos (start/break). Padrão: 25."}
+                    "minutes": {"type": "integer", "description": "Duração em minutos (start/break). Padrão: 25."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -330,11 +346,11 @@ LUNA_TOOLS = [
                     "sub_action": {"type": "string", "enum": ["add", "list"]},
                     "message": {"type": "string", "description": "Texto do lembrete (reminder/add)."},
                     "when": {"type": "string", "description": "Quando lembrar (reminder/add)."},
-                    "content": {"type": "string", "description": "Conteúdo da nota (notes/add)."}
+                    "content": {"type": "string", "description": "Conteúdo da nota (notes/add)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -352,16 +368,13 @@ LUNA_TOOLS = [
                 "properties": {
                     "filename": {
                         "type": "string",
-                        "description": "Nome do arquivo (ex: 'app.py', 'projeto/index.html')"
+                        "description": "Nome do arquivo (ex: 'app.py', 'projeto/index.html')",
                     },
-                    "content": {
-                        "type": "string",
-                        "description": "Conteúdo completo do arquivo a ser escrito."
-                    }
+                    "content": {"type": "string", "description": "Conteúdo completo do arquivo a ser escrito."},
                 },
-                "required": ["filename", "content"]
-            }
-        }
+                "required": ["filename", "content"],
+            },
+        },
     },
     {
         "type": "function",
@@ -376,26 +389,23 @@ LUNA_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "project_name": {
-                        "type": "string",
-                        "description": "Nome da pasta do projeto."
-                    },
+                    "project_name": {"type": "string", "description": "Nome da pasta do projeto."},
                     "files": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
                                 "filename": {"type": "string", "description": "Nome do arquivo (ex: 'index.html')"},
-                                "content": {"type": "string", "description": "Conteúdo completo do arquivo"}
+                                "content": {"type": "string", "description": "Conteúdo completo do arquivo"},
                             },
-                            "required": ["filename", "content"]
+                            "required": ["filename", "content"],
                         },
-                        "description": "Lista de arquivos para criar no projeto."
-                    }
+                        "description": "Lista de arquivos para criar no projeto.",
+                    },
                 },
-                "required": ["project_name", "files"]
-            }
-        }
+                "required": ["project_name", "files"],
+            },
+        },
     },
     {
         "type": "function",
@@ -405,8 +415,8 @@ LUNA_TOOLS = [
                 "Briefing do dia: clima (SP + Itapecerica), lembretes de hoje, notas recentes "
                 "e resumo natural. Use para 'o que temos pra hoje', 'briefing', 'resumo do dia'."
             ),
-            "parameters": {"type": "object", "properties": {}}
-        }
+            "parameters": {"type": "object", "properties": {}},
+        },
     },
     {
         "type": "function",
@@ -424,36 +434,18 @@ LUNA_TOOLS = [
                     "action": {
                         "type": "string",
                         "enum": ["listar", "criar", "remover", "ativar", "desativar"],
-                        "description": "Ação a executar na rotina."
+                        "description": "Ação a executar na rotina.",
                     },
-                    "name": {
-                        "type": "string",
-                        "description": "Nome da rotina (para criar)."
-                    },
-                    "hour": {
-                        "type": "integer",
-                        "description": "Hora (0-23) para a rotina disparar."
-                    },
-                    "minute": {
-                        "type": "integer",
-                        "description": "Minuto (0-59) para a rotina disparar."
-                    },
-                    "action_type": {
-                        "type": "string",
-                        "description": "Tipo da ação: briefing, say, calendar_check"
-                    },
-                    "message": {
-                        "type": "string",
-                        "description": "Mensagem para ação 'say'."
-                    },
-                    "routine_id": {
-                        "type": "string",
-                        "description": "ID da rotina (para remover/ativar/desativar)."
-                    }
+                    "name": {"type": "string", "description": "Nome da rotina (para criar)."},
+                    "hour": {"type": "integer", "description": "Hora (0-23) para a rotina disparar."},
+                    "minute": {"type": "integer", "description": "Minuto (0-59) para a rotina disparar."},
+                    "action_type": {"type": "string", "description": "Tipo da ação: briefing, say, calendar_check"},
+                    "message": {"type": "string", "description": "Mensagem para ação 'say'."},
+                    "routine_id": {"type": "string", "description": "ID da rotina (para remover/ativar/desativar)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -466,14 +458,11 @@ LUNA_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "task": {
-                        "type": "string",
-                        "description": "Tarefa em linguagem natural ou URL inicial."
-                    }
+                    "task": {"type": "string", "description": "Tarefa em linguagem natural ou URL inicial."}
                 },
-                "required": ["task"]
-            }
-        }
+                "required": ["task"],
+            },
+        },
     },
     {
         "type": "function",
@@ -482,11 +471,9 @@ LUNA_TOOLS = [
             "description": "Salva captura de tela em arquivo e retorna o caminho.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "path": {"type": "string", "description": "Caminho opcional do arquivo PNG."}
-                }
-            }
-        }
+                "properties": {"path": {"type": "string", "description": "Caminho opcional do arquivo PNG."}},
+            },
+        },
     },
     {
         "type": "function",
@@ -500,11 +487,14 @@ LUNA_TOOLS = [
                         "type": "string",
                         "enum": ["close", "minimize", "maximize", "fullscreen", "workspace"],
                     },
-                    "workspace": {"type": "integer", "description": "Número do workspace (1-10) quando action=workspace."}
+                    "workspace": {
+                        "type": "integer",
+                        "description": "Número do workspace (1-10) quando action=workspace.",
+                    },
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -515,11 +505,11 @@ LUNA_TOOLS = [
                 "type": "object",
                 "properties": {
                     "action": {"type": "string", "enum": ["read", "write"]},
-                    "text": {"type": "string", "description": "Texto para copiar (write)."}
+                    "text": {"type": "string", "description": "Texto para copiar (write)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -531,11 +521,11 @@ LUNA_TOOLS = [
                 "properties": {
                     "focus": {
                         "type": "string",
-                        "description": "Opcional: o que procurar na tela (ex: 'botão enviar', 'primeiro link')."
+                        "description": "Opcional: o que procurar na tela (ex: 'botão enviar', 'primeiro link').",
                     }
-                }
-            }
-        }
+                },
+            },
+        },
     },
     {
         "type": "function",
@@ -544,12 +534,10 @@ LUNA_TOOLS = [
             "description": "Abre uma URL no navegador padrão (Firefox). Use para YouTube, GitHub, artigos específicos.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "URL completa ou domínio (ex: youtube.com)."}
-                },
-                "required": ["url"]
-            }
-        }
+                "properties": {"url": {"type": "string", "description": "URL completa ou domínio (ex: youtube.com)."}},
+                "required": ["url"],
+            },
+        },
     },
     {
         "type": "function",
@@ -561,12 +549,10 @@ LUNA_TOOLS = [
             ),
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "Termo de pesquisa."}
-                },
-                "required": ["query"]
-            }
-        }
+                "properties": {"query": {"type": "string", "description": "Termo de pesquisa."}},
+                "required": ["query"],
+            },
+        },
     },
     {
         "type": "function",
@@ -575,12 +561,10 @@ LUNA_TOOLS = [
             "description": "Lê e extrai o conteúdo textual de uma página web (URL).",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "url": {"type": "string", "description": "URL da página."}
-                },
-                "required": ["url"]
-            }
-        }
+                "properties": {"url": {"type": "string", "description": "URL da página."}},
+                "required": ["url"],
+            },
+        },
     },
     {
         "type": "function",
@@ -594,11 +578,11 @@ LUNA_TOOLS = [
                         "type": "string",
                         "enum": ["play", "pause", "next", "prev", "status", "volume", "search"],
                     },
-                    "query": {"type": "string", "description": "Música/artista (search) ou nível 0-100 (volume)."}
+                    "query": {"type": "string", "description": "Música/artista (search) ou nível 0-100 (volume)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -607,12 +591,10 @@ LUNA_TOOLS = [
             "description": "Liga ou desliga a luz física da sala.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "state": {"type": "string", "enum": ["on", "off"]}
-                },
-                "required": ["state"]
-            }
-        }
+                "properties": {"state": {"type": "string", "enum": ["on", "off"]}},
+                "required": ["state"],
+            },
+        },
     },
     {
         "type": "function",
@@ -621,12 +603,10 @@ LUNA_TOOLS = [
             "description": "Busca fatos salvos sobre o usuário e conversas anteriores na memória da Luna.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "query": {"type": "string", "description": "O que lembrar/buscar."}
-                },
-                "required": ["query"]
-            }
-        }
+                "properties": {"query": {"type": "string", "description": "O que lembrar/buscar."}},
+                "required": ["query"],
+            },
+        },
     },
     {
         "type": "function",
@@ -638,12 +618,10 @@ LUNA_TOOLS = [
             ),
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "target": {"type": "string", "description": "Texto ou descrição do elemento."}
-                },
-                "required": ["target"]
-            }
-        }
+                "properties": {"target": {"type": "string", "description": "Texto ou descrição do elemento."}},
+                "required": ["target"],
+            },
+        },
     },
     {
         "type": "function",
@@ -683,9 +661,9 @@ LUNA_TOOLS = [
                 "properties": {
                     "app_name": {"type": "string", "description": "Nome do app (ex: firefox, spotify, terminal)."}
                 },
-                "required": ["app_name"]
-            }
-        }
+                "required": ["app_name"],
+            },
+        },
     },
     {
         "type": "function",
@@ -710,9 +688,9 @@ LUNA_TOOLS = [
                     "pattern": {"type": "string", "description": "Glob para list (ex: *.py)."},
                     "append": {"type": "boolean", "description": "Anexar ao arquivo (write)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -721,12 +699,10 @@ LUNA_TOOLS = [
             "description": "Digita texto no app/janela focada (como se você estivesse digitando).",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "text": {"type": "string", "description": "Texto a digitar."}
-                },
-                "required": ["text"]
-            }
-        }
+                "properties": {"text": {"type": "string", "description": "Texto a digitar."}},
+                "required": ["text"],
+            },
+        },
     },
     {
         "type": "function",
@@ -738,17 +714,17 @@ LUNA_TOOLS = [
                 "properties": {
                     "keys": {"type": "string", "description": "Atalho (ex: 'ctrl+s', 'alt+Tab', 'Return')."}
                 },
-                "required": ["keys"]
-            }
-        }
+                "required": ["keys"],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "list_windows",
             "description": "Lista janelas abertas no desktop.",
-            "parameters": {"type": "object", "properties": {}}
-        }
+            "parameters": {"type": "object", "properties": {}},
+        },
     },
     {
         "type": "function",
@@ -760,9 +736,9 @@ LUNA_TOOLS = [
                 "properties": {
                     "title": {"type": "string", "description": "Parte do título (ex: 'Firefox', 'WhatsApp')."}
                 },
-                "required": ["title"]
-            }
-        }
+                "required": ["title"],
+            },
+        },
     },
     {
         "type": "function",
@@ -774,30 +750,40 @@ LUNA_TOOLS = [
                 "properties": {
                     "action": {
                         "type": "string",
-                        "enum": ["play", "pause", "next", "prev", "stop", "status", "volume_up", "volume_down", "volume", "mute"],
+                        "enum": [
+                            "play",
+                            "pause",
+                            "next",
+                            "prev",
+                            "stop",
+                            "status",
+                            "volume_up",
+                            "volume_down",
+                            "volume",
+                            "mute",
+                        ],
                     },
-                    "level": {"type": "integer", "description": "Volume 0-100 (action=volume)."}
+                    "level": {"type": "integer", "description": "Volume 0-100 (action=volume)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "kill_process",
             "description": (
-                "Encerra/mata processo por nome ou PID. "
-                "Use para 'mata/fecha/encerra firefox', 'para o spotify'."
+                "Encerra/mata processo por nome ou PID. Use para 'mata/fecha/encerra firefox', 'para o spotify'."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "pid": {"type": "integer"},
-                    "name": {"type": "string", "description": "Nome do processo (ex: firefox)."}
-                }
-            }
-        }
+                    "name": {"type": "string", "description": "Nome do processo (ex: firefox)."},
+                },
+            },
+        },
     },
     {
         "type": "function",
@@ -806,13 +792,10 @@ LUNA_TOOLS = [
             "description": "Envia notificação desktop ao usuário.",
             "parameters": {
                 "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "message": {"type": "string"}
-                },
-                "required": ["title", "message"]
-            }
-        }
+                "properties": {"title": {"type": "string"}, "message": {"type": "string"}},
+                "required": ["title", "message"],
+            },
+        },
     },
     {
         "type": "function",
@@ -827,11 +810,11 @@ LUNA_TOOLS = [
                 "properties": {
                     "action": {"type": "string", "enum": ["open", "send", "status"]},
                     "contact": {"type": "string", "description": "Nome ou número (send)."},
-                    "message": {"type": "string", "description": "Texto da mensagem (send)."}
+                    "message": {"type": "string", "description": "Texto da mensagem (send)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -849,17 +832,17 @@ LUNA_TOOLS = [
                 "properties": {
                     "path": {
                         "type": "string",
-                        "description": "Caminho da pasta/arquivo a verificar. Pode ser relativo ao workspace ou absoluto."
+                        "description": "Caminho da pasta/arquivo a verificar. Pode ser relativo ao workspace ou absoluto.",
                     },
                     "deep": {
                         "type": "boolean",
                         "description": "Se true, lê o conteúdo dos arquivos encontrados (máx 5).",
-                        "default": False
-                    }
+                        "default": False,
+                    },
                 },
-                "required": ["path"]
-            }
-        }
+                "required": ["path"],
+            },
+        },
     },
     {
         "type": "function",
@@ -871,17 +854,17 @@ LUNA_TOOLS = [
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "A informação a ser salva (ex: 'A senha do wifi é Luna2026')."
+                        "description": "A informação a ser salva (ex: 'A senha do wifi é Luna2026').",
                     },
                     "category": {
                         "type": "string",
                         "description": "Categoria opcional (ex: 'wifi', 'receita', 'rotina', 'geral').",
-                        "default": "geral"
-                    }
+                        "default": "geral",
+                    },
                 },
-                "required": ["text"]
-            }
-        }
+                "required": ["text"],
+            },
+        },
     },
     {
         "type": "function",
@@ -891,26 +874,19 @@ LUNA_TOOLS = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "Termo de busca (ex: 'senha wifi', 'receita de bolo')."
-                    }
+                    "query": {"type": "string", "description": "Termo de busca (ex: 'senha wifi', 'receita de bolo')."}
                 },
-                "required": ["query"]
-            }
-        }
+                "required": ["query"],
+            },
+        },
     },
     {
         "type": "function",
         "function": {
             "name": "self_diagnostic",
             "description": "Executa diagnóstico completo de todas as ferramentas da Luna e retorna relatório de quais estão funcionando ou com falha. Não precisa de parâmetros.",
-            "parameters": {
-                "type": "object",
-                "properties": {},
-                "required": []
-            }
-        }
+            "parameters": {"type": "object", "properties": {}, "required": []},
+        },
     },
     {
         "type": "function",
@@ -926,17 +902,17 @@ LUNA_TOOLS = [
                 "properties": {
                     "prompt": {
                         "type": "string",
-                        "description": "Descrição detalhada da imagem a ser gerada em português."
+                        "description": "Descrição detalhada da imagem a ser gerada em português.",
                     },
                     "size": {
                         "type": "string",
                         "enum": ["1024x1024", "1792x1024", "1024x1792"],
-                        "description": "Tamanho da imagem. Padrão 1024x1024."
-                    }
+                        "description": "Tamanho da imagem. Padrão 1024x1024.",
+                    },
                 },
-                "required": ["prompt"]
-            }
-        }
+                "required": ["prompt"],
+            },
+        },
     },
     {
         "type": "function",
@@ -948,14 +924,22 @@ LUNA_TOOLS = [
                 "properties": {
                     "action": {"type": "string", "enum": ["list", "add", "remove", "update"]},
                     "title": {"type": "string", "description": "Título do objetivo (para action=add)."},
-                    "priority": {"type": "string", "enum": ["baixa", "media", "alta"], "description": "Prioridade (para action=add/update)."},
-                    "status": {"type": "string", "enum": ["planejado", "em_progresso", "concluido"], "description": "Status (para action=update)."},
+                    "priority": {
+                        "type": "string",
+                        "enum": ["baixa", "media", "alta"],
+                        "description": "Prioridade (para action=add/update).",
+                    },
+                    "status": {
+                        "type": "string",
+                        "enum": ["planejado", "em_progresso", "concluido"],
+                        "description": "Status (para action=update).",
+                    },
                     "goal_id": {"type": "string", "description": "ID do objetivo (para action=remove/update)."},
-                    "notes": {"type": "string", "description": "Notas adicionais (para action=add/update)."}
+                    "notes": {"type": "string", "description": "Notas adicionais (para action=add/update)."},
                 },
-                "required": ["action"]
-            }
-        }
+                "required": ["action"],
+            },
+        },
     },
     {
         "type": "function",
@@ -966,11 +950,11 @@ LUNA_TOOLS = [
                 "type": "object",
                 "properties": {
                     "action": {"type": "string", "enum": ["search", "remember"]},
-                    "query": {"type": "string", "description": "Termo de busca ou memória a guardar."}
+                    "query": {"type": "string", "description": "Termo de busca ou memória a guardar."},
                 },
-                "required": ["action", "query"]
-            }
-        }
+                "required": ["action", "query"],
+            },
+        },
     },
     {
         "type": "function",
@@ -981,30 +965,59 @@ LUNA_TOOLS = [
                 "type": "object",
                 "properties": {
                     "query": {"type": "string", "description": "Termo de busca para recuperar experiências."},
-                    "days": {"type": "integer", "description": "Número de dias para buscar no passado. Padrão 30.", "default": 30}
+                    "days": {
+                        "type": "integer",
+                        "description": "Número de dias para buscar no passado. Padrão 30.",
+                        "default": 30,
+                    },
                 },
-                "required": ["query"]
-            }
-        }
-    }
+                "required": ["query"],
+            },
+        },
+    },
 ]
 
 # Substrings proibidas — o LLM pode alucinar comandos destrutivos
 _CMD_BLOCKLIST = [
-    "rm -rf", "rm -r", "sudo rm", "mkfs", "dd if=",
-    "shutdown", "reboot", "halt", "poweroff",
-    ":(){:|:&};:", "chmod 777 /", "chown -R",
-    "curl | sh", "wget | sh", "bash <(",
+    "rm -rf",
+    "rm -r",
+    "sudo rm",
+    "mkfs",
+    "dd if=",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    ":(){:|:&};:",
+    "chmod 777 /",
+    "chown -R",
+    "curl | sh",
+    "wget | sh",
+    "bash <(",
 ]
 
 # Palavras que indicam controle de playback (não são buscas)
 _SPOTIFY_CONTROLS = {
-    "next": "next", "próxima": "next", "proxima": "next", "pular": "next", "avançar": "next",
-    "prev": "prev", "anterior": "prev", "voltar": "prev",
-    "pause": "pause", "pausar": "pause", "parar": "pause", "para": "pause",
-    "play": "play", "tocar": "play", "retomar": "play", "continuar": "play",
+    "next": "next",
+    "próxima": "next",
+    "proxima": "next",
+    "pular": "next",
+    "avançar": "next",
+    "prev": "prev",
+    "anterior": "prev",
+    "voltar": "prev",
+    "pause": "pause",
+    "pausar": "pause",
+    "parar": "pause",
+    "para": "pause",
+    "play": "play",
+    "tocar": "play",
+    "retomar": "play",
+    "continuar": "play",
     "stop": "stop",
-    "status": "status", "o que toca": "status", "que música": "status",
+    "status": "status",
+    "o que toca": "status",
+    "que música": "status",
     "volume": "volume",
 }
 
@@ -1017,31 +1030,48 @@ def _format_result(result: str) -> str:
     if not text:
         return "FALHOU: Resultado vazio."
     upper = text.upper()
-    
+
     # Se já tem prefixo, confia no prefixo
     if upper.startswith("SUCESSO:") or upper.startswith("FALHOU:"):
         return text
-        
+
     # Erros explícitos
     if upper.startswith("FALHOU") or text.lower().startswith("erro") or "error" in text.lower():
         return text if upper.startswith("FALHOU") else f"FALHOU: {text}"
-        
+
     # Lista de indicadores de sucesso para ferramentas que realizam ações
     success_indicators = [
-        "arquivo salvo", "código escrito", "criado com sucesso",
-        "evento criado", "email enviado", "lembrete criado",
-        "rotina criada", "agendamento criado", "pasta criada",
-        "arquivo enviado", "skill salva",
-        "processo encerrado", "notificação enviada", "luzes atualizadas",
-        "música", "reproduzindo", "volume ajustado", "status:",
-        "contém:", "conteúdo de", "encontrado:", "resultado(s)",
-        "sessão iniciada", "concluído", "finalizado"
+        "arquivo salvo",
+        "código escrito",
+        "criado com sucesso",
+        "evento criado",
+        "email enviado",
+        "lembrete criado",
+        "rotina criada",
+        "agendamento criado",
+        "pasta criada",
+        "arquivo enviado",
+        "skill salva",
+        "processo encerrado",
+        "notificação enviada",
+        "luzes atualizadas",
+        "música",
+        "reproduzindo",
+        "volume ajustado",
+        "status:",
+        "contém:",
+        "conteúdo de",
+        "encontrado:",
+        "resultado(s)",
+        "sessão iniciada",
+        "concluído",
+        "finalizado",
     ]
-    
+
     # Se o texto contém algum indicador ou parece ser um resultado de leitura/busca (não vazio)
     if any(indicator in text.lower() for indicator in success_indicators) or len(text) > 10:
         return f"SUCESSO: {text}"
-        
+
     return f"FALHOU: {text}"
 
 
@@ -1140,13 +1170,13 @@ def _handle_spotify(executor, query: str) -> str:
 
 def _run_diagnostics() -> str:
     """Testa todas as ferramentas da Luna e retorna relatório de saúde."""
-    from actions.system_tools import get_system_tools
-    from actions.filesystem import get_filesystem
     from actions.document_services import get_doc_services
-    from actions.weather import get_weather
-    from brain.memory import get_memory
-    from brain.daily_routine import get_routine_manager
+    from actions.filesystem import get_filesystem
     from actions.google_services import get_google
+    from actions.system_tools import get_system_tools
+    from actions.weather import get_weather
+    from brain.daily_routine import get_routine_manager
+    from brain.memory import get_memory
 
     results = []
 
@@ -1161,119 +1191,145 @@ def _run_diagnostics() -> str:
     # system_control
     try:
         r = st.get_system_status()
-        test("system_control (status)", r.get("success"), f"CPU {r.get('cpu',{}).get('usage_percent')}% | RAM {r.get('ram',{}).get('used_gb')}/{r.get('ram',{}).get('total_gb')}GB | Disco {r.get('disk',{}).get('free_gb')}GB livres")
-    except Exception as e: test("system_control (status)", False, str(e))
+        test(
+            "system_control (status)",
+            r.get("success"),
+            f"CPU {r.get('cpu', {}).get('usage_percent')}% | RAM {r.get('ram', {}).get('used_gb')}/{r.get('ram', {}).get('total_gb')}GB | Disco {r.get('disk', {}).get('free_gb')}GB livres",
+        )
+    except Exception as e:
+        test("system_control (status)", False, str(e))
 
     try:
         r = st.get_running_processes(3)
-        test("system_control (processos)", bool(r), r.split('\n')[1] if '\n' in r else r[:50])
-    except Exception as e: test("system_control (processos)", False, str(e))
+        test("system_control (processos)", bool(r), r.split("\n")[1] if "\n" in r else r[:50])
+    except Exception as e:
+        test("system_control (processos)", False, str(e))
 
     # Terminal
     try:
         r = st.run_bash_command("echo ok")
         test("system_control (bash)", "ok" in r.lower(), r[:60])
-    except Exception as e: test("system_control (bash)", False, str(e))
+    except Exception as e:
+        test("system_control (bash)", False, str(e))
 
     # filesystem
     try:
         r = fs.list_dir("~", "*")
         test("filesystem (list)", bool(r), f"{len(r.split(chr(10)))} itens" if r else "vazio")
-    except Exception as e: test("filesystem (list)", False, str(e))
+    except Exception as e:
+        test("filesystem (list)", False, str(e))
 
     try:
         r = fs.stat("~")
         test("filesystem (stat)", bool(r), str(r)[:60])
-    except Exception as e: test("filesystem (stat)", False, str(e))
+    except Exception as e:
+        test("filesystem (stat)", False, str(e))
 
     # document_services
     try:
         r = ds.create_pdf_drive("teste diagnostico", "diagnostico_teste")
         test("document_services (pdf)", "sucesso" in r.lower() or "SUCESSO" in r, str(r)[:60])
-    except Exception as e: test("document_services (pdf)", False, str(e))
+    except Exception as e:
+        test("document_services (pdf)", False, str(e))
 
     # weather
     try:
         w = get_weather()
         r = w.get_weather("Brasília")
         test("get_weather", bool(r) and "erro" not in r.lower(), str(r)[:80])
-    except Exception as e: test("get_weather", False, str(e))
+    except Exception as e:
+        test("get_weather", False, str(e))
 
     # memory
     try:
         mem = get_memory()
         r = mem.get_context_for_prompt("diagnóstico")
-        test("search_memory", True, f"memória acessível")
-    except Exception as e: test("search_memory", False, str(e))
+        test("search_memory", True, "memória acessível")
+    except Exception as e:
+        test("search_memory", False, str(e))
 
     # memory_rag
     try:
         from brain.memory_rag import MemoryRAG
+
         rag = MemoryRAG()
         test("memory_rag (chromadb)", rag is not None, "instância criada")
-    except Exception as e: test("memory_rag (chromadb)", False, str(e))
+    except Exception as e:
+        test("memory_rag (chromadb)", False, str(e))
 
     # notes
     try:
-        st_note = getattr(st, '_notes', None) or getattr(fs, '_notes', None)
+        st_note = getattr(st, "_notes", None) or getattr(fs, "_notes", None)
         test("manage_notes", True, "módulo presente")
-    except Exception as e: test("manage_notes", False, str(e))
+    except Exception as e:
+        test("manage_notes", False, str(e))
 
     # routines
     try:
         rm = get_routine_manager()
         r = rm.list_routines_text()
         test("manage_routines (listar)", True, r[:60] if r else "nenhuma rotina")
-    except Exception as e: test("manage_routines (listar)", False, str(e))
+    except Exception as e:
+        test("manage_routines (listar)", False, str(e))
 
     # daily briefing
     try:
         from luna_core import get_luna
+
         luna = get_luna()
-        if hasattr(luna, '_daily_briefing'):
+        if hasattr(luna, "_daily_briefing"):
             test("get_daily_briefing", True, "método disponível")
         else:
             test("get_daily_briefing", False, "método ausente")
-    except Exception as e: test("get_daily_briefing", False, str(e))
+    except Exception as e:
+        test("get_daily_briefing", False, str(e))
 
     # google services
     try:
         gm = get_google()
         test("google_services", gm is not None, "módulo carregado")
-    except Exception as e: test("google_services", False, str(e))
+    except Exception as e:
+        test("google_services", False, str(e))
 
     # list_windows
     try:
         import subprocess as _sp
+
         r = _sp.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=5).stdout
         count = len([l for l in r.split("\n") if l.strip()])
         test("list_windows", True, f"{count} janela(s)")
-    except Exception as e: test("list_windows", False, str(e))
+    except Exception as e:
+        test("list_windows", False, str(e))
 
     # notifications
     try:
         r = st.send_notification("Luna Diagnóstico", "Teste de notificação")
         test("send_notification", True, str(r)[:60])
-    except Exception as e: test("send_notification", False, str(e))
+    except Exception as e:
+        test("send_notification", False, str(e))
 
     # clipboard
     try:
         from actions.clipboard import get_clipboard
+
         cb = get_clipboard()
         content = cb.read()
         test("clipboard_action (read)", True, f"{len(content)} caracteres lidos")
-    except Exception as e: test("clipboard_action (read)", False, str(e))
+    except Exception as e:
+        test("clipboard_action (read)", False, str(e))
 
     # apps
     try:
         import json as _j
+
         apps_file = Path(__file__).parent.parent / "config" / "apps.json"
         if apps_file.exists():
             apps_data = _j.loads(apps_file.read_text())
             test("open_app (apps disponíveis)", bool(apps_data), f"{len(apps_data)} apps cadastrados")
         else:
             test("open_app (apps disponíveis)", False, "apps.json não encontrado em config/")
-    except Exception as e: test("open_app", False, str(e))
+    except Exception as e:
+        test("open_app", False, str(e))
 
     # write_code / create_project
     test("write_code", True, "ferramenta de escrita disponível")
@@ -1282,19 +1338,27 @@ def _run_diagnostics() -> str:
     # control_spotify
     try:
         test("control_spotify", True, "módulo carregado")
-    except Exception as e: test("control_spotify", False, str(e))
+    except Exception as e:
+        test("control_spotify", False, str(e))
 
     # vision/see_screen
     try:
         import subprocess
+
         r = subprocess.run(["which", "grim"], capture_output=True, text=True, timeout=3)
         test("see_screen (grim)", r.returncode == 0, "grim disponível" if r.returncode == 0 else "grim ausente")
-    except Exception as e: test("see_screen (grim)", False, str(e))
+    except Exception as e:
+        test("see_screen (grim)", False, str(e))
 
     try:
         r = subprocess.run(["which", "tesseract"], capture_output=True, text=True, timeout=3)
-        test("see_screen (tesseract/OCR)", r.returncode == 0, "tesseract disponível" if r.returncode == 0 else "tesseract ausente")
-    except Exception as e: test("see_screen (tesseract)", False, str(e))
+        test(
+            "see_screen (tesseract/OCR)",
+            r.returncode == 0,
+            "tesseract disponível" if r.returncode == 0 else "tesseract ausente",
+        )
+    except Exception as e:
+        test("see_screen (tesseract)", False, str(e))
 
     # save/search home info
     test("save_home_info", True, "ferramenta de memória disponível")
@@ -1303,32 +1367,36 @@ def _run_diagnostics() -> str:
     # browser task
     try:
         from actions.browser_task import get_browser_task_manager
+
         bm = get_browser_task_manager()
         test("run_browser_task", bm is not None, "módulo carregado")
-    except Exception as e: test("run_browser_task", False, str(e))
+    except Exception as e:
+        test("run_browser_task", False, str(e))
 
     # agno
     try:
-        from brain.agno_agent import run_agno_task
         test("agno_run", True, "módulo carregado")
-    except Exception as e: test("agno_run", False, str(e))
+    except Exception as e:
+        test("agno_run", False, str(e))
 
     # crew
     try:
-        from brain.crew import run_crew_task
         test("crew_run", True, "módulo carregado")
-    except Exception as e: test("crew_run", False, str(e))
+    except Exception as e:
+        test("crew_run", False, str(e))
 
     # skill
     try:
         from brain.skills.skill_manager import get_skill_manager
+
         sm = get_skill_manager()
         test("save_skill", sm is not None, "módulo carregado")
-    except Exception as e: test("save_skill", False, str(e))
+    except Exception as e:
+        test("save_skill", False, str(e))
 
     summary_ok = sum(1 for r in results if r.startswith("✅"))
     summary_total = len(results)
-    header = f"🧪 DIAGNÓSTICO DE FERRAMENTAS — LUNA\n{'='*45}\nResumo: {summary_ok}/{summary_total} ferramentas OK\n{'-'*45}\n"
+    header = f"🧪 DIAGNÓSTICO DE FERRAMENTAS — LUNA\n{'=' * 45}\nResumo: {summary_ok}/{summary_total} ferramentas OK\n{'-' * 45}\n"
     return header + "\n".join(results)
 
 
@@ -1356,45 +1424,69 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             return _format_result(get_browser_task_manager().run(args.get("task", "")))
 
         elif name == "save_skill":
-            get_skill_manager().save_skill(args.get("name"), args.get("description"), args.get("steps"))
+            steps = args.get("steps", [])
+            if not isinstance(steps, list):
+                steps = [str(steps)] if steps else []
+            get_skill_manager().save_skill(args.get("name"), args.get("description"), steps)
             return _format_result(f"Skill '{args.get('name')}' salva com sucesso!")
 
         # ── Sistema e Arquivos ───────────────────────────────
         elif name == "system_control":
             st = get_system_tools()
             action = args.get("action")
-            if action in ("status", "disk", "disk_usage", "storage", "espaco"): return _format_result(st.get_system_status())
-            if action == "processes": return _format_result(st.get_running_processes(args.get("limit", 10)))
-            if action == "bash": return _format_result(st.run_bash_command(args.get("command"), visible=args.get("visible", False)))
-            if action == "terminal": return _format_result(st.run_terminal_command(args.get("command")))
-            if action == "screenshot": return _format_result(st.take_screenshot(args.get("path")))
-            if action == "notification": return _format_result(st.send_notification(args.get("title", "Luna"), args.get("message", "")))
-            if action == "brightness": return _format_result(st.set_brightness(args.get("level", 50)))
-            if action == "network": return _format_result(st.get_network_status())
-            if action == "kill": return _format_result(st.kill_process(args.get("pid", 0), args.get("name", "")))
+            if action in ("status", "disk", "disk_usage", "storage", "espaco"):
+                return _format_result(st.get_system_status())
+            if action == "processes":
+                return _format_result(st.get_running_processes(args.get("limit", 10)))
+            if action == "bash":
+                return _format_result(st.run_bash_command(args.get("command"), visible=args.get("visible", False)))
+            if action == "terminal":
+                return _format_result(st.run_terminal_command(args.get("command")))
+            if action == "screenshot":
+                return _format_result(st.take_screenshot(args.get("path")))
+            if action == "notification":
+                return _format_result(st.send_notification(args.get("title", "Luna"), args.get("message", "")))
+            if action == "brightness":
+                return _format_result(st.set_brightness(args.get("level", 50)))
+            if action == "network":
+                return _format_result(st.get_network_status())
+            if action == "kill":
+                return _format_result(st.kill_process(args.get("pid", 0), args.get("name", "")))
             return _format_result(f"FALHOU: Ação '{action}' inválida para system_control.")
 
         elif name == "filesystem":
             fs = get_filesystem()
             action = args.get("action", "list")
             path = args.get("path", "~")
-            if action == "list": return _format_result(fs.list_dir(path, args.get("pattern", "*")))
-            if action == "read": return _format_result(fs.read_text(path))
-            if action == "write": return _format_result(fs.write_text(path, args.get("content", ""), args.get("append", False)))
-            if action == "mkdir": return _format_result(fs.mkdir(path))
-            if action == "move": return _format_result(fs.move(path, args.get("destination", "")))
-            if action == "delete": return _format_result(fs.delete(path))
-            if action == "stat": return _format_result(fs.stat(path))
-            if action == "search": return _format_result(fs.search(args.get("query", ""), path))
+            if action == "list":
+                return _format_result(fs.list_dir(path, args.get("pattern", "*")))
+            if action == "read":
+                return _format_result(fs.read_text(path))
+            if action == "write":
+                return _format_result(fs.write_text(path, args.get("content", ""), args.get("append", False)))
+            if action == "mkdir":
+                return _format_result(fs.mkdir(path))
+            if action == "move":
+                return _format_result(fs.move(path, args.get("destination", "")))
+            if action == "delete":
+                return _format_result(fs.delete(path))
+            if action == "stat":
+                return _format_result(fs.stat(path))
+            if action == "search":
+                return _format_result(fs.search(args.get("query", ""), path))
             return _format_result(f"FALHOU: Ação '{action}' inválida para filesystem.")
 
         elif name == "document_services":
             ds = get_doc_services()
             action = args.get("action")
-            if action == "create_excel": return _format_result(ds.create_excel(args.get("data"), args.get("filename")))
-            if action == "create_pdf": return _format_result(ds.create_pdf_drive(args.get("content"), args.get("title")))
-            if action == "read_file": return _format_result(ds.read_file(args.get("filepath_or_name")))
-            if action == "save_file": return _format_result(ds.save_file(args.get("content"), args.get("filepath_or_name")))
+            if action == "create_excel":
+                return _format_result(ds.create_excel(args.get("data"), args.get("filename")))
+            if action == "create_pdf":
+                return _format_result(ds.create_pdf_drive(args.get("content"), args.get("title")))
+            if action == "read_file":
+                return _format_result(ds.read_file(args.get("filepath_or_name")))
+            if action == "save_file":
+                return _format_result(ds.save_file(args.get("content"), args.get("filepath_or_name")))
             return _format_result(f"FALHOU: Ação '{action}' inválida para document_services.")
 
         # ── Google Services ──────────────────────────────────
@@ -1402,10 +1494,17 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             gm = get_google()
             action = args.get("action")
             if action == "query":
-                return _format_result(gm.get_calendar_events(args.get("max_results", 5)) if args.get("service") == "calendar" else gm.get_unread_emails(args.get("max_results", 5)))
-            if action == "search_emails": return _format_result(gm.search_emails(args.get("query")))
-            if action == "read_email": return _format_result(gm.read_email(args.get("query")))
-            if action == "events_by_date": return _format_result(gm.get_events_by_date(args.get("date")))
+                return _format_result(
+                    gm.get_calendar_events(args.get("max_results", 5))
+                    if args.get("service") == "calendar"
+                    else gm.get_unread_emails(args.get("max_results", 5))
+                )
+            if action == "search_emails":
+                return _format_result(gm.search_emails(args.get("query")))
+            if action == "read_email":
+                return _format_result(gm.read_email(args.get("query")))
+            if action == "events_by_date":
+                return _format_result(gm.get_events_by_date(args.get("date")))
             return _format_result(f"FALHOU: Ação '{action}' inválida para google_services.")
 
         # ── Mídia e Casa ─────────────────────────────────────
@@ -1414,6 +1513,7 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
 
         elif name == "control_lights":
             from actions.lights import _set_light
+
             res = _set_light(args.get("state") == "on")
             return _format_result(res)
 
@@ -1422,12 +1522,18 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             action = args.get("action")
             if action == "reminder":
                 sub = args.get("sub_action", "add")
-                if sub == "add": return _format_result(executor.reminders.add(args.get("message"), executor.reminders.parse_datetime(args.get("when"))))
-                if sub == "list": return _format_result(executor.reminders.list_reminders())
+                if sub == "add":
+                    return _format_result(
+                        executor.reminders.add(args.get("message"), executor.reminders.parse_datetime(args.get("when")))
+                    )
+                if sub == "list":
+                    return _format_result(executor.reminders.list_reminders())
             if action == "notes":
                 sub = args.get("sub_action", "list")
-                if sub == "add": return _format_result(executor.notes.add(args.get("content")))
-                if sub == "list": return _format_result(executor.notes.list_notes())
+                if sub == "add":
+                    return _format_result(executor.notes.add(args.get("content")))
+                if sub == "list":
+                    return _format_result(executor.notes.list_notes())
             return _format_result(f"FALHOU: Ação '{action}' inválida para productivity_manage.")
 
         elif name == "manage_goals":
@@ -1438,15 +1544,17 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                 goals = []
                 if goals_file.exists():
                     goals = json.loads(goals_file.read_text(encoding="utf-8"))
-                
+
                 if action == "list":
                     if not goals:
                         return "SUCESSO: Nenhum objetivo cadastrado."
                     lines = ["🎯 Objetivos permanentes:"]
                     for g in goals:
-                        lines.append(f"  [{g.get('id')}] {g.get('title')} - Prioridade: {g.get('priority')} | Status: {g.get('status')} ({g.get('notes', '')})")
+                        lines.append(
+                            f"  [{g.get('id')}] {g.get('title')} - Prioridade: {g.get('priority')} | Status: {g.get('status')} ({g.get('notes', '')})"
+                        )
                     return "SUCESSO: " + "\n".join(lines)
-                
+
                 elif action == "add":
                     title = args.get("title")
                     if not title:
@@ -1458,12 +1566,12 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                         "priority": args.get("priority", "media"),
                         "status": "planejado",
                         "created_at": time.strftime("%Y-%m-%d"),
-                        "notes": args.get("notes", "")
+                        "notes": args.get("notes", ""),
                     }
                     goals.append(new_goal)
                     goals_file.write_text(json.dumps(goals, ensure_ascii=False, indent=4), encoding="utf-8")
                     return f"SUCESSO: Objetivo '{title}' adicionado com ID {gid}."
-                
+
                 elif action == "remove":
                     gid = args.get("goal_id")
                     if not gid:
@@ -1474,7 +1582,7 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                         return f"FALHOU: Objetivo {gid} não encontrado."
                     goals_file.write_text(json.dumps(goals, ensure_ascii=False, indent=4), encoding="utf-8")
                     return f"SUCESSO: Objetivo {gid} removido."
-                
+
                 elif action == "update":
                     gid = args.get("goal_id")
                     if not gid:
@@ -1482,9 +1590,12 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                     found = False
                     for g in goals:
                         if g.get("id") == gid:
-                            if "priority" in args: g["priority"] = args["priority"]
-                            if "status" in args: g["status"] = args["status"]
-                            if "notes" in args: g["notes"] = args["notes"]
+                            if "priority" in args:
+                                g["priority"] = args["priority"]
+                            if "status" in args:
+                                g["status"] = args["status"]
+                            if "notes" in args:
+                                g["notes"] = args["notes"]
                             found = True
                             break
                     if not found:
@@ -1501,10 +1612,15 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                 return "FALHOU: query vazia."
             try:
                 from brain.memory_rag import MemoryRAG
+
                 rag = MemoryRAG()
                 if action == "search":
                     res = rag.retrieve_context(query)
-                    return f"SUCESSO: Memórias encontradas:\n{res}" if res else "SUCESSO: Nenhuma memória relevante encontrada."
+                    return (
+                        f"SUCESSO: Memórias encontradas:\n{res}"
+                        if res
+                        else "SUCESSO: Nenhuma memória relevante encontrada."
+                    )
                 elif action == "remember":
                     rag.remember(query)
                     return f"SUCESSO: Fato registrado na memória semântica: '{query}'"
@@ -1518,6 +1634,7 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                 return "FALHOU: query vazia."
             try:
                 from brain.episodic_memory import get_episodic_memory
+
                 mem = get_episodic_memory()
                 eps = mem.recall(query, days=days)
                 return f"SUCESSO:\n{mem.format_for_user(eps)}"
@@ -1559,11 +1676,31 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                     size = item.stat().st_size
                     lines.append(f"  📄 {item.name} ({size}B)")
             if deep:
-                text_files = [f for f in items if f.is_file() and f.suffix in ('.py','.txt','.md','.html','.css','.js','.json','.toml','.cfg','.sh','.yml','.yaml','.csv')]
+                text_files = [
+                    f
+                    for f in items
+                    if f.is_file()
+                    and f.suffix
+                    in (
+                        ".py",
+                        ".txt",
+                        ".md",
+                        ".html",
+                        ".css",
+                        ".js",
+                        ".json",
+                        ".toml",
+                        ".cfg",
+                        ".sh",
+                        ".yml",
+                        ".yaml",
+                        ".csv",
+                    )
+                ]
                 for tf in text_files[:5]:
                     content = tf.read_text(encoding="utf-8", errors="replace")[:1000]
                     lines.append(f"\n--- {tf.name} ---\n{content}")
-            return f"SUCESSO: Estado do projeto:\n" + "\n".join(lines)
+            return "SUCESSO: Estado do projeto:\n" + "\n".join(lines)
 
         elif name == "search_memory":
             ctx = get_memory().get_context_for_prompt(args.get("query", ""))
@@ -1578,7 +1715,9 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                 return _format_result("FALHOU: Conteúdo vazio — nada foi escrito.")
             filepath = Path(filename)
             if filepath.is_absolute():
-                return _format_result("FALHOU: Caminhos absolutos não são permitidos por segurança. Use caminho relativo ao workspace.")
+                return _format_result(
+                    "FALHOU: Caminhos absolutos não são permitidos por segurança. Use caminho relativo ao workspace."
+                )
             filepath = WORKSPACE_DIR / filename
             # Ensure path doesn't escape workspace
             try:
@@ -1606,7 +1745,9 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                 return _format_result("FALHOU: Nenhum arquivo especificado para o projeto.")
             project_dir = Path(project_name)
             if project_dir.is_absolute():
-                return _format_result("FALHOU: Caminhos absolutos não são permitidos por segurança. Use nome relativo ao workspace.")
+                return _format_result(
+                    "FALHOU: Caminhos absolutos não são permitidos por segurança. Use nome relativo ao workspace."
+                )
             project_dir = WORKSPACE_DIR / project_name
             try:
                 project_dir = project_dir.resolve()
@@ -1676,6 +1817,7 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
 
         elif name == "see_screen":
             from vision.screen import get_vision
+
             try:
                 result = get_vision().capture_and_describe()
                 return _format_result(result[:3000] if len(str(result)) > 3000 else result)
@@ -1701,6 +1843,7 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
 
         elif name == "control_media":
             from actions.media import get_media
+
             action = args.get("action", "play")
             return _format_result(get_media().handle(action))
 
@@ -1749,9 +1892,10 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             return _format_result("FALHOU: Ação inválida para manage_routines.")
 
         elif name == "get_daily_briefing":
-            if hasattr(executor, '_luna_core') and executor._luna_core:
+            if hasattr(executor, "_luna_core") and executor._luna_core:
                 return _format_result(executor._luna_core._daily_briefing())
             from luna_core import get_luna
+
             return _format_result(get_luna()._daily_briefing())
 
         elif name == "self_diagnostic":
@@ -1764,6 +1908,7 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                 if not prompt:
                     return _format_result("FALHOU: Descrição da imagem não fornecida.")
                 from actions.image_gen import generate_image
+
                 result = generate_image(prompt, size)
                 return _format_result(result)
             except Exception as e:
@@ -1775,6 +1920,7 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             data = args.get("data", {})
             try:
                 from actions.n8n import trigger_workflow
+
                 result = trigger_workflow(path, data)
                 return _format_result(result)
             except Exception as e:
@@ -1785,13 +1931,15 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             action = args.get("action", "")
             gm = get_google()
             if action == "create":
-                return _format_result(gm.create_event(
-                    args.get("summary", ""),
-                    args.get("start_time", ""),
-                    args.get("end_time", ""),
-                    args.get("description", ""),
-                    args.get("location", ""),
-                ))
+                return _format_result(
+                    gm.create_event(
+                        args.get("summary", ""),
+                        args.get("start_time", ""),
+                        args.get("end_time", ""),
+                        args.get("description", ""),
+                        args.get("location", ""),
+                    )
+                )
             elif action == "edit":
                 return _format_result(gm.edit_event(args.get("event_id", ""), args.get("summary", "")))
             elif action == "delete":
@@ -1803,16 +1951,20 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             action = args.get("action", "")
             gm = get_google()
             if action == "send":
-                return _format_result(gm.send_email(
-                    args.get("to", ""),
-                    args.get("subject", ""),
-                    args.get("body", ""),
-                ))
+                return _format_result(
+                    gm.send_email(
+                        args.get("to", ""),
+                        args.get("subject", ""),
+                        args.get("body", ""),
+                    )
+                )
             elif action == "reply":
-                return _format_result(gm.reply_email(
-                    args.get("message_id", ""),
-                    args.get("body", ""),
-                ))
+                return _format_result(
+                    gm.reply_email(
+                        args.get("message_id", ""),
+                        args.get("body", ""),
+                    )
+                )
             elif action == "mark_read":
                 return _format_result(gm.mark_read(args.get("message_id", "")))
             elif action == "delete":
@@ -1980,29 +2132,28 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
         logger.exception("Erro em execute_tool_call_inner")
         return _format_result(f"FALHOU: Erro interno: {e}")
 
+
 def execute_tool_call(executor, tool_call) -> str:
     """Executa a ferramenta e publica o evento no EventBus."""
-    from brain.event_bus import get_event_bus
     import time
-    
+
+    from brain.event_bus import get_event_bus
+
     start_time = time.time()
-    
+
     if isinstance(tool_call, dict):
         name = tool_call.get("function", {}).get("name", "")
         raw_args = tool_call.get("function", {}).get("arguments", {})
     else:
         name = getattr(tool_call.function, "name", "")
         raw_args = getattr(tool_call.function, "arguments", {})
-        
+
     result = _execute_tool_call_inner(executor, tool_call)
-    
+
     duration = time.time() - start_time
-    
-    get_event_bus().publish("tool_executed", {
-        "tool_name": name,
-        "arguments": raw_args,
-        "result": result,
-        "duration": duration
-    })
-    
+
+    get_event_bus().publish(
+        "tool_executed", {"tool_name": name, "arguments": raw_args, "result": result, "duration": duration}
+    )
+
     return result

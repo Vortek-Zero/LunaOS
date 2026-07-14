@@ -3,13 +3,14 @@
 actions/writing.py — Luna Writing
 Editor de texto com sugestões em tempo real via LLM.
 """
+
 import threading
-from typing import Callable, Optional
+from collections.abc import Callable
 
 try:
-    from brain.llm import get_llm, MODELS
+    from brain.llm import MODELS, get_llm
 except ImportError:
-    from brain.llm import get_llm, MODELS
+    from brain.llm import MODELS, get_llm
 
 
 class WritingEngine:
@@ -17,7 +18,7 @@ class WritingEngine:
 
     def __init__(self):
         self._llm = get_llm()
-        self._suggestion_thread: Optional[threading.Thread] = None
+        self._suggestion_thread: threading.Thread | None = None
         self._cancel_flag = threading.Event()
         self.last_suggestion = ""
 
@@ -70,6 +71,7 @@ class WritingEngine:
         result = self._llm.generate(prompt, task_type="factual", model=MODELS.get("main"))
         # Remove JSON wrapper se vier
         import json
+
         try:
             data = json.loads(result)
             return data.get("response", data.get("text", result))
@@ -78,12 +80,10 @@ class WritingEngine:
 
     def summarize(self, text: str) -> str:
         """Resume o texto."""
-        prompt = (
-            "Resuma o texto abaixo em 2-3 frases em português.\n\n"
-            f"Texto: {text}\n\nResumo:"
-        )
+        prompt = f"Resuma o texto abaixo em 2-3 frases em português.\n\nTexto: {text}\n\nResumo:"
         result = self._llm.generate(prompt, task_type="factual", model=MODELS.get("main"))
         import json
+
         try:
             data = json.loads(result)
             return data.get("response", data.get("text", result))
@@ -94,7 +94,7 @@ class WritingEngine:
         self._cancel_flag.set()
 
 
-_engine: Optional[WritingEngine] = None
+_engine: WritingEngine | None = None
 
 
 def get_writing_engine() -> WritingEngine:

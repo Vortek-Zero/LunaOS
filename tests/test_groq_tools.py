@@ -1,5 +1,5 @@
 import os
-import json
+
 from groq import Groq
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
@@ -10,14 +10,8 @@ tools = [
         "function": {
             "name": "get_weather",
             "description": "Get the current weather",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "location": {"type": "string"}
-                },
-                "required": ["location"]
-            }
-        }
+            "parameters": {"type": "object", "properties": {"location": {"type": "string"}}, "required": ["location"]},
+        },
     }
 ]
 
@@ -29,7 +23,7 @@ try:
         max_tokens=1500,
         top_p=0.95,
         tools=tools,
-        tool_choice="auto"
+        tool_choice="auto",
     )
     print(completion.choices[0].message)
 except Exception as e:

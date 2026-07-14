@@ -2,17 +2,19 @@
 """
 actions/lights.py — Controle da luz da sala via TinyTuya.
 """
+
 import random
 
 try:
     import tinytuya
+
     _TUYA_OK = True
 except ImportError:
     _TUYA_OK = False
 
 DEVICE_ID = "eb64a81b56fb8003dexqdd"
-LOCAL_KEY  = "Ek&~Ah`=4s}5.'Z#"
-IP_DEVICE  = "192.168.1.5"
+LOCAL_KEY = "Ek&~Ah`=4s}5.'Z#"
+IP_DEVICE = "192.168.1.5"
 
 _RESPOSTAS_LIGA = [
     "Luz da sala ligada!",
@@ -30,28 +32,45 @@ _RESPOSTAS_DESLIGA = [
     "Luz apagada, modo cinema ativado.",
 ]
 
-_KEYWORDS_LIGA    = [
-    "liga", "ligar", "ligue",
-    "acende", "acender", "acenda", "acendeu",
-    "ativa", "ativar", "ative",
-    "coloca a luz", "bota a luz", "deixa a luz",
+_KEYWORDS_LIGA = [
+    "liga",
+    "ligar",
+    "ligue",
+    "acende",
+    "acender",
+    "acenda",
+    "acendeu",
+    "ativa",
+    "ativar",
+    "ative",
+    "coloca a luz",
+    "bota a luz",
+    "deixa a luz",
 ]
 _KEYWORDS_DESLIGA = [
-    "desliga", "desligar", "desligue",
-    "apaga", "apagar", "apague", "apagou",
-    "desativa", "desativar", "desative",
-    "tira a luz", "tira as luzes", "fecha a luz",
-    "pode apagar", "pode desligar",
+    "desliga",
+    "desligar",
+    "desligue",
+    "apaga",
+    "apagar",
+    "apague",
+    "apagou",
+    "desativa",
+    "desativar",
+    "desative",
+    "tira a luz",
+    "tira as luzes",
+    "fecha a luz",
+    "pode apagar",
+    "pode desligar",
 ]
-_KEYWORDS_LUZ     = ["luz", "luzes", "sala", "iluminacao", "iluminação", "lampada", "lâmpada"]
+_KEYWORDS_LUZ = ["luz", "luzes", "sala", "iluminacao", "iluminação", "lampada", "lâmpada"]
 
 
 def _get_device():
     if not _TUYA_OK:
         return None
-    return tinytuya.OutletDevice(
-        dev_id=DEVICE_ID, address=IP_DEVICE, local_key=LOCAL_KEY, version=3.4
-    )
+    return tinytuya.OutletDevice(dev_id=DEVICE_ID, address=IP_DEVICE, local_key=LOCAL_KEY, version=3.4)
 
 
 def _set_light(state: bool) -> str:
@@ -81,6 +100,7 @@ def handle(cmd: str) -> str | None:
 
 
 _instance = None
+
 
 def get_lights():
     global _instance

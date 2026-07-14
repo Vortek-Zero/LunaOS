@@ -3,9 +3,9 @@
 Auditoria do sistema Luna — dependências, ferramentas, rotas do pipeline.
 Uso: python tests/system_audit.py
 """
+
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -70,11 +70,8 @@ def audit_tools() -> list[str]:
     lines = []
     try:
         from brain.agent_tools import LUNA_TOOLS, execute_tool_call
-        names = sorted(
-            t["function"]["name"]
-            for t in LUNA_TOOLS
-            if t.get("type") == "function"
-        )
+
+        names = sorted(t["function"]["name"] for t in LUNA_TOOLS if t.get("type") == "function")
         lines.append(ok(f"{len(names)} ferramentas nativas registradas"))
         for n in names:
             lines.append(f"      · {n}")
@@ -88,12 +85,14 @@ def audit_llm() -> list[str]:
     lines = []
     try:
         from luna_core import LunaCore
+
         llm = LunaCore()._llm
         ready = llm.is_ready()
         native = llm.supports_native_tools()
         lines.append(ok("LLM pronto") if ready else fail("LLM offline (Ollama/Groq/OpenRouter)"))
         lines.append(ok("Tool calls nativos") if native else warn("Sem tool calls nativos — fallback JSON"))
-        from config import MODELS, GROQ_API_KEY
+        from config import GROQ_API_KEY, MODELS
+
         lines.append(ok(f"Modelo main: {MODELS.get('main', '?')}"))
         if GROQ_API_KEY:
             lines.append(ok("GROQ_API_KEY definida"))
@@ -106,7 +105,8 @@ def audit_llm() -> list[str]:
 
 def audit_env() -> list[str]:
     lines = []
-    from config import TAVILY_API_KEY, GROQ_API_KEY, OLLAMA_BASE_URL
+    from config import OLLAMA_BASE_URL, TAVILY_API_KEY
+
     lines.append(ok(f"Ollama: {OLLAMA_BASE_URL}") if OLLAMA_BASE_URL else warn("Ollama URL"))
     lines.append(ok("Tavily") if TAVILY_API_KEY else warn("TAVILY_API_KEY ausente — search_web limitado"))
     token = ROOT / "token.json"
@@ -147,6 +147,7 @@ def audit_sample_routes() -> list[str]:
     lines = []
     try:
         from luna_core import LunaCore
+
         luna = LunaCore()
     except Exception as e:
         return [fail(f"Não instanciou LunaCore: {e}")]

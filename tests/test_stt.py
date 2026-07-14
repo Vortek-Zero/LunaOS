@@ -1,5 +1,6 @@
-from faster_whisper import WhisperModel
 import sys
+
+from faster_whisper import WhisperModel
 
 print("Sys encoding:", sys.getdefaultencoding())
 model = WhisperModel("tiny", device="cpu", compute_type="int8")

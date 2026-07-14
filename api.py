@@ -4,32 +4,31 @@ api.py — API REST FastAPI do sistema Luna
 Endpoints completos com autenticação por API key.
 Preparado para separação: frontend web pode rodar em outro servidor.
 """
-import time
+
 import asyncio
-import json
 import hashlib
-import logging
+import json
 import logging as _logging
 import secrets as _secrets
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
-
-from fastapi import FastAPI, HTTPException, Depends, Request
-from fastapi.security import APIKeyHeader
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.security import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 import config
 
 _llm_executor = _ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm")
 _whisper_model = None
 
-_logging.basicConfig(level=_logging.INFO, format='%(asctime)s [%(levelname)s] %(name)s: %(message)s')
+_logging.basicConfig(level=_logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = _logging.getLogger("luna.api")
 
 # ── App FastAPI ───────────────────────────────────────────────
@@ -61,6 +60,7 @@ import time as _rate_time
 _rate_limit_data: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT = 30  # requests per minute per IP
 
+
 def _check_rate_limit(request: Request) -> None:
     client_ip = request.client.host if request.client else "unknown"
     now = _rate_time.time()
@@ -73,27 +73,26 @@ def _check_rate_limit(request: Request) -> None:
         raise HTTPException(status_code=429, detail="Muitas requisições. Aguarde um momento.")
     timestamps.append(now)
 
+
 # ── Autenticação API Key ──────────────────────────────────────
 
 API_KEY_HEADER = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def verify_api_key(request: Request, api_key: Optional[str] = Depends(API_KEY_HEADER)):
+async def verify_api_key(request: Request, api_key: str | None = Depends(API_KEY_HEADER)):
     # Conexões locais (Tauri Desktop, frontend local) não precisam de chave
     host = request.client.host if request.client else ""
     if host in ("127.0.0.1", "::1", "localhost"):
         return api_key or "local"
     if not api_key or api_key != config.API_KEY:
-        raise HTTPException(
-            status_code=403,
-            detail="API key inválida ou ausente. Use header X-API-Key."
-        )
+        raise HTTPException(status_code=403, detail="API key inválida ou ausente. Use header X-API-Key.")
     return api_key
 
 
 # ── Usuários (cadastro por dispositivo) ──────────────────────
 
 _USERS_FILE = Path(__file__).parent / "data" / "users.json"
+
 
 def _load_users() -> dict:
     try:
@@ -103,17 +102,21 @@ def _load_users() -> dict:
         pass
     return {}
 
+
 def _save_users(users: dict) -> None:
     _USERS_FILE.parent.mkdir(parents=True, exist_ok=True)
     _USERS_FILE.write_text(json.dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
 
+
 _TOKEN_SALT = _secrets.token_hex(8)  # random salt at module level
+
 
 def _token_for(username: str, device_id: str) -> str:
     raw = f"{username}:{device_id}:{config.API_KEY}:{_TOKEN_SALT}"
     return hashlib.sha256(raw.encode()).hexdigest()
 
-def _verify_user_token(token: str) -> Optional[str]:
+
+def _verify_user_token(token: str) -> str | None:
     """Retorna username se token válido, None caso contrário."""
     users = _load_users()
     for username, data in users.items():
@@ -132,25 +135,30 @@ def get_luna():
     global _luna
     if _luna is None:
         from luna_core import get_luna as _get_luna
+
         _luna = _get_luna()
     return _luna
 
 
 # ── Modelos Pydantic ──────────────────────────────────────────
 
+
 class ChatRequest(BaseModel):
     message: str
     voice: bool = False  # se True, resposta otimizada para áudio (fala)
+
 
 class ChatResponse(BaseModel):
     response: str
     cached: bool = False
     processing_time_ms: float = 0
 
+
 class FactRequest(BaseModel):
     fact: str
     category: str = "geral"
     importance: float = 0.5
+
 
 class StatusResponse(BaseModel):
     ready: bool
@@ -164,39 +172,48 @@ class StatusResponse(BaseModel):
     processing: bool = False
     current_action: str = ""
 
+
 class ModelRequest(BaseModel):
     mode: str  # "medium" or "high"
+
 
 class SessionRequest(BaseModel):
     session_id: str
     title: str = ""
 
+
 class RenameSessionRequest(BaseModel):
     session_id: str
     new_title: str
 
+
 class MediaRequest(BaseModel):
-    action: str   # play, pause, next, prev, stop, volume_up, volume_down, mute
+    action: str  # play, pause, next, prev, stop, volume_up, volume_down, mute
     value: int = 10  # para volume
+
 
 class TimerRequest(BaseModel):
     seconds: int
     name: str = "timer"
 
+
 class NoteRequest(BaseModel):
     text: str
 
+
 class ReminderRequest(BaseModel):
-    text: str = ""          # linguagem natural (voz/chat)
-    message: str = ""       # nome/mensagem do lembrete
-    date: str = ""          # DD/MM ou DD/MM/YYYY
-    hour: int = -1          # hora (0-23)
-    minute: int = 0         # minuto (0-59)
+    text: str = ""  # linguagem natural (voz/chat)
+    message: str = ""  # nome/mensagem do lembrete
+    date: str = ""  # DD/MM ou DD/MM/YYYY
+    hour: int = -1  # hora (0-23)
+    minute: int = 0  # minuto (0-59)
+
 
 class RegisterRequest(BaseModel):
     username: str
-    api_key: str   # usuário precisa saber a API key para se cadastrar
-    device_id: str # ID único do dispositivo (gerado no frontend)
+    api_key: str  # usuário precisa saber a API key para se cadastrar
+    device_id: str  # ID único do dispositivo (gerado no frontend)
+
 
 class LoginRequest(BaseModel):
     username: str
@@ -205,6 +222,7 @@ class LoginRequest(BaseModel):
 
 
 # ── Endpoints de autenticação de usuário ─────────────────────
+
 
 @app.post("/api/auth/register")
 async def register(req: RegisterRequest):
@@ -268,6 +286,7 @@ async def logout(request: Request):
 
 # ── Helpers de auth por token de usuário ─────────────────────
 
+
 def _require_user(request: Request) -> str:
     token = request.headers.get("X-User-Token", "")
     username = _verify_user_token(token)
@@ -275,7 +294,9 @@ def _require_user(request: Request) -> str:
         raise HTTPException(status_code=401, detail="Token inválido ou conta removida.")
     return username
 
+
 ADMIN_PASSWORD = config.ADMIN_PASSWORD
+
 
 def _require_admin(request: Request) -> str:
     username = _require_user(request)
@@ -286,6 +307,7 @@ def _require_admin(request: Request) -> str:
 
 
 _ADMIN_AUDIT_LOG = Path(__file__).parent / "data" / "admin_audit.log"
+
 
 def _log_admin_action(username: str, action: str, detail: str = ""):
     _ADMIN_AUDIT_LOG.parent.mkdir(parents=True, exist_ok=True)
@@ -299,19 +321,24 @@ def _log_admin_action(username: str, action: str, detail: str = ""):
 
 # ── Central de Controle — Luzes ───────────────────────────────
 
+
 class LightRequest(BaseModel):
     state: bool  # True = ligar, False = desligar
+
 
 @app.post("/api/control/lights")
 async def control_lights(req: LightRequest, _key: str = Depends(verify_api_key)):
     from actions.lights import _set_light
+
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, _set_light, req.state)
     return {"result": result}
 
+
 @app.get("/api/control/lights/status")
 async def lights_status(_key: str = Depends(verify_api_key)):
-    from actions.lights import _get_device, _TUYA_OK
+    from actions.lights import _TUYA_OK, _get_device
+
     if not _TUYA_OK:
         return {"on": None, "error": "tinytuya não instalado"}
     try:
@@ -325,53 +352,66 @@ async def lights_status(_key: str = Depends(verify_api_key)):
 
 # ── Agendamentos de luz ───────────────────────────────────────
 
+
 class ScheduleRequest(BaseModel):
     hour: int
     minute: int
     state: bool
-    days: list = None   # None = todos os dias
+    days: list = None  # None = todos os dias
     label: str = ""
+
 
 @app.get("/api/control/lights/schedules")
 async def list_schedules(_key: str = Depends(verify_api_key)):
     from actions.light_scheduler import get_light_scheduler
+
     return {"schedules": get_light_scheduler().list_schedules()}
+
 
 @app.post("/api/control/lights/schedules")
 async def add_schedule(req: ScheduleRequest, _key: str = Depends(verify_api_key)):
     from actions.light_scheduler import get_light_scheduler
+
     result = get_light_scheduler().add(req.hour, req.minute, req.state, req.days, req.label)
     return {"success": True, "result": result}
+
 
 @app.delete("/api/control/lights/schedules/{sid}")
 async def remove_schedule(sid: str, _key: str = Depends(verify_api_key)):
     from actions.light_scheduler import get_light_scheduler
+
     ok = get_light_scheduler().remove(sid)
     return {"success": ok}
+
 
 @app.patch("/api/control/lights/schedules/{sid}/toggle")
 async def toggle_schedule(sid: str, _key: str = Depends(verify_api_key)):
     from actions.light_scheduler import get_light_scheduler
+
     msg = get_light_scheduler().toggle(sid)
     return {"success": bool(msg), "result": msg}
 
 
 # ── Central de Controle — Processos ──────────────────────────
 
+
 @app.get("/api/control/processes")
 async def list_processes(_key: str = Depends(verify_api_key)):
     try:
         import psutil
+
         procs = []
         for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent", "status"]):
             try:
-                procs.append({
-                    "pid": p.info["pid"],
-                    "name": p.info["name"],
-                    "cpu": round(p.info["cpu_percent"] or 0, 1),
-                    "mem": round(p.info["memory_percent"] or 0, 1),
-                    "status": p.info["status"],
-                })
+                procs.append(
+                    {
+                        "pid": p.info["pid"],
+                        "name": p.info["name"],
+                        "cpu": round(p.info["cpu_percent"] or 0, 1),
+                        "mem": round(p.info["memory_percent"] or 0, 1),
+                        "status": p.info["status"],
+                    }
+                )
             except Exception:
                 pass
         procs.sort(key=lambda x: x["mem"], reverse=True)
@@ -379,13 +419,18 @@ async def list_processes(_key: str = Depends(verify_api_key)):
     except ImportError:
         return {"error": "psutil não instalado"}
 
+
 class PidRequest(BaseModel):
     pid: int
+
 
 @app.post("/api/control/processes/kill")
 async def kill_process(req: PidRequest, _key: str = Depends(verify_api_key)):
     try:
-        import psutil, signal as _sig
+        import signal as _sig
+
+        import psutil
+
         p = psutil.Process(req.pid)
         name = p.name()
         p.send_signal(_sig.SIGTERM)
@@ -395,6 +440,7 @@ async def kill_process(req: PidRequest, _key: str = Depends(verify_api_key)):
 
 
 # ── Central de Controle — Notas/Lembretes (leitura rápida) ───
+
 
 @app.get("/api/control/summary")
 async def control_summary(_key: str = Depends(verify_api_key)):
@@ -408,6 +454,7 @@ async def control_summary(_key: str = Depends(verify_api_key)):
 
 # ── Admin — Dispositivos conectados ──────────────────────────
 
+
 @app.get("/api/admin/devices")
 async def admin_devices(request: Request):
     """Lista dispositivos (usuários) conectados. Apenas admin."""
@@ -416,12 +463,15 @@ async def admin_devices(request: Request):
     users = _load_users()
     result = []
     for username, data in users.items():
-        result.append({
-            "username": username,
-            "devices": len(data.get("tokens", [])),
-            "created": data.get("created", ""),
-        })
+        result.append(
+            {
+                "username": username,
+                "devices": len(data.get("tokens", [])),
+                "created": data.get("created", ""),
+            }
+        )
     return {"devices": result}
+
 
 @app.delete("/api/admin/devices/{username}")
 async def admin_remove_device(username: str, request: Request):
@@ -435,6 +485,7 @@ async def admin_remove_device(username: str, request: Request):
     _save_users(users)
     return {"success": True}
 
+
 @app.delete("/api/system/reset")
 async def reset_system(request: Request, _key: str = Depends(verify_api_key)):
     """Limpeza total: reseta memória, cache e arquivos de estado."""
@@ -442,7 +493,7 @@ async def reset_system(request: Request, _key: str = Depends(verify_api_key)):
     _log_admin_action(admin_user, "reset_system", "Resetou o sistema")
     luna = get_luna()
     # Limpa memória RAG/Fatos
-    if hasattr(luna._memory, 'rag'):
+    if hasattr(luna._memory, "rag"):
         luna._memory.rag.reset_collections()
     # Limpa arquivos de cache e histórico
     data_dir = Path(__file__).parent / "data"
@@ -450,8 +501,9 @@ async def reset_system(request: Request, _key: str = Depends(verify_api_key)):
     for f in files_to_clear:
         path = data_dir / f
         if path.exists():
-            if path.suffix == '.db':
+            if path.suffix == ".db":
                 import sqlite3
+
                 conn = sqlite3.connect(path)
                 conn.execute("DELETE FROM messages")
                 conn.commit()
@@ -462,6 +514,7 @@ async def reset_system(request: Request, _key: str = Depends(verify_api_key)):
 
 
 # ── Endpoints públicos (sem auth) ─────────────────────────────
+
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -485,6 +538,7 @@ async def health():
 
 # ── Endpoints autenticados ────────────────────────────────────
 
+
 @app.post("/api/chat", response_model=ChatResponse)
 async def chat(request: Request, req: ChatRequest, _key: str = Depends(verify_api_key)):
     """Envia mensagem para a Luna e recebe resposta."""
@@ -500,21 +554,18 @@ async def chat(request: Request, req: ChatRequest, _key: str = Depends(verify_ap
     # Roda processamento em thread separada para não bloquear o event loop
     voice_mode = req.voice
     loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(
-        None,
-        lambda: luna.process(message, mode="voice" if voice_mode else "")
-    )
+    response = await loop.run_in_executor(None, lambda: luna.process(message, mode="voice" if voice_mode else ""))
 
     elapsed_ms = (time.time() - start) * 1000
 
     try:
-        _auto_name_session(getattr(luna._memory, 'current_session_id', 'default'))
+        _auto_name_session(getattr(luna._memory, "current_session_id", "default"))
     except Exception:
         pass
 
     return ChatResponse(
         response=response,
-        cached=getattr(luna, '_last_was_cached', False),
+        cached=getattr(luna, "_last_was_cached", False),
         processing_time_ms=round(elapsed_ms, 1),
     )
 
@@ -524,15 +575,18 @@ async def chat(request: Request, req: ChatRequest, _key: str = Depends(verify_ap
 # Memória de contexto por sessão de coding (em RAM, não persiste)
 _code_sessions: dict[str, list[dict]] = {}
 
+
 class CodeChatRequest(BaseModel):
     message: str
     current_code: str = ""
     session_id: str = "default"
 
+
 class CodeChatResponse(BaseModel):
-    code: str          # HTML completo gerado/atualizado
-    explanation: str   # resposta em linguagem natural
+    code: str  # HTML completo gerado/atualizado
+    explanation: str  # resposta em linguagem natural
     processing_time_ms: float = 0.0
+
 
 @app.post("/api/code/chat", response_model=CodeChatResponse)
 async def code_chat(req: CodeChatRequest, _key: str = Depends(verify_api_key)):
@@ -562,10 +616,7 @@ async def code_chat(req: CodeChatRequest, _key: str = Depends(verify_api_key)):
 
     start = time.time()
     loop = asyncio.get_event_loop()
-    raw = await loop.run_in_executor(
-        None,
-        lambda: luna.process(message, mode="code", extra_context=extra_context)
-    )
+    raw = await loop.run_in_executor(None, lambda: luna.process(message, mode="code", extra_context=extra_context))
 
     elapsed_ms = (time.time() - start) * 1000
 
@@ -574,18 +625,18 @@ async def code_chat(req: CodeChatRequest, _key: str = Depends(verify_api_key)):
     explanation = str(raw)
 
     # Primeiro: tenta código capturado via write_code tool no ReAct loop
-    if hasattr(luna, '_code_mode_result') and luna._code_mode_result:
+    if hasattr(luna, "_code_mode_result") and luna._code_mode_result:
         code_out = luna._code_mode_result["content"]
 
     # Segundo: tenta extrair de bloco markdown no texto
     if not code_out or code_out == req.current_code:
-        code_blocks = _re.findall(r'```(?:\w+)?\s*\n(.*?)```', str(raw), _re.DOTALL)
+        code_blocks = _re.findall(r"```(?:\w+)?\s*\n(.*?)```", str(raw), _re.DOTALL)
         if code_blocks:
             code_out = code_blocks[-1].strip()
 
     # Remove bloco(s) de código da explicação
     if code_out != req.current_code:
-        explanation = _re.sub(r'```(?:\w+)?\s*\n.*?```', '', str(raw), flags=_re.DOTALL).strip()
+        explanation = _re.sub(r"```(?:\w+)?\s*\n.*?```", "", str(raw), flags=_re.DOTALL).strip()
     if not explanation:
         explanation = str(raw)
 
@@ -600,6 +651,7 @@ async def code_chat(req: CodeChatRequest, _key: str = Depends(verify_api_key)):
         processing_time_ms=round(elapsed_ms, 1),
     )
 
+
 @app.delete("/api/code/session/{session_id}")
 async def clear_code_session(session_id: str, _key: str = Depends(verify_api_key)):
     """Limpa memória da sessão de coding."""
@@ -613,7 +665,7 @@ async def status(_key: str = Depends(verify_api_key)):
     luna = get_luna()
 
     cache_entries = 0
-    if hasattr(luna, '_cache') and luna._cache:
+    if hasattr(luna, "_cache") and luna._cache:
         cache_entries = len(luna._cache.cache.get("entries", {}))
 
     return StatusResponse(
@@ -644,6 +696,7 @@ async def set_writing_model(req: ModelRequest, _key: str = Depends(verify_api_ke
 async def models_status(_key: str = Depends(verify_api_key)):
     """Status de todos os provedores de LLM."""
     from brain.llm import get_llm
+
     llm = get_llm()
     return {"providers": llm.get_providers_status(), "available": llm.available}
 
@@ -669,7 +722,7 @@ async def memory_stats(_key: str = Depends(verify_api_key)):
 
 @app.get("/api/memory/facts")
 async def get_facts(
-    query: Optional[str] = None,
+    query: str | None = None,
     limit: int = 10,
     _key: str = Depends(verify_api_key),
 ):
@@ -701,7 +754,7 @@ async def clear_history(_key: str = Depends(verify_api_key)):
 async def cache_stats(_key: str = Depends(verify_api_key)):
     """Estatísticas do cache inteligente."""
     luna = get_luna()
-    if hasattr(luna, '_cache') and luna._cache:
+    if hasattr(luna, "_cache") and luna._cache:
         stats = luna._cache.get_stats()
         return stats
     return {"message": "Cache não ativo."}
@@ -711,7 +764,7 @@ async def cache_stats(_key: str = Depends(verify_api_key)):
 async def clear_cache(_key: str = Depends(verify_api_key)):
     """Limpa cache expirado."""
     luna = get_luna()
-    if hasattr(luna, '_cache') and luna._cache:
+    if hasattr(luna, "_cache") and luna._cache:
         removed = luna._cache.clear_all()
         return {"success": True, "removed": removed, "message": f"{removed} entradas removidas do cache."}
     return {"message": "Cache não ativo."}
@@ -721,7 +774,7 @@ async def clear_cache(_key: str = Depends(verify_api_key)):
 async def performance_report(_key: str = Depends(verify_api_key)):
     """Relatório de performance do sistema."""
     luna = get_luna()
-    if hasattr(luna, '_perf') and luna._perf:
+    if hasattr(luna, "_perf") and luna._perf:
         return {
             "avg_request_ms": luna._perf.get_average_time("request_times"),
             "avg_model_ms": luna._perf.get_average_time("model_times"),
@@ -733,10 +786,12 @@ async def performance_report(_key: str = Depends(verify_api_key)):
 
 # ── Endpoints de sessões SQL ──────────────────────────────────
 
+
 @app.get("/api/sessions")
 async def list_sessions_endpoint(_key: str = Depends(verify_api_key)):
     """Lista todas as sessões de chat."""
     from brain.chat_db import get_chat_db
+
     db = get_chat_db()
     return {"sessions": db.list_sessions()}
 
@@ -745,6 +800,7 @@ async def list_sessions_endpoint(_key: str = Depends(verify_api_key)):
 async def create_session_endpoint(req: SessionRequest, _key: str = Depends(verify_api_key)):
     """Cria uma nova sessão de chat."""
     from brain.chat_db import get_chat_db
+
     db = get_chat_db()
     db.create_session(req.session_id, req.title)
     # Troca sessão ativa na memória
@@ -758,6 +814,7 @@ async def create_session_endpoint(req: SessionRequest, _key: str = Depends(verif
 async def rename_session_endpoint(req: RenameSessionRequest, _key: str = Depends(verify_api_key)):
     """Renomeia uma sessão."""
     from brain.chat_db import get_chat_db
+
     db = get_chat_db()
     ok = db.rename_session(req.session_id, req.new_title)
     return {"success": ok}
@@ -767,6 +824,7 @@ async def rename_session_endpoint(req: RenameSessionRequest, _key: str = Depends
 async def delete_session_endpoint(session_id: str, _key: str = Depends(verify_api_key)):
     """Deleta uma sessão e seu histórico."""
     from brain.chat_db import get_chat_db
+
     db = get_chat_db()
     ok = db.delete_session(session_id)
     if not ok:
@@ -782,6 +840,7 @@ async def session_history_endpoint(
 ):
     """Retorna histórico de mensagens de uma sessão."""
     from brain.chat_db import get_chat_db
+
     db = get_chat_db()
     return {"session_id": session_id, "messages": db.get_history(session_id, last_n)}
 
@@ -790,6 +849,7 @@ async def session_history_endpoint(
 async def switch_session_endpoint(req: SessionRequest, _key: str = Depends(verify_api_key)):
     """Troca a sessão ativa."""
     from brain.chat_db import get_chat_db
+
     db = get_chat_db()
     db.create_session(req.session_id)  # garante que existe
     luna = get_luna()
@@ -799,6 +859,7 @@ async def switch_session_endpoint(req: SessionRequest, _key: str = Depends(verif
 
 
 # ── Controle de Voz ───────────────────────────────────────────
+
 
 @app.post("/api/voice/input/toggle")
 async def toggle_voice_input(_key: str = Depends(verify_api_key)):
@@ -843,16 +904,17 @@ async def speak_text(req: ChatRequest, _key: str = Depends(verify_api_key)):
 async def media_control(req: MediaRequest, _key: str = Depends(verify_api_key)):
     """Controla reprodução de mídia via playerctl."""
     from actions.media import get_media
+
     media = get_media()
     actions = {
-        "play":        media.play,
-        "pause":       media.pause,
-        "play_pause":  media.play_pause,
-        "next":        media.next_track,
-        "prev":        media.prev_track,
-        "stop":        media.stop,
-        "mute":        media.mute,
-        "volume_up":   lambda: media.volume_up(req.value),
+        "play": media.play,
+        "pause": media.pause,
+        "play_pause": media.play_pause,
+        "next": media.next_track,
+        "prev": media.prev_track,
+        "stop": media.stop,
+        "mute": media.mute,
+        "volume_up": lambda: media.volume_up(req.value),
         "volume_down": lambda: media.volume_down(req.value),
         "now_playing": media.now_playing,
     }
@@ -872,20 +934,23 @@ async def add_timer(req: TimerRequest, _key: str = Depends(verify_api_key)):
     get_luna()._executor.timer.add_timer(req.seconds, req.name)
     return {"success": True, "name": req.name, "seconds": req.seconds}
 
+
 @app.get("/api/timer")
 async def timer_status(_key: str = Depends(verify_api_key)):
     import time as _time
+
     t = get_luna()._executor.timer
     now = _time.time()
-    active = [{"name": n, "remaining_s": max(0, int(e - now))}
-              for n, e in t.timer_ends.items() if e - now > 0]
+    active = [{"name": n, "remaining_s": max(0, int(e - now))} for n, e in t.timer_ends.items() if e - now > 0]
     return {"timers": active, "status": t.status()}
+
 
 @app.get("/api/shopping")
 async def get_shopping(_key: str = Depends(verify_api_key)):
     s = get_luna()._executor.shopping
     data = s._load()  # sempre lê do disco (fonte de verdade)
     return {"items": data.get("items", [])}
+
 
 @app.post("/api/shopping")
 async def add_shopping(req: NoteRequest, _key: str = Depends(verify_api_key)):
@@ -894,14 +959,17 @@ async def add_shopping(req: NoteRequest, _key: str = Depends(verify_api_key)):
     result = get_luna()._executor.shopping.handle(f"adiciona {req.text.strip()}")
     return {"success": True, "result": result}
 
+
 @app.delete("/api/shopping/{item}")
 async def remove_shopping(item: str, _key: str = Depends(verify_api_key)):
     result = get_luna()._executor.shopping.handle(f"já comprei {item}")
     return {"success": True, "result": result}
 
+
 @app.delete("/api/timer/{name}")
 async def cancel_timer(name: str, _key: str = Depends(verify_api_key)):
     from actions.timer import get_timer
+
     ok = get_timer().cancel_timer(name)
     return {"success": ok}
 
@@ -912,12 +980,14 @@ async def cancel_timer(name: str, _key: str = Depends(verify_api_key)):
 @app.get("/api/notes")
 async def list_notes(_key: str = Depends(verify_api_key)):
     notes = get_luna()._executor.notes
-    return {"notes": [{"index": i+1, "text": n["text"], "ts": n.get("ts","")} for i, n in enumerate(notes._notes)]}
+    return {"notes": [{"index": i + 1, "text": n["text"], "ts": n.get("ts", "")} for i, n in enumerate(notes._notes)]}
+
 
 @app.post("/api/notes")
 async def add_note(req: NoteRequest, _key: str = Depends(verify_api_key)):
     result = get_luna()._executor.notes.add(req.text)
     return {"success": True, "result": result}
+
 
 @app.delete("/api/notes/{index}")
 async def delete_note(index: int, _key: str = Depends(verify_api_key)):
@@ -932,12 +1002,15 @@ async def delete_note(index: int, _key: str = Depends(verify_api_key)):
 async def list_reminders(_key: str = Depends(verify_api_key)):
     return {"reminders": get_luna()._executor.reminders.list_reminders()}
 
+
 @app.post("/api/reminders")
 async def add_reminder(req: ReminderRequest, _key: str = Depends(verify_api_key)):
     r = get_luna()._executor.reminders
     # Campos estruturados (formulário web)
     if req.hour >= 0 and req.message:
-        from datetime import datetime as _dt, timedelta as _td
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
         now = _dt.now()
         # Parse date
         if req.date:
@@ -970,9 +1043,11 @@ async def add_reminder(req: ReminderRequest, _key: str = Depends(verify_api_key)
 
 # ── Clima ─────────────────────────────────────────────────────
 
+
 @app.get("/api/weather")
 async def get_weather(city: str = "", _key: str = Depends(verify_api_key)):
     from actions.weather import get_weather as _gw
+
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(None, _gw().get_weather, city)
     return {"result": result}
@@ -989,6 +1064,7 @@ async def daily_briefing(_key: str = Depends(verify_api_key)):
 
 # ── Stop ─────────────────────────────────────────────────────
 
+
 @app.post("/api/stop")
 async def stop_processing(_key: str = Depends(verify_api_key)):
     """Para LLM, TTS e processamento imediatamente."""
@@ -997,6 +1073,7 @@ async def stop_processing(_key: str = Depends(verify_api_key)):
 
 
 # ── Chat streaming (SSE) ──────────────────────────────────────
+
 
 @app.post("/api/chat/stream")
 async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(verify_api_key)):
@@ -1014,6 +1091,7 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
     async def event_gen():
         loop = asyncio.get_event_loop()
         import queue as _queue
+
         q = _queue.Queue(maxsize=100)
 
         def progress_cb(event: dict):
@@ -1034,10 +1112,12 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
                     pass
 
         import threading
+
         t = threading.Thread(target=run, daemon=True)
         t.start()
 
         import json as _json
+
         while True:
             await asyncio.sleep(0.05)
             try:
@@ -1048,7 +1128,7 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
                 if kind == "done":
                     yield f"data: {_json.dumps({'type': 'done', 'text': data}, ensure_ascii=False)}\n\n"
                     try:
-                        _auto_name_session(getattr(luna._memory, 'current_session_id', 'default'))
+                        _auto_name_session(getattr(luna._memory, "current_session_id", "default"))
                     except Exception:
                         pass
                 else:
@@ -1059,11 +1139,13 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
                     break
                 continue
 
-    return StreamingResponse(event_gen(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(
+        event_gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 
 # ── TTS stream — gera áudio e serve como arquivo ──────────────
+
 
 @app.post("/api/tts/stream")
 async def tts_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
@@ -1072,7 +1154,9 @@ async def tts_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
     if not text:
         raise HTTPException(status_code=400, detail="Texto vazio.")
 
-    import tempfile, os as _os
+    import os as _os
+    import tempfile
+
     tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
     tmp_path = tmp.name
     tmp.close()
@@ -1080,7 +1164,9 @@ async def tts_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
     try:
         # Gera via edge-tts diretamente
         import edge_tts
+
         from config import VOICE_CONFIG
+
         communicate = edge_tts.Communicate(
             text,
             VOICE_CONFIG.get("voice", "pt-BR-ThalitaMultilingualNeural"),
@@ -1095,8 +1181,7 @@ async def tts_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
                 yield from f
             _os.unlink(tmp_path)
 
-        return StreamingResponse(iterfile(), media_type="audio/mpeg",
-                                 headers={"Content-Disposition": "inline"})
+        return StreamingResponse(iterfile(), media_type="audio/mpeg", headers={"Content-Disposition": "inline"})
     except Exception as e:
         if _os.path.exists(tmp_path):
             _os.unlink(tmp_path)
@@ -1105,11 +1190,15 @@ async def tts_stream(req: ChatRequest, _key: str = Depends(verify_api_key)):
 
 # ── STT — recebe áudio WebM e transcreve ─────────────────────
 
+
 @app.post("/api/stt")
 async def stt_transcribe(request: Request, _key: str = Depends(verify_api_key)):
     """Recebe áudio (webm/ogg/wav) e retorna transcrição via Whisper local."""
     _check_rate_limit(request)
-    import tempfile, os as _os, subprocess as _sp
+    import os as _os
+    import subprocess as _sp
+    import tempfile
+
     MAX_UPLOAD_SIZE = 25 * 1024 * 1024  # 25MB
     content_length = request.headers.get("content-length")
     if content_length and int(content_length) > MAX_UPLOAD_SIZE:
@@ -1133,9 +1222,12 @@ async def stt_transcribe(request: Request, _key: str = Depends(verify_api_key)):
     try:
         _sp.run(
             ["ffmpeg", "-y", "-i", tmp_in.name, "-ar", "16000", "-ac", "1", tmp_wav],
-            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL, check=True
+            stdout=_sp.DEVNULL,
+            stderr=_sp.DEVNULL,
+            check=True,
         )
         from faster_whisper import WhisperModel
+
         global _whisper_model
         if _whisper_model is None:
             _whisper_model = WhisperModel("tiny", device="cpu", compute_type="int8")
@@ -1147,17 +1239,21 @@ async def stt_transcribe(request: Request, _key: str = Depends(verify_api_key)):
         return {"text": "", "error": str(e)}
     finally:
         for f in [tmp_in.name, tmp_wav]:
-            try: _os.unlink(f)
-            except: pass
+            try:
+                _os.unlink(f)
+            except:
+                pass
 
 
 # ── Sistema ───────────────────────────────────────────────────
+
 
 @app.get("/api/system/metrics")
 async def system_metrics(_key: str = Depends(verify_api_key)):
     """CPU, RAM, disco."""
     try:
         import psutil
+
         return {
             "cpu_percent": psutil.cpu_percent(interval=0.3),
             "ram_percent": psutil.virtual_memory().percent,
@@ -1168,11 +1264,13 @@ async def system_metrics(_key: str = Depends(verify_api_key)):
     except ImportError:
         return {"error": "psutil não instalado"}
 
+
 @app.get("/api/system/facts")
 async def system_facts(_key: str = Depends(verify_api_key)):
     """Fatos persistentes da memória."""
     luna = get_luna()
     return {"facts": luna._memory.facts}
+
 
 @app.delete("/api/system/facts")
 async def clear_facts(_key: str = Depends(verify_api_key)):
@@ -1181,10 +1279,12 @@ async def clear_facts(_key: str = Depends(verify_api_key)):
     luna._memory._force_save()
     return {"success": True}
 
+
 @app.get("/api/system/apps")
 async def system_apps(_key: str = Depends(verify_api_key)):
     luna = get_luna()
     return {"apps": luna._executor.get_app_names()}
+
 
 @app.post("/api/system/apps/open")
 async def open_app(req: NoteRequest, _key: str = Depends(verify_api_key)):
@@ -1199,35 +1299,45 @@ async def open_app(req: NoteRequest, _key: str = Depends(verify_api_key)):
 _web_dir = Path(__file__).parent / "web"
 # ── Joy Mode — Jogos com IA ───────────────────────────────────
 
+
 class JoyStartRequest(BaseModel):
     game: str
     difficulty: str = "medio"
     session_id: str = "default"
+
 
 class JoyActionRequest(BaseModel):
     action: str
     session_id: str = "default"
     data: dict = {}
 
+
 class JoyChatRequest(BaseModel):
     message: str
     session_id: str = "default"
     game: str = ""
 
+
 @app.get("/api/joy/games")
 async def joy_list_games(_key: str = Depends(verify_api_key)):
     from actions.joy_games import list_games
+
     return {"games": list_games()}
+
 
 @app.post("/api/joy/start")
 async def joy_start(req: JoyStartRequest, _key: str = Depends(verify_api_key)):
     from actions.joy_games import create_joy_session
+
     return create_joy_session(req.session_id, req.game, req.difficulty)
+
 
 @app.post("/api/joy/action")
 async def joy_action_endpoint(req: JoyActionRequest, _key: str = Depends(verify_api_key)):
     from actions.joy_games import joy_action
+
     return joy_action(req.session_id, req.action, req.data)
+
 
 @app.post("/api/joy/chat")
 async def joy_chat(req: JoyChatRequest, _key: str = Depends(verify_api_key)):
@@ -1238,13 +1348,14 @@ async def joy_chat(req: JoyChatRequest, _key: str = Depends(verify_api_key)):
     extra_context = f"[JOGO ATUAL]{game_ctx}\nMensagem do jogador: {req.message}"
 
     response = await loop.run_in_executor(
-        None,
-        lambda: luna.process(req.message, mode="joy", extra_context=extra_context)
+        None, lambda: luna.process(req.message, mode="joy", extra_context=extra_context)
     )
 
     import re as _re
-    clean = _re.sub(r'^```(?:json)?\s*|\s*```$', '', str(response).strip(), flags=_re.MULTILINE)
+
+    clean = _re.sub(r"^```(?:json)?\s*|\s*```$", "", str(response).strip(), flags=_re.MULTILINE)
     return {"response": clean}
+
 
 @app.get("/joy", include_in_schema=False)
 async def joy_page():
@@ -1256,9 +1367,11 @@ async def joy_page():
 
 # ── Luna Write Mode ──────────────────────────────────────────
 
+
 class WriteChatRequest(BaseModel):
     message: str
     context_text: str = ""
+
 
 class WriteStreamRequest(BaseModel):
     prompt: str
@@ -1268,17 +1381,21 @@ class WriteStreamRequest(BaseModel):
     characters: str = ""
     chapter: int = 0
 
+
 class WriteProjectRequest(BaseModel):
     title: str
     genre: str = "ficção"
     style: str = "neutro"
     characters: list = []
 
+
 class WriteTextUpdate(BaseModel):
     text: str
 
+
 class WriteChapterRequest(BaseModel):
     title: str = ""
+
 
 class WriteCharacterRequest(BaseModel):
     name: str
@@ -1299,6 +1416,7 @@ async def write_page():
 @app.get("/api/write/projects")
 async def list_write_projects(_key: str = Depends(verify_api_key)):
     from actions.write_mode import get_write_mode
+
     wm = get_write_mode()
     return {"projects": wm.list_projects()}
 
@@ -1306,6 +1424,7 @@ async def list_write_projects(_key: str = Depends(verify_api_key)):
 @app.post("/api/write/projects")
 async def create_write_project(req: WriteProjectRequest, _key: str = Depends(verify_api_key)):
     from actions.write_mode import get_write_mode
+
     wm = get_write_mode()
     proj = wm.create_project(
         title=req.title,
@@ -1319,6 +1438,7 @@ async def create_write_project(req: WriteProjectRequest, _key: str = Depends(ver
 @app.get("/api/write/project/{project_id}")
 async def get_write_project(project_id: str, _key: str = Depends(verify_api_key)):
     from actions.write_mode import get_write_mode
+
     wm = get_write_mode()
     proj = wm.get_project(project_id)
     if not proj:
@@ -1329,6 +1449,7 @@ async def get_write_project(project_id: str, _key: str = Depends(verify_api_key)
 @app.put("/api/write/project/{project_id}")
 async def update_write_text(project_id: str, req: WriteTextUpdate, _key: str = Depends(verify_api_key)):
     from actions.write_mode import get_write_mode
+
     wm = get_write_mode()
     ok = wm.update_text(project_id, req.text)
     if not ok:
@@ -1339,6 +1460,7 @@ async def update_write_text(project_id: str, req: WriteTextUpdate, _key: str = D
 @app.post("/api/write/project/{project_id}/chapter")
 async def add_write_chapter(project_id: str, req: WriteChapterRequest, _key: str = Depends(verify_api_key)):
     from actions.write_mode import get_write_mode
+
     wm = get_write_mode()
     result = wm.add_chapter(project_id, req.title)
     if not result:
@@ -1349,11 +1471,18 @@ async def add_write_chapter(project_id: str, req: WriteChapterRequest, _key: str
 @app.post("/api/write/project/{project_id}/character")
 async def add_write_character(project_id: str, req: WriteCharacterRequest, _key: str = Depends(verify_api_key)):
     from actions.write_mode import get_write_mode
+
     wm = get_write_mode()
-    ok = wm.add_character(project_id, {
-        "name": req.name, "age": req.age, "voice": req.voice,
-        "traits": req.traits, "context": req.context,
-    })
+    ok = wm.add_character(
+        project_id,
+        {
+            "name": req.name,
+            "age": req.age,
+            "voice": req.voice,
+            "traits": req.traits,
+            "context": req.context,
+        },
+    )
     if not ok:
         raise HTTPException(status_code=404, detail="Projeto não encontrado.")
     return {"success": True}
@@ -1362,6 +1491,7 @@ async def add_write_character(project_id: str, req: WriteCharacterRequest, _key:
 @app.delete("/api/write/project/{project_id}")
 async def delete_write_project(project_id: str, _key: str = Depends(verify_api_key)):
     from actions.write_mode import get_write_mode
+
     wm = get_write_mode()
     ok = wm.delete_project(project_id)
     if not ok:
@@ -1380,13 +1510,13 @@ async def write_chat(req: WriteChatRequest, _key: str = Depends(verify_api_key))
         extra_context = f"[CONTEXTO ATUAL DO EDITOR]\n{extra_context[-3000:]}"
 
     response = await loop.run_in_executor(
-        None,
-        lambda: luna.process(req.message, mode="write", extra_context=extra_context)
+        None, lambda: luna.process(req.message, mode="write", extra_context=extra_context)
     )
 
     text = str(response)
     import re as _re
-    text = _re.sub(r'^```(?:json)?\s*|\s*```$', '', text.strip(), flags=_re.MULTILINE)
+
+    text = _re.sub(r"^```(?:json)?\s*|\s*```$", "", text.strip(), flags=_re.MULTILINE)
 
     return {"response": text}
 
@@ -1394,9 +1524,9 @@ async def write_chat(req: WriteChatRequest, _key: str = Depends(verify_api_key))
 @app.post("/api/write/stream")
 async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_key)):
     """Streaming SSE — gera texto criativo em tempo real."""
-    from actions.writer import get_writer
     from actions.write_mode import get_write_mode
-    from brain.llm import get_llm, GROQ_MODELS, MODELS
+    from actions.writer import get_writer
+    from brain.llm import MODELS, get_llm
 
     writer = get_writer()
     wm = get_write_mode()
@@ -1409,7 +1539,9 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
     context_text = req.context_text or (proj.get_context_summary() if proj else "")
 
     async def event_gen():
-        import queue as _queue, threading, json as _json
+        import json as _json
+        import queue as _queue
+        import threading
 
         q = _queue.Queue()
 
@@ -1426,16 +1558,16 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
                         plan_text, req.prompt, context_text, req.chapter, characters
                     )
                 else:
-                    draft_prompt = writer.build_draft_prompt(
-                        plan_text, req.prompt, context_text, characters, style
-                    )
+                    draft_prompt = writer.build_draft_prompt(plan_text, req.prompt, context_text, characters, style)
 
-                model_key = luna._writing_model if hasattr(luna, '_writing_model') else "main"
+                model_key = luna._writing_model if hasattr(luna, "_writing_model") else "main"
                 model_name = MODELS.get(model_key, MODELS["main"])
 
                 stream_gen = llm.generate(
-                    draft_prompt, task_type="creative",
-                    model=model_name, stream=True,
+                    draft_prompt,
+                    task_type="creative",
+                    model=model_name,
+                    stream=True,
                 )
 
                 first_line_done = False
@@ -1464,14 +1596,16 @@ async def write_stream(req: WriteStreamRequest, _key: str = Depends(verify_api_k
             try:
                 kind, data = q.get_nowait()
                 import json as _json
+
                 yield f"data: {_json.dumps({'type': kind, 'content': data})}\n\n"
                 if kind in ("done", "error"):
                     break
             except _queue.Empty:
                 continue
 
-    return StreamingResponse(event_gen(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    return StreamingResponse(
+        event_gen(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    )
 
 
 if _web_dir.exists():
@@ -1480,6 +1614,7 @@ if _web_dir.exists():
 # ── Imagens ─────────────────────────────────────────────────────
 PICTURES_DIR = Path.home() / "Pictures" / "Luna"
 
+
 @app.get("/api/images")
 async def list_images(_key: str = Depends(verify_api_key)):
     if not PICTURES_DIR.exists():
@@ -1487,15 +1622,18 @@ async def list_images(_key: str = Depends(verify_api_key)):
     images = []
     for f in sorted(PICTURES_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
         if f.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
-            images.append({
-                "name": f.name,
-                "path": str(f),
-                "url": f"/api/images/{f.name}",
-                "size": f.stat().st_size,
-                "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
-                "prompt": " ".join(f.stem.split("_")[:-1]) or f.stem,
-            })
+            images.append(
+                {
+                    "name": f.name,
+                    "path": str(f),
+                    "url": f"/api/images/{f.name}",
+                    "size": f.stat().st_size,
+                    "created": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+                    "prompt": " ".join(f.stem.split("_")[:-1]) or f.stem,
+                }
+            )
     return {"images": images}
+
 
 @app.get("/api/images/{filename}")
 async def serve_image(filename: str, _key: str = Depends(verify_api_key)):
@@ -1503,6 +1641,7 @@ async def serve_image(filename: str, _key: str = Depends(verify_api_key)):
     if not filepath.exists() or filepath.parent.resolve() != PICTURES_DIR.resolve():
         raise HTTPException(status_code=404, detail="Imagem não encontrada.")
     return FileResponse(str(filepath), media_type="image/png")
+
 
 @app.post("/api/image/generate")
 async def api_generate_image(req: Request, _key: str = Depends(verify_api_key)):
@@ -1513,6 +1652,7 @@ async def api_generate_image(req: Request, _key: str = Depends(verify_api_key)):
         if not prompt:
             return {"success": False, "error": "Prompt não fornecido."}
         from actions.image_gen import generate_image
+
         result = generate_image(prompt, size)
         if result.startswith("SUCESSO:"):
             path = result.replace("SUCESSO: Imagem gerada e salva em ", "").strip()
@@ -1522,12 +1662,14 @@ async def api_generate_image(req: Request, _key: str = Depends(verify_api_key)):
     except Exception as e:
         return {"success": False, "error": str(e)}
 
+
 # ── Auto-nomeação de sessão ─────────────────────────────────────
 def _auto_name_session(session_id: str):
     """Gera nome para sessão baseado nos primeiros diálogos."""
     if session_id == "default":
         return
     from brain.chat_db import get_chat_db
+
     db = get_chat_db()
     msgs = db.get_history(session_id, last_n=6)
     user_msgs = [m for m in msgs if m["role"] == "user"]
@@ -1539,9 +1681,12 @@ def _auto_name_session(session_id: str):
     if current and current["title"] and not current["title"].startswith("Conversa "):
         return
     exchange_text = "\n".join(f"{m['role']}: {m['text'][:80]}" for m in msgs[:6])
-    prompt_text = f"Resuma o assunto desta conversa em no máximo 4 palavras. Apenas o título, sem pontuação.\n\n{exchange_text}"
+    prompt_text = (
+        f"Resuma o assunto desta conversa em no máximo 4 palavras. Apenas o título, sem pontuação.\n\n{exchange_text}"
+    )
     try:
         from brain.llm import LLMWrapper
+
         llm = LLMWrapper()
         title = llm.generate(prompt_text, task_type="fast", model="fast")
         if isinstance(title, dict):
@@ -1556,45 +1701,113 @@ def _auto_name_session(session_id: str):
     except Exception:
         pass
 
+
 @app.post("/api/shutdown")
 async def shutdown(request: Request, _key: str = Depends(verify_api_key)):
     admin_user = _require_admin(request)
     _log_admin_action(admin_user, "shutdown", "Desligou o backend")
-    import os, signal, asyncio
+    import asyncio
+    import os
+    import signal
+
     print("🛑 Shutting down Luna Backend...")
+
     async def exit_later():
         await asyncio.sleep(0.5)
         os.kill(os.getpid(), signal.SIGINT)
+
     asyncio.create_task(exit_later())
     return {"success": True, "message": "Backend shutting down..."}
 
 
+# ── Update Check ──────────────────────────────────────────────
+import subprocess as _subprocess
+from pathlib import Path as _P
+
+GIT_DIR = str(_P(__file__).parent / ".git")
+
+
+@app.get("/api/update/check")
+async def check_update():
+    """Verifica se há novos commits no repositório."""
+    try:
+        _subprocess.run(["git", "--git-dir", GIT_DIR, "fetch", "origin"], capture_output=True, timeout=30)
+
+        current = _subprocess.run(
+            ["git", "--git-dir", GIT_DIR, "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=10
+        )
+        latest = _subprocess.run(
+            ["git", "--git-dir", GIT_DIR, "rev-parse", "--short", "origin/main"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        log = _subprocess.run(
+            ["git", "--git-dir", GIT_DIR, "log", "HEAD..origin/main", "--oneline"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        current_hash = current.stdout.strip()
+        latest_hash = latest.stdout.strip()
+        commits = [l for l in log.stdout.strip().split("\n") if l.strip()]
+        ahead = len(commits)
+
+        return {
+            "current": current_hash,
+            "latest": latest_hash,
+            "commits_ahead": ahead,
+            "update_available": ahead > 0,
+            "commits": commits[:20],
+        }
+    except Exception as e:
+        return {"error": str(e), "update_available": False}
+
+
+@app.post("/api/update/apply")
+async def apply_update():
+    """Faz git pull para atualizar o repositório."""
+    try:
+        result = _subprocess.run(
+            ["git", "--git-dir", GIT_DIR, "pull", "origin", "main"], capture_output=True, text=True, timeout=60
+        )
+        if result.returncode == 0:
+            return {"success": True, "message": result.stdout.strip()}
+        return {"success": False, "error": result.stderr.strip()}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 # ── Função para iniciar o servidor ────────────────────────────
+
 
 def run_server(host: str = None, port: int = None):
     """Inicia o servidor FastAPI com uvicorn."""
-    import uvicorn
     import os
     from pathlib import Path as _Path
+
+    import uvicorn
+
     _host = host or config.API_HOST
     _port = port or config.API_PORT
 
-    _ssl_key  = _Path(__file__).parent / "config" / "ssl" / "key.pem"
+    _ssl_key = _Path(__file__).parent / "config" / "ssl" / "key.pem"
     _ssl_cert = _Path(__file__).parent / "config" / "ssl" / "cert.pem"
     _https = os.getenv("LUNA_USE_HTTPS", "false").lower() == "true" and _ssl_key.exists() and _ssl_cert.exists()
     _scheme = "https" if _https else "http"
 
-    logger.info(f"Luna API (FastAPI + Uvicorn)")
+    logger.info("Luna API (FastAPI + Uvicorn)")
     logger.info(f"Local: {_scheme}://localhost:{_port}")
     logger.info(f"Rede:  {_scheme}://0.0.0.0:{_port}")
     logger.info(f"Docs:  {_scheme}://localhost:{_port}/docs")
     if _https:
-        logger.info(f"HTTPS ativo (certificado self-signed)")
+        logger.info("HTTPS ativo (certificado self-signed)")
     logger.info(f"API Key: {'*' * 8}{config.API_KEY[-4:]}")
 
     _kwargs = dict(host=_host, port=_port, log_level="warning", access_log=False)
     if _https:
-        _kwargs["ssl_keyfile"]  = str(_ssl_key)
+        _kwargs["ssl_keyfile"] = str(_ssl_key)
         _kwargs["ssl_certfile"] = str(_ssl_cert)
 
     uvicorn.run(app, **_kwargs)
@@ -1603,6 +1816,7 @@ def run_server(host: str = None, port: int = None):
 def start_server_thread(host: str = None, port: int = None):
     """Inicia o servidor em uma thread daemon (para uso com app.py/Qt)."""
     import threading
+
     t = threading.Thread(
         target=run_server,
         args=(host, port),

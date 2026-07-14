@@ -3,11 +3,13 @@
 brain/event_bus.py — Barramento de Eventos (Event Bus) da Luna
 Permite comunicação desacoplada entre componentes (memória, hábitos, rotinas, etc.).
 """
+
 import atexit
 import logging
 import threading
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from typing import Callable, Dict, List, Any, Optional
+from typing import Any
 
 logger = logging.getLogger("luna.event_bus")
 
@@ -20,8 +22,9 @@ class EventBus:
     Barramento de Eventos Publish-Subscribe thread-safe.
     Utiliza ThreadPoolExecutor para evitar thread thrashing sob carga alta.
     """
+
     def __init__(self):
-        self._subscribers: Dict[str, List[Callable[[Any], None]]] = {}
+        self._subscribers: dict[str, list[Callable[[Any], None]]] = {}
         self._lock = threading.Lock()
         self._pool = ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="eventbus")
         atexit.register(self._shutdown)
@@ -66,7 +69,8 @@ class EventBus:
 
 
 # Singleton
-_event_bus_instance: Optional[EventBus] = None
+_event_bus_instance: EventBus | None = None
+
 
 def get_event_bus() -> EventBus:
     global _event_bus_instance

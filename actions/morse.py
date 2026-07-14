@@ -7,33 +7,66 @@ Espaço entre símbolos = 0.3s apagado
 Espaço entre letras   = 0.9s apagado
 Espaço entre palavras = 2.0s apagado
 """
-import time
+
 import threading
+import time
 
 try:
     import tinytuya
+
     _TUYA_OK = True
 except ImportError:
     _TUYA_OK = False
 
 DEVICE_ID = "eb64a81b56fb8003dexqdd"
-LOCAL_KEY  = "Ek&~Ah`=4s}5.'Z#"
-IP_DEVICE  = "192.168.1.15"
+LOCAL_KEY = "Ek&~Ah`=4s}5.'Z#"
+IP_DEVICE = "192.168.1.15"
 
 MORSE = {
-    'A':'.-','B':'-...','C':'-.-.','D':'-..','E':'.','F':'..-.','G':'--.','H':'....','I':'..','J':'.---',
-    'K':'-.-','L':'.-..','M':'--','N':'-.','O':'---','P':'.--.','Q':'--.-','R':'.-.','S':'...','T':'-',
-    'U':'..-','V':'...-','W':'.--','X':'-..-','Y':'-.--','Z':'--..',
-    '0':'-----','1':'.----','2':'..---','3':'...--','4':'....-','5':'.....',
-    '6':'-....','7':'--...','8':'---..','9':'----.',
-    ' ': ' ',
+    "A": ".-",
+    "B": "-...",
+    "C": "-.-.",
+    "D": "-..",
+    "E": ".",
+    "F": "..-.",
+    "G": "--.",
+    "H": "....",
+    "I": "..",
+    "J": ".---",
+    "K": "-.-",
+    "L": ".-..",
+    "M": "--",
+    "N": "-.",
+    "O": "---",
+    "P": ".--.",
+    "Q": "--.-",
+    "R": ".-.",
+    "S": "...",
+    "T": "-",
+    "U": "..-",
+    "V": "...-",
+    "W": ".--",
+    "X": "-..-",
+    "Y": "-.--",
+    "Z": "--..",
+    "0": "-----",
+    "1": ".----",
+    "2": "..---",
+    "3": "...--",
+    "4": "....-",
+    "5": ".....",
+    "6": "-....",
+    "7": "--...",
+    "8": "---..",
+    "9": "----.",
+    " ": " ",
 }
 
-DOT   = 0.3
-DASH  = 0.9
-SYM   = 0.3   # pausa entre símbolos da mesma letra
-LETTER= 0.9   # pausa entre letras
-WORD  = 2.0   # pausa entre palavras
+DOT = 0.3
+DASH = 0.9
+SYM = 0.3  # pausa entre símbolos da mesma letra
+LETTER = 0.9  # pausa entre letras
+WORD = 2.0  # pausa entre palavras
 
 # Estado de pendência: aguardando o texto a converter
 _pending = False
@@ -60,14 +93,14 @@ def _transmit(text: str):
         code = MORSE.get(ch)
         if code is None:
             continue
-        if code == ' ':
+        if code == " ":
             time.sleep(WORD)
             continue
         for j, sym in enumerate(code):
-            _flash(dev, DOT if sym == '.' else DASH)
+            _flash(dev, DOT if sym == "." else DASH)
             if j < len(code) - 1:
                 time.sleep(SYM)
-        if i < len(text) - 1 and text[i + 1] != ' ':
+        if i < len(text) - 1 and text[i + 1] != " ":
             time.sleep(LETTER)
     # Garante luz apagada no fim
     try:
@@ -81,11 +114,11 @@ def text_to_morse(text: str) -> str:
     result = []
     for ch in text.upper():
         code = MORSE.get(ch)
-        if code == ' ':
-            result.append('/')
+        if code == " ":
+            result.append("/")
         elif code:
             result.append(code)
-    return ' '.join(result)
+    return " ".join(result)
 
 
 def handle(cmd: str) -> str | None:
@@ -106,7 +139,7 @@ def handle(cmd: str) -> str | None:
     # Tem "morse" no comando — extrai o texto após a keyword
     for kw in ["transmita em morse", "codigo morse", "código morse", "morse"]:
         if kw in c:
-            after = c.split(kw, 1)[-1].strip().lstrip(',:- ')
+            after = c.split(kw, 1)[-1].strip().lstrip(",:- ")
             if after:
                 morse_str = text_to_morse(after)
                 threading.Thread(target=_transmit, args=(after,), daemon=True).start()
@@ -128,6 +161,7 @@ class _MorseAccessor:
 
 
 _instance = None
+
 
 def get_morse():
     global _instance

@@ -3,11 +3,11 @@
 brain/chat_db.py — Memória SQL (SQLite) para histórico de chats por sessão.
 Substitui o JSON de sessões em brain/memory.py com persistência robusta.
 """
+
 import sqlite3
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 DB_PATH = Path(__file__).parent.parent / "data" / "chat_history.db"
 
@@ -60,10 +60,9 @@ def _ensure_session(session_id: str, title: str = "") -> None:
 
 # ── Sessões ────────────────────────────────────────────────────
 
+
 def list_sessions() -> list[dict]:
-    rows = _conn().execute(
-        "SELECT id, title, created, updated FROM sessions ORDER BY updated DESC"
-    ).fetchall()
+    rows = _conn().execute("SELECT id, title, created, updated FROM sessions ORDER BY updated DESC").fetchall()
     return [dict(r) for r in rows]
 
 
@@ -91,6 +90,7 @@ def delete_session(session_id: str) -> bool:
 
 
 # ── Mensagens ──────────────────────────────────────────────────
+
 
 def add_message(session_id: str, role: str, text: str) -> None:
     _ensure_session(session_id)
@@ -124,12 +124,16 @@ def add_exchange(session_id: str, user_text: str, assistant_text: str) -> None:
 
 
 def get_history(session_id: str, last_n: int = 20) -> list[dict]:
-    rows = _conn().execute(
-        """SELECT role, text, ts FROM messages
+    rows = (
+        _conn()
+        .execute(
+            """SELECT role, text, ts FROM messages
            WHERE session_id=?
            ORDER BY id DESC LIMIT ?""",
-        (session_id, last_n * 2),
-    ).fetchall()
+            (session_id, last_n * 2),
+        )
+        .fetchall()
+    )
     return [dict(r) for r in reversed(rows)]
 
 
@@ -162,6 +166,7 @@ def get_chat_db():
 
 class _ChatDB:
     """Wrapper de conveniência para uso no Memory."""
+
     list_sessions = staticmethod(list_sessions)
     create_session = staticmethod(create_session)
     rename_session = staticmethod(rename_session)

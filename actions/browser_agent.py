@@ -10,14 +10,13 @@ Fluxo por passo:
 
 Suporta contexto persistente (salva cookies/logins entre sessões).
 """
+
 import asyncio
 import base64
 import json
 import os
 import re
-import time
 from pathlib import Path
-from typing import Optional
 
 # ── Configuração ──────────────────────────────────────────────
 _USER_DATA_DIR = Path(__file__).parent.parent / "data" / "browser_profile"
@@ -73,13 +72,14 @@ class BrowserAgent:
         self._browser = None
         self._context = None
         self._page = None
-        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._loop: asyncio.AbstractEventLoop | None = None
         self._running = False
 
     # ── Ciclo de vida ─────────────────────────────────────────
 
     async def _start(self, headless: bool = False):
         from playwright.async_api import async_playwright
+
         self._pw = await async_playwright().start()
         # Contexto persistente: mantém cookies/logins entre sessões
         self._context = await self._pw.firefox.launch_persistent_context(
@@ -97,7 +97,7 @@ class BrowserAgent:
         try:
             if self._context:
                 await self._context.close()
-            if hasattr(self, '_pw'):
+            if hasattr(self, "_pw"):
                 await self._pw.stop()
         except Exception:
             pass
@@ -120,25 +120,26 @@ class BrowserAgent:
 
         hist_text = "\n".join(f"- {h}" for h in history[-5:]) if history else "Nenhuma ainda."
         user_msg = (
-            f"Tarefa: {task}\n\n"
-            f"Ações já executadas:\n{hist_text}\n\n"
-            f"Analise o screenshot e decida a próxima ação."
+            f"Tarefa: {task}\n\nAções já executadas:\n{hist_text}\n\nAnalise o screenshot e decida a próxima ação."
         )
 
-        payload = json.dumps({
-            "model": _VISION_MODEL,
-            "messages": [
-                {"role": "system", "content": _AGENT_SYSTEM},
-                {"role": "user", "content": [
-                    {"type": "text", "text": user_msg},
-                    {"type": "image_url", "image_url": {
-                        "url": f"data:image/png;base64,{img_b64}"
-                    }}
-                ]}
-            ],
-            "temperature": 0.1,
-            "max_tokens": 300,
-        }).encode()
+        payload = json.dumps(
+            {
+                "model": _VISION_MODEL,
+                "messages": [
+                    {"role": "system", "content": _AGENT_SYSTEM},
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": user_msg},
+                            {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{img_b64}"}},
+                        ],
+                    },
+                ],
+                "temperature": 0.1,
+                "max_tokens": 300,
+            }
+        ).encode()
 
         req = urllib.request.Request(
             "https://api.groq.com/openai/v1/chat/completions",
@@ -151,7 +152,7 @@ class BrowserAgent:
         raw = data["choices"][0]["message"]["content"].strip()
 
         # Parseia JSON da resposta
-        m = re.search(r'\{.*\}', raw, re.DOTALL)
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
         if m:
             return json.loads(m.group())
         return {"action": "fail", "reason": f"Resposta inválida: {raw[:100]}"}
@@ -179,22 +180,22 @@ class BrowserAgent:
                     return f"Clicou em seletor '{target}'"
                 except Exception:
                     # Tenta nth-element via JS: "nth-link:2", "nth-result:1", "nth-video:3"
-                    nth_m = re.match(r'nth-(\w+):(\d+)', target)
+                    nth_m = re.match(r"nth-(\w+):(\d+)", target)
                     if nth_m:
                         kind, n = nth_m.group(1), int(nth_m.group(2)) - 1
                         selector_map = {
-                            "link":      "a[href]:not([href='#']):not([href=''])",
+                            "link": "a[href]:not([href='#']):not([href=''])",
                             "resultado": "h3 a, .g a, [data-ved] a, article a",
-                            "video":     "a[href*='watch'], ytd-video-renderer a, .video-item a, thumbnail a",
-                            "botao":     "button, input[type='submit'], input[type='button'], [role='button']",
-                            "imagem":    "img[src]:not([src=''])",
+                            "video": "a[href*='watch'], ytd-video-renderer a, .video-item a, thumbnail a",
+                            "botao": "button, input[type='submit'], input[type='button'], [role='button']",
+                            "imagem": "img[src]:not([src=''])",
                         }
                         sel = selector_map.get(kind, "a")
                         try:
                             await self._page.locator(sel).nth(n).click(timeout=5000)
-                            return f"Clicou no {n+1}º {kind}"
+                            return f"Clicou no {n + 1}º {kind}"
                         except Exception as e:
-                            return f"Falha ao clicar no {n+1}º {kind}: {e}"
+                            return f"Falha ao clicar no {n + 1}º {kind}: {e}"
                     return f"Falha ao clicar em '{target}'"
 
         elif act == "type":
@@ -243,7 +244,7 @@ class BrowserAgent:
             except Exception as e:
                 return f"Erro na visão: {e}"
 
-            print(f"[BrowserAgent] Ação: {action.get('action')} | {action.get('reason','')}")
+            print(f"[BrowserAgent] Ação: {action.get('action')} | {action.get('reason', '')}")
 
             if action.get("action") == "done":
                 return f"✓ Tarefa concluída: {action.get('reason', 'sucesso')}"
@@ -290,7 +291,6 @@ class BrowserAgent:
                 except Exception:
                     pass
 
-        import threading
         import concurrent.futures
 
         # Sempre usa thread dedicada — evita conflito com loops existentes
@@ -316,13 +316,14 @@ class BrowserAgent:
         """Navega para uma URL diretamente."""
         return self.run(f"Navegue para {url} e confirme que a página carregou.", max_steps=3)
 
-    def screenshot_path(self) -> Optional[str]:
+    def screenshot_path(self) -> str | None:
         """Retorna o caminho do último screenshot."""
         return str(_SCREENSHOT_PATH) if _SCREENSHOT_PATH.exists() else None
 
 
 # Singleton
-_agent: Optional[BrowserAgent] = None
+_agent: BrowserAgent | None = None
+
 
 def get_browser_agent() -> BrowserAgent:
     global _agent

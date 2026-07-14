@@ -3,23 +3,26 @@
 app.py — Headless Backend API & Worker da Luna
 Inicia o servidor local FastAPI e o ouvinte de microfone para Wakeword.
 """
-import time
+
 import os
 import sys
+import time
 
 # Força codificação UTF-8 no terminal
 os.environ["LC_ALL"] = "C.UTF-8"
 os.environ["PYTHONIOENCODING"] = "utf-8"
 os.environ["PYTHONUTF8"] = "1"
 import io
-if sys.stdout and hasattr(sys.stdout, 'buffer'):
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace', line_buffering=True)
-if sys.stderr and hasattr(sys.stderr, 'buffer'):
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace', line_buffering=True)
 
-from luna_core import get_luna
-from api import start_server_thread
+if sys.stdout and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+if sys.stderr and hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace", line_buffering=True)
+
 from actions.updater import run_update_check
+from api import start_server_thread
+from luna_core import get_luna
+
 
 def main_loop():
     print("[Luna Backend] Iniciando sistema headless...")
@@ -43,14 +46,14 @@ def main_loop():
         print(f"[Luna Backend] Erro ao ligar wakeword: {e}")
 
     print("[Luna Backend] Entrando em modo de escuta. Pressione Ctrl+C para encerrar.")
-    
+
     # Loop infinito que aguarda a ativação pela palavra-chave
     try:
         while True:
             if luna.stt.wake_event.is_set():
                 luna.stt.wake_event.clear()
                 print("[Luna Backend] Wakeword ativado! Ouvindo...")
-                
+
                 text = luna.listen()
                 if text:
                     print(f"[Usuário]: {text}")
@@ -59,7 +62,7 @@ def main_loop():
                     print(f"[Luna]: {response}")
                     # Transforma texto em áudio local via TTS
                     luna.speak(response)
-                
+
                 # Reativa o ouvinte
                 try:
                     if luna.voice_input_enabled:
@@ -70,9 +73,11 @@ def main_loop():
     except KeyboardInterrupt:
         print("\n[Luna Backend] Desligando graciosamente...")
 
+
 if __name__ == "__main__":
     if "--test-update" in sys.argv:
         from actions.updater import test_notification
+
         print(test_notification())
         sys.exit(0)
 

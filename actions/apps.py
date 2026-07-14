@@ -1,19 +1,19 @@
-import subprocess
-import shutil
 import json
+import shutil
+import subprocess
 from pathlib import Path
-from typing import Optional
 
 APPS_FILE = Path(__file__).parent.parent / "config" / "apps.json"
 
+
 class AppManager:
     """Gerencia listagem e execução de aplicações locais."""
-    
+
     def __init__(self):
         self.apps: dict = self._load_apps()
         if not self.apps:
             self._discover_apps()
-            
+
     def _load_apps(self) -> dict:
         try:
             if APPS_FILE.exists():
@@ -24,18 +24,27 @@ class AppManager:
 
     def _save_apps(self) -> None:
         try:
-            APPS_FILE.write_text(
-                json.dumps(self.apps, ensure_ascii=False, indent=2),
-                encoding="utf-8"
-            )
+            APPS_FILE.write_text(json.dumps(self.apps, ensure_ascii=False, indent=2), encoding="utf-8")
         except Exception:
             pass
 
     def _discover_apps(self) -> None:
         binaries = [
-            "firefox", "chromium", "chrome", "code", "gedit", "nautilus",
-            "gnome-terminal", "vlc", "spotify", "telegram-desktop", "obs",
-            "gimp", "blender", "thunderbird", "libreoffice",
+            "firefox",
+            "chromium",
+            "chrome",
+            "code",
+            "gedit",
+            "nautilus",
+            "gnome-terminal",
+            "vlc",
+            "spotify",
+            "telegram-desktop",
+            "obs",
+            "gimp",
+            "blender",
+            "thunderbird",
+            "libreoffice",
         ]
         for name in binaries:
             path = shutil.which(name)
@@ -87,6 +96,7 @@ class AppManager:
 
         try:
             from actions.gnome import launch_app
+
             cmd = app["command"]
             ok, msg = launch_app(name, fallback_cmd=cmd)
             if ok:
@@ -94,8 +104,10 @@ class AppManager:
                 return {"success": True, "message": msg}
             print(f"[AppManager] Abrindo: {cmd}")
             subprocess.Popen(
-                cmd, shell=True,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                cmd,
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
             return {"success": True, "message": f"Abrindo {name}"}
         except Exception as e:
@@ -104,7 +116,7 @@ class AppManager:
     def get_app_names(self) -> list[str]:
         return [k for k, v in self.apps.items() if v.get("enabled", True)]
 
-    def find_best_app(self, query: str) -> Optional[str]:
+    def find_best_app(self, query: str) -> str | None:
         q = query.lower().strip()
         if q in self.apps:
             return q

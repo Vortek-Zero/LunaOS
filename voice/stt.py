@@ -5,17 +5,16 @@ voice/stt.py — STT híbrido:
   Comando:  Groq Whisper Large v3 (200ms latência, perfeito em PT-BR)
   Fallback: faster-whisper local (se sem API key)
 """
+
+import math
+import os
+import struct
+import subprocess
 import threading
 import time
-import os
-import sys
-import struct
-import math
-import subprocess
 import uuid
 import wave
 from pathlib import Path
-from typing import Optional
 
 from error_codes import err
 
@@ -26,6 +25,7 @@ os.environ["PYTHONUTF8"] = "1"
 # ── Dependências ───────────────────────────────────────────────
 try:
     import pyaudio
+
     HAS_PYAUDIO = True
 except ImportError:
     HAS_PYAUDIO = False
@@ -33,32 +33,36 @@ except ImportError:
 
 try:
     from faster_whisper import WhisperModel
+
     HAS_WHISPER = True
 except ImportError:
     HAS_WHISPER = False
 
 try:
     from groq import Groq as GroqClient
+
     HAS_GROQ_LIB = True
 except ImportError:
     HAS_GROQ_LIB = False
 
 # ── Constantes ─────────────────────────────────────────────────
-LANGUAGE    = "pt"
-MODEL_SIZE  = "base"   # usado apenas no fallback local
+LANGUAGE = "pt"
+MODEL_SIZE = "base"  # usado apenas no fallback local
 SAMPLE_RATE = 16000
-CHUNK       = 1024
+CHUNK = 1024
 
-_VOICE_DIR      = Path(__file__).parent
+_VOICE_DIR = Path(__file__).parent
 _ACTIVATE_SOUND = Path(__file__).parent.parent / "sounds" / "Beepvisual.mp3"
 
-WAKEWORD = "luna"   # único — sem variações, Groq vai acertar
+WAKEWORD = "luna"  # único — sem variações, Groq vai acertar
 
 
 try:
     from config import GROQ_API_KEY as _CFG_GROQ_KEY
+
     GROQ_API_KEY = _CFG_GROQ_KEY or os.environ.get("GROQ_API_KEY", "")
 except ImportError:
+
     def _load_env():
         """Lê .env e retorna dict."""
         env_file = Path(__file__).parent.parent / ".env"
@@ -79,6 +83,7 @@ HAS_GROQ = HAS_GROQ_LIB and bool(GROQ_API_KEY)
 # ── PyAudio singleton ──────────────────────────────────────────
 _pa_instance = None
 
+
 def _get_pa():
     global _pa_instance
     if not HAS_PYAUDIO:
@@ -98,9 +103,7 @@ def _play_activation_sound() -> None:
         ("paplay", [str(_ACTIVATE_SOUND)]),
     ]:
         try:
-            subprocess.Popen([player] + args,
-                             stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL)
+            subprocess.Popen([player] + args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             return
         except FileNotFoundError:
             continue
@@ -121,7 +124,7 @@ def _pcm_to_wav(pcm: bytes, sample_rate: int = SAMPLE_RATE) -> str:
 def _record_until_silence(
     max_seconds: float = 20,
     silence_threshold: int = 300,
-) -> Optional[bytes]:
+) -> bytes | None:
     """Grava até silêncio ou max_seconds. VAD adaptativo: mais pausas = mais tolerância.
     Retorna PCM16 ou None."""
     pa = _get_pa()
@@ -129,21 +132,23 @@ def _record_until_silence(
         return None
     try:
         stream = pa.open(
-            format=pyaudio.paInt16, channels=1,
-            rate=SAMPLE_RATE, input=True,
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=SAMPLE_RATE,
+            input=True,
             frames_per_buffer=CHUNK,
         )
-        frames        = []
+        frames = []
         silent_chunks = 0
         speech_bursts = 0
-        max_chunks    = int(SAMPLE_RATE / CHUNK * max_seconds)
-        started       = False
+        max_chunks = int(SAMPLE_RATE / CHUNK * max_seconds)
+        started = False
 
         for _ in range(max_chunks):
             data = stream.read(CHUNK, exception_on_overflow=False)
             frames.append(data)
-            shorts = struct.unpack(f"{len(data)//2}h", data)
-            rms = math.sqrt(sum(s*s for s in shorts) / len(shorts)) if shorts else 0
+            shorts = struct.unpack(f"{len(data) // 2}h", data)
+            rms = math.sqrt(sum(s * s for s in shorts) / len(shorts)) if shorts else 0
             if rms > silence_threshold:
                 if started and silent_chunks > 0:
                     speech_bursts += 1
@@ -167,6 +172,7 @@ def _record_until_silence(
 # ══════════════════════════════════════════════════════════════
 #  TRANSCRIÇÃO
 # ══════════════════════════════════════════════════════════════
+
 
 def _transcribe_groq(wav_path: str) -> str:
     """Transcreve com Groq Whisper Large v3 (~200ms)."""
@@ -214,6 +220,7 @@ def _transcribe_local(model, wav_path: str) -> str:
 #  STT ENGINE
 # ══════════════════════════════════════════════════════════════
 
+
 class STTEngine:
     """
     Motor STT:
@@ -224,10 +231,10 @@ class STTEngine:
     def __init__(self):
         self.enabled = True
         self._local_model = None
-        self._wake_event  = threading.Event()
-        self._stop_bg     = threading.Event()
-        self._lock        = threading.Lock()
-        self._bg_thread: Optional[threading.Thread] = None
+        self._wake_event = threading.Event()
+        self._stop_bg = threading.Event()
+        self._lock = threading.Lock()
+        self._bg_thread: threading.Thread | None = None
 
         if HAS_GROQ:
             print("[STT] ✓ Groq Whisper Large v3 ativo (online).")
@@ -265,21 +272,23 @@ class STTEngine:
         if not pa:
             return
 
-        ENERGY_THRESHOLD  = 300   # RMS mínimo para considerar fala
-        BASE_SILENCE      = 15    # ~480ms base
-        EXTRA_PER_BURST   = 6     # +~190ms por burst
-        MAX_SILENCE       = 70    # ~2.2s máximo
-        PRE_FRAMES        = 8     # frames de buffer pré-onset
-        MAX_CHUNKS        = 480   # máx ~15s (480 × 512 / 16000)
-        CHUNK_WAKE        = 512
+        ENERGY_THRESHOLD = 300  # RMS mínimo para considerar fala
+        BASE_SILENCE = 15  # ~480ms base
+        EXTRA_PER_BURST = 6  # +~190ms por burst
+        MAX_SILENCE = 70  # ~2.2s máximo
+        PRE_FRAMES = 8  # frames de buffer pré-onset
+        MAX_CHUNKS = 480  # máx ~15s (480 × 512 / 16000)
+        CHUNK_WAKE = 512
 
         consecutive_errors = 0
         while not self._stop_bg.is_set():
             with self._lock:
                 try:
                     stream = pa.open(
-                        format=pyaudio.paInt16, channels=1,
-                        rate=SAMPLE_RATE, input=True,
+                        format=pyaudio.paInt16,
+                        channels=1,
+                        rate=SAMPLE_RATE,
+                        input=True,
                         frames_per_buffer=CHUNK_WAKE,
                     )
                     consecutive_errors = 0
@@ -296,17 +305,17 @@ class STTEngine:
                     time.sleep(2.0)
                     continue
 
-                ring_buf      = []
+                ring_buf = []
                 speech_frames = []
-                listening     = False
-                silent_count  = 0
+                listening = False
+                silent_count = 0
                 speech_bursts = 0
 
                 try:
                     while not self._stop_bg.is_set():
                         data = stream.read(CHUNK_WAKE, exception_on_overflow=False)
                         shorts = struct.unpack(f"{CHUNK_WAKE}h", data)
-                        rms    = math.sqrt(sum(s*s for s in shorts) / CHUNK_WAKE)
+                        rms = math.sqrt(sum(s * s for s in shorts) / CHUNK_WAKE)
 
                         if not listening:
                             ring_buf.append(data)
@@ -328,24 +337,23 @@ class STTEngine:
 
                             dynamic_limit = min(BASE_SILENCE + speech_bursts * EXTRA_PER_BURST, MAX_SILENCE)
 
-                            if (silent_count >= dynamic_limit or
-                                len(speech_frames) >= MAX_CHUNKS):
-                                pcm  = b"".join(speech_frames)
-                                wav  = _pcm_to_wav(pcm)
+                            if silent_count >= dynamic_limit or len(speech_frames) >= MAX_CHUNKS:
+                                pcm = b"".join(speech_frames)
+                                wav = _pcm_to_wav(pcm)
                                 text = self._transcribe(wav).lower().strip()
                                 if text:
                                     print(f"[STT WAKE] ouvido: '{text}'")
                                 if WAKEWORD in text:
-                                    print(f"[STT] 🔔 Wakeword 'Luna' detectado!")
+                                    print("[STT] 🔔 Wakeword 'Luna' detectado!")
                                     stream.stop_stream()
                                     stream.close()
                                     self.stop_wakeword_listener()
                                     self._wake_event.set()
                                     return
-                                ring_buf      = []
+                                ring_buf = []
                                 speech_frames = []
-                                listening     = False
-                                silent_count  = 0
+                                listening = False
+                                silent_count = 0
                                 speech_bursts = 0
                 except Exception as e:
                     print(err("STT_WAKEWORD_LOOP", str(e)))
@@ -362,9 +370,7 @@ class STTEngine:
         if self._bg_thread and self._bg_thread.is_alive():
             return
         self._stop_bg.clear()
-        self._bg_thread = threading.Thread(
-            target=self._wakeword_loop, daemon=True, name="wakeword-listener"
-        )
+        self._bg_thread = threading.Thread(target=self._wakeword_loop, daemon=True, name="wakeword-listener")
         self._bg_thread.start()
         mode = "Groq" if HAS_GROQ else "Whisper local"
         print(f"[STT] ✓ Wakeword listener ativo ('Luna') — {mode}")
@@ -372,7 +378,7 @@ class STTEngine:
     def stop_wakeword_listener(self) -> None:
         self._stop_bg.set()
 
-    def listen_once(self, timeout: int = 20, phrase_limit: int = 30) -> Optional[str]:
+    def listen_once(self, timeout: int = 20, phrase_limit: int = 30) -> str | None:
         if not self.enabled:
             return None
         if not HAS_GROQ and not self._local_model:
@@ -389,7 +395,7 @@ class STTEngine:
             )
             if not pcm:
                 return None
-            wav  = _pcm_to_wav(pcm)
+            wav = _pcm_to_wav(pcm)
             text = self._transcribe(wav)
             if text:
                 print(f"[STT] Você: '{text}'")
@@ -414,7 +420,8 @@ class STTEngine:
 
 
 # Singleton
-_stt_instance: Optional[STTEngine] = None
+_stt_instance: STTEngine | None = None
+
 
 def get_stt() -> STTEngine:
     global _stt_instance

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import os
-os.environ['PYTHONWARNINGS'] = 'ignore'
+
+os.environ["PYTHONWARNINGS"] = "ignore"
 
 # Suprime spam do ALSA
-from ctypes import cdll, c_char_p, c_int, CFUNCTYPE, cast
+from ctypes import CFUNCTYPE, c_char_p, c_int, cast, cdll
+
 try:
     _h = CFUNCTYPE(None, c_char_p, c_int, c_char_p, c_int, c_char_p)
-    cdll.LoadLibrary('libasound.so.2').snd_lib_error_set_handler(cast(None, _h))
+    cdll.LoadLibrary("libasound.so.2").snd_lib_error_set_handler(cast(None, _h))
 except OSError:
     pass
 
@@ -14,14 +16,13 @@ import speech_recognition as sr
 import tinytuya
 
 DEVICE_ID = "eb64a81b56fb8003dexqdd"
-LOCAL_KEY  = "Ek&~Ah`=4s}5.'Z#"
-IP_DEVICE  = "192.168.1.5"
-MIC_INDEX  = 9
+LOCAL_KEY = "Ek&~Ah`=4s}5.'Z#"
+IP_DEVICE = "192.168.1.5"
+MIC_INDEX = 9
 
-device = tinytuya.OutletDevice(
-    dev_id=DEVICE_ID, address=IP_DEVICE, local_key=LOCAL_KEY, version=3.4
-)
+device = tinytuya.OutletDevice(dev_id=DEVICE_ID, address=IP_DEVICE, local_key=LOCAL_KEY, version=3.4)
 light_on = False
+
 
 def set_light(state: bool):
     global light_on
@@ -31,6 +32,7 @@ def set_light(state: bool):
         print("💡 Luz", "LIGADA" if state else "DESLIGADA")
     except Exception as e:
         print(f"⚠️  Erro: {e}")
+
 
 if __name__ == "__main__":
     r = sr.Recognizer()

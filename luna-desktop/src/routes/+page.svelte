@@ -80,13 +80,7 @@
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
           </button>
-          <div class="mode-badge glass-panel">
-            <img src="/logo.png" alt="Luna" style="width:18px;height:18px;object-fit:contain;margin-right:4px;" />
-            <div class="mode-text">
-              <span class="mode-title">Luna AI</span>
-              <span class="mode-desc">{luna.currentMode === 'think' ? 'Modo Pensar' : luna.currentMode === 'analyze' ? 'Modo Analisar' : luna.currentMode === 'create' ? 'Modo Criar' : 'Modo Normal'}</span>
-            </div>
-          </div>
+
           <button class="settings-btn glass-panel" onclick={() => activeTab = 'system'} title="Configurações"><Icon name="settings" size="16" /></button>
         </div>
       </header>

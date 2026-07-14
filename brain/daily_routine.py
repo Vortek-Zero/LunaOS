@@ -3,13 +3,13 @@ brain/daily_routine.py — Sistema de Rotinas Diárias
 Inspirado no OpenClaw (cron + standing orders + heartbeat)
 Gerencia briefing matinal, rotinas programadas e ações proativas
 """
+
 import json
 import re
 import threading
 import time
-from datetime import datetime, date
+from datetime import date, datetime
 from pathlib import Path
-from typing import Optional
 
 try:
     from config import DATA_DIR
@@ -35,6 +35,7 @@ class RoutineManager:
         "last_fired": str | None,  # ISO date
     }
     """
+
     def __init__(self, luna_core=None):
         self._routines: list[dict] = []
         self._lock = threading.Lock()
@@ -77,7 +78,12 @@ class RoutineManager:
                 "name": "Resumo do Final do Dia",
                 "hour": 20,
                 "minute": 0,
-                "actions": [{"type": "say", "params": {"message": "Hora de começar a desacelerar. Que tal revisar o dia de amanhã?"}}],
+                "actions": [
+                    {
+                        "type": "say",
+                        "params": {"message": "Hora de começar a desacelerar. Que tal revisar o dia de amanhã?"},
+                    }
+                ],
                 "days": None,
                 "enabled": False,
                 "last_fired": None,
@@ -88,10 +94,10 @@ class RoutineManager:
 
     # ── CRUD ──────────────────────────────────────────────────
 
-    def add_routine(self, name: str, hour: int, minute: int,
-                    actions: list[dict], days: list[int] = None,
-                    enabled: bool = True) -> str:
-        rid = f"rt_{int(time.time()*1000)}"
+    def add_routine(
+        self, name: str, hour: int, minute: int, actions: list[dict], days: list[int] = None, enabled: bool = True
+    ) -> str:
+        rid = f"rt_{int(time.time() * 1000)}"
         entry = {
             "id": rid,
             "name": name,
@@ -114,7 +120,7 @@ class RoutineManager:
             self._save()
         return len(self._routines) < before
 
-    def toggle_routine(self, rid: str) -> Optional[str]:
+    def toggle_routine(self, rid: str) -> str | None:
         with self._lock:
             for r in self._routines:
                 if r["id"] == rid:
@@ -208,7 +214,7 @@ class RoutineManager:
         if self._luna:
             try:
                 briefing = self._luna._daily_briefing()
-                print(f"\n{'='*50}\n☀️ BRIEFING MATINAL AUTOMÁTICO\n{'='*50}\n{briefing}\n{'='*50}")
+                print(f"\n{'=' * 50}\n☀️ BRIEFING MATINAL AUTOMÁTICO\n{'=' * 50}\n{briefing}\n{'=' * 50}")
                 self._speak(briefing)
             except Exception as e:
                 print(f"[Routine] Erro ao gerar briefing: {e}")
@@ -231,6 +237,7 @@ class RoutineManager:
     def _speak(self, text: str):
         try:
             from voice.tts import get_tts
+
             get_tts().speak(text, blocking=False)
         except Exception:
             pass
@@ -246,19 +253,17 @@ class RoutineManager:
 
     def _save(self):
         ROUTINES_FILE.parent.mkdir(parents=True, exist_ok=True)
-        ROUTINES_FILE.write_text(
-            json.dumps(self._routines, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        ROUTINES_FILE.write_text(json.dumps(self._routines, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # ── Handler de linguagem natural ──────────────────────────
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower().strip()
 
         if any(w in tl for w in ["rotinas", "rotina", "listar rotinas", "ver rotinas"]):
             return self.list_routines_text()
 
-        m = re.search(r'(?:remove|cancela|apaga|pausa)\s+(?:a\s+)?rotina\s+(\S+)', tl)
+        m = re.search(r"(?:remove|cancela|apaga|pausa)\s+(?:a\s+)?rotina\s+(\S+)", tl)
         if m:
             rid = m.group(1)
             if "pausa" in tl or "pausar" in tl:
@@ -266,7 +271,7 @@ class RoutineManager:
             ok = self.remove_routine(rid)
             return "Rotina removida." if ok else "Rotina não encontrada."
 
-        m = re.search(r'ativa\s+(?:a\s+)?rotina\s+(\S+)', tl)
+        m = re.search(r"ativa\s+(?:a\s+)?rotina\s+(\S+)", tl)
         if m:
             return self.toggle_routine(m.group(1))
 
@@ -275,8 +280,10 @@ class RoutineManager:
 
 # ── Activity Logger ──────────────────────────────────────────
 
+
 class ActivityLogger:
     """Registra atividades do usuário para aprender padrões (inspirado no dreaming do OpenClaw)."""
+
     def __init__(self):
         self._log: list[dict] = []
         self._lock = threading.Lock()
@@ -284,16 +291,19 @@ class ActivityLogger:
 
     def log(self, action: str, details: str = ""):
         with self._lock:
-            self._log.append({
-                "ts": datetime.now().isoformat(),
-                "action": action,
-                "details": details,
-            })
+            self._log.append(
+                {
+                    "ts": datetime.now().isoformat(),
+                    "action": action,
+                    "details": details,
+                }
+            )
             self._save()
 
     def get_patterns(self, days: int = 7) -> dict:
         """Analisa padrões dos últimos N dias."""
         from collections import Counter
+
         cutoff = datetime.now().timestamp() - (days * 86400)
         recent = [e for e in self._log if datetime.fromisoformat(e["ts"]).timestamp() > cutoff]
 
@@ -317,15 +327,13 @@ class ActivityLogger:
     def get_daily_summary(self) -> str:
         """Gera um resumo do dia."""
         today_str = date.today().isoformat()
-        today_entries = [
-            e for e in self._log
-            if e["ts"].startswith(today_str)
-        ]
+        today_entries = [e for e in self._log if e["ts"].startswith(today_str)]
         if not today_entries:
             return "Nenhuma atividade registrada hoje ainda."
 
         actions = [e["action"] for e in today_entries]
         from collections import Counter
+
         top = Counter(actions).most_common(5)
         lines = [f"📊 Resumo do dia ({today_str}):"]
         lines.append(f"  Total de ações: {len(today_entries)}")
@@ -344,12 +352,11 @@ class ActivityLogger:
         ACTIVITY_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         if len(self._log) > 5000:
             self._log = self._log[-3000:]
-        ACTIVITY_LOG_FILE.write_text(
-            json.dumps(self._log, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+        ACTIVITY_LOG_FILE.write_text(json.dumps(self._log, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 # ── Background Worker (Heartbeat estilo OpenClaw) ───────────
+
 
 class BackgroundWorker:
     """
@@ -359,6 +366,7 @@ class BackgroundWorker:
     - A cada 30 minutos, verifica se há algo relevante para notificar
     - Aprende padrões do usuário
     """
+
     def __init__(self, luna_core=None):
         self._luna = luna_core
         self._running = False
@@ -401,15 +409,25 @@ class BackgroundWorker:
                 return
 
             from datetime import timedelta
+
             now = datetime.utcnow()
             time_min = now.isoformat() + "Z"
             time_max = (now + timedelta(hours=1)).isoformat() + "Z"
 
             service = google._cal()
-            events = service.events().list(
-                calendarId="primary", timeMin=time_min, timeMax=time_max,
-                maxResults=5, singleEvents=True, orderBy="startTime"
-            ).execute().get("items", [])
+            events = (
+                service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=time_min,
+                    timeMax=time_max,
+                    maxResults=5,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+                .get("items", [])
+            )
 
             for ev in events:
                 ev_start = ev["start"].get("dateTime", ev["start"].get("date"))
@@ -418,7 +436,7 @@ class BackgroundWorker:
                     continue
 
                 try:
-                    dt = datetime.fromisoformat(ev_start.replace('Z', '+00:00'))
+                    dt = datetime.fromisoformat(ev_start.replace("Z", "+00:00"))
                     now_local = datetime.now()
                     mins_until = (dt - now_local).total_seconds() / 60
                     if 0 < mins_until <= 35:
@@ -443,22 +461,19 @@ class BackgroundWorker:
             now = datetime.now()
             hour = now.hour
 
-            if 22 <= hour or hour < 6:
+            if hour >= 22 or hour < 6:
                 memory.remember(
-                    "O usuário costuma usar o sistema à noite (após 22h)",
-                    category="habitos", importance=0.5
+                    "O usuário costuma usar o sistema à noite (após 22h)", category="habitos", importance=0.5
                 )
             elif 6 <= hour < 9:
-                memory.remember(
-                    "O usuário costuma usar o sistema pela manhã",
-                    category="habitos", importance=0.5
-                )
+                memory.remember("O usuário costuma usar o sistema pela manhã", category="habitos", importance=0.5)
         except Exception:
             pass
 
         # 2. Aprendizado de hábitos avançado (HabitLearner)
         try:
             from brain.habit_learner import learn_user_habits
+
             learn_user_habits()
         except Exception as e:
             print(f"[BackgroundWorker] Erro no aprendizado de hábitos automático: {e}")
@@ -466,6 +481,7 @@ class BackgroundWorker:
         # 3. Motor de proatividade (ProactivityEngine)
         try:
             from brain.proactivity import ProactivityEngine
+
             engine = ProactivityEngine(self._luna)
             suggestion = engine.evaluate_proactive_actions()
             if suggestion:
@@ -476,15 +492,16 @@ class BackgroundWorker:
     def _speak(self, text: str):
         try:
             from voice.tts import get_tts
+
             get_tts().speak(text, blocking=False)
         except Exception:
             pass
 
 
 # Singleton
-_routine_instance: Optional[RoutineManager] = None
-_logger_instance: Optional[ActivityLogger] = None
-_worker_instance: Optional[BackgroundWorker] = None
+_routine_instance: RoutineManager | None = None
+_logger_instance: ActivityLogger | None = None
+_worker_instance: BackgroundWorker | None = None
 
 
 def get_routine_manager(luna_core=None) -> RoutineManager:

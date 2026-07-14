@@ -1,9 +1,10 @@
 from PIL import Image
 
+
 def combine():
     # Load background and foreground logo
-    bg = Image.open('/home/pera/Luna/newlogoluna.png')
-    fg = Image.open('/home/pera/Luna/newlogoluna.png')
+    bg = Image.open("/home/pera/Luna/newlogoluna.png")
+    fg = Image.open("/home/pera/Luna/newlogoluna.png")
 
     # Get bounding box of the logo to remove empty transparency around it
     bbox = fg.getbbox()
@@ -31,9 +32,10 @@ def combine():
     combined.paste(fg_resized, (x, y), fg_resized)
 
     # Save the output
-    output_path = '/home/pera/Luna/luna-desktop/src-tauri/icons/icon.png'
-    combined.save(output_path, 'PNG')
+    output_path = "/home/pera/Luna/luna-desktop/src-tauri/icons/icon.png"
+    combined.save(output_path, "PNG")
     print(f"Icon generated and saved to {output_path}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     combine()

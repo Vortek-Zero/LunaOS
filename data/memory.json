@@ -17,16 +17,6 @@
     "default": [
       {
         "role": "user",
-        "text": "veja agora o preço do relé no mercado livre",
-        "ts": "2026-07-12T18:49:08.473105"
-      },
-      {
-        "role": "assistant",
-        "text": "Pesquisei o preço médio de um módulo relé no Mercado Livre e abri a página de resultados no navegador. Para te dar o valor exato, preciso ler o conteúdo da página. Posso fazer isso agora?",
-        "ts": "2026-07-12T18:49:08.473127"
-      },
-      {
-        "role": "user",
         "text": "leia a página e me diga o preço",
         "ts": "2026-07-12T18:49:26.877392"
       },
@@ -114,6 +104,16 @@
         "role": "assistant",
         "text": "E aí! Tudo certo por aqui.\n\nComo posso te ajudar hoje?",
         "ts": "2026-07-13T15:41:48.883927"
+      },
+      {
+        "role": "user",
+        "text": "oi",
+        "ts": "2026-07-13T21:32:55.118783"
+      },
+      {
+        "role": "assistant",
+        "text": "Olá! Como posso ajudar você hoje? 😊",
+        "ts": "2026-07-13T21:32:55.118800"
       }
     ]
   },

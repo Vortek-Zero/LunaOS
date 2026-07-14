@@ -4,14 +4,13 @@ Cache Inteligente e Otimizações de Performance para LUNA
 Reduz latência de resposta e uso de CPU/GPU
 """
 
-import json
 import hashlib
 import heapq
-from datetime import datetime, timedelta
-from typing import Dict, Optional, Any
-from pathlib import Path
-import time
+import json
 import threading
+import time
+from datetime import datetime, timedelta
+from pathlib import Path
 
 
 class SmartCache:
@@ -31,6 +30,7 @@ class SmartCache:
         if cache_file is None:
             try:
                 from config import CACHE_FILE
+
                 cache_file = str(CACHE_FILE)
             except ImportError:
                 cache_file = str(Path(__file__).parent / "data" / "cache.json")
@@ -39,7 +39,7 @@ class SmartCache:
         self.cache_file.parent.mkdir(parents=True, exist_ok=True)
         self.ttl_seconds = ttl_hours * 3600
         self.cache = self._load_cache()
-        self._l1_cache: Dict[str, Dict] = {}  # Cache em memória (L1 — latência zero)
+        self._l1_cache: dict[str, dict] = {}  # Cache em memória (L1 — latência zero)
         self._dirty = False  # Flag para saber se precisa salvar
         self._lock = threading.Lock()
         self._flush_timer = None
@@ -51,7 +51,7 @@ class SmartCache:
         for key, entry in self.cache.get("entries", {}).items():
             self._l1_cache[key] = entry
 
-    def _load_cache(self) -> Dict:
+    def _load_cache(self) -> dict:
         """Carrega cache do arquivo; repara JSON corrompido automaticamente."""
         empty = {"entries": {}, "metadata": {"created": datetime.now().isoformat()}}
         if not self.cache_file.exists():
@@ -86,7 +86,7 @@ class SmartCache:
     def _save_cache(self) -> None:
         """Persiste cache em arquivo"""
         try:
-            with open(self.cache_file, 'w', encoding='utf-8') as f:
+            with open(self.cache_file, "w", encoding="utf-8") as f:
                 json.dump(self.cache, f, ensure_ascii=False, indent=2)
         except Exception as e:
             print(f"[CACHE WARN] Erro ao salvar cache: {e}")
@@ -109,7 +109,7 @@ class SmartCache:
         """Cria hash SHA256 da query para chave de cache"""
         return hashlib.sha256(query.lower().strip().encode()).hexdigest()[:16]
 
-    def get(self, query: str) -> Optional[Dict]:
+    def get(self, query: str) -> dict | None:
         """
         Recupera resposta em cache se disponível e válida.
         Usa L1 (memória) primeiro, depois L2 (disco).
@@ -152,7 +152,7 @@ class SmartCache:
                 "source": "cache",
             }
 
-    def set(self, query: str, response: str, confidence: float = 0.8, ttl_hours: Optional[int] = None) -> None:
+    def set(self, query: str, response: str, confidence: float = 0.8, ttl_hours: int | None = None) -> None:
         """
         Armazena resposta em cache.
 
@@ -189,6 +189,7 @@ class SmartCache:
             # Eviction LRU quando excede limite
             try:
                 from config import CACHE_MAX_ENTRIES
+
                 max_entries = CACHE_MAX_ENTRIES
             except ImportError:
                 max_entries = 500
@@ -196,10 +197,7 @@ class SmartCache:
             entries = self.cache["entries"]
             if len(entries) > max_entries:
                 # Use heapq for O(log N) LRU eviction
-                heap = [
-                    (entry.get("last_accessed", ""), key)
-                    for key, entry in entries.items()
-                ]
+                heap = [(entry.get("last_accessed", ""), key) for key, entry in entries.items()]
                 heapq.heapify(heap)
                 to_remove = len(entries) - max_entries
                 for _ in range(to_remove):
@@ -237,7 +235,7 @@ class SmartCache:
                 self._save_cache()
             return removed
 
-    def get_stats(self) -> Dict:
+    def get_stats(self) -> dict:
         """Retorna estatísticas de uso do cache"""
         return {
             "total_entries": len(self.cache.get("entries", {})),
@@ -280,7 +278,7 @@ class ResponseOptimizer:
             elif confidence > 0.5:
                 return 0.15  # Moderadamente factual
             else:
-                return 0.3   # Um pouco mais criativo se incerto
+                return 0.3  # Um pouco mais criativo se incerto
         else:
             # Chat/comando: pode ser mais criativo
             return 0.4
@@ -330,10 +328,10 @@ class ResponseOptimizer:
         Útil para UI feedback.
         """
         base_time = {
-            "1b": 0.5,      # Modelo pequeno: ~0.5s
-            "3b": 1.0,      # Modelo médio: ~1s
-            "7b": 2.5,      # Modelo grande: ~2.5s
-            "13b": 4.0,     # Modelo muito grande: ~4s
+            "1b": 0.5,  # Modelo pequeno: ~0.5s
+            "3b": 1.0,  # Modelo médio: ~1s
+            "7b": 2.5,  # Modelo grande: ~2.5s
+            "13b": 4.0,  # Modelo muito grande: ~4s
         }
 
         model_time = base_time.get(model_size, 1.0)
@@ -341,7 +339,7 @@ class ResponseOptimizer:
 
         return model_time * length_factor
 
-    def get_optimization_hints(self, query: str, is_question: bool, confidence: float) -> Dict:
+    def get_optimization_hints(self, query: str, is_question: bool, confidence: float) -> dict:
         """
         Retorna dicas completas de otimização para processamento.
         Use isso como referência para o main.py.

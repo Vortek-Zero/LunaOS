@@ -2,12 +2,11 @@
 brain/trace_logger.py — Gravação de interações para aprendizado (inspirado no OpenJarvis TraceStore)
 Registra cada interação do usuário + ferramentas + resultado em JSONL para análise posterior.
 """
-import json
-import time
-import os
-from pathlib import Path
-from typing import Optional
 
+import json
+import os
+import time
+from pathlib import Path
 
 TRACE_DIR = Path(__file__).parent.parent / "data" / "traces"
 
@@ -28,7 +27,7 @@ class TraceLogger:
         self._dir = Path(trace_dir)
         self._dir.mkdir(parents=True, exist_ok=True)
         self._session_id = f"session_{int(time.time())}"
-        self._current_trace: Optional[dict] = None
+        self._current_trace: dict | None = None
 
     def start_trace(self, query: str, context: str = "") -> str:
         """Inicia um novo trace para uma interação."""
@@ -47,30 +46,32 @@ class TraceLogger:
         self._start_time = time.time()
         return trace_id
 
-    def add_step(self, step_type: str, tool_name: str = "",
-                 arguments: str = "", result: str = "",
-                 success: bool = False) -> None:
+    def add_step(
+        self, step_type: str, tool_name: str = "", arguments: str = "", result: str = "", success: bool = False
+    ) -> None:
         """Adiciona um passo (tool_call, generate, etc) ao trace atual."""
         if self._current_trace is None:
             return
-        self._current_trace["steps"].append({
-            "step_type": step_type,
-            "tool_name": tool_name,
-            "arguments": arguments[:500],
-            "result_preview": result[:500],
-            "success": success,
-            "timestamp": time.time(),
-        })
+        self._current_trace["steps"].append(
+            {
+                "step_type": step_type,
+                "tool_name": tool_name,
+                "arguments": arguments[:500],
+                "result_preview": result[:500],
+                "success": success,
+                "timestamp": time.time(),
+            }
+        )
 
     def set_model(self, model: str) -> None:
         if self._current_trace is not None:
             self._current_trace["model_used"] = model
 
-    def finish_trace(self, outcome: str, response: str = "") -> Optional[str]:
+    def finish_trace(self, outcome: str, response: str = "") -> str | None:
         """Finaliza e salva o trace atual. Retorna trace_id ou None se falhou."""
         if self._current_trace is None:
             return None
-        elapsed = time.time() - self._start_time if hasattr(self, '_start_time') else 0.0
+        elapsed = time.time() - self._start_time if hasattr(self, "_start_time") else 0.0
         self._current_trace["outcome"] = outcome
         self._current_trace["total_latency"] = round(elapsed, 3)
         self._current_trace["response_preview"] = response[:500] if response else ""
@@ -93,7 +94,7 @@ class TraceLogger:
         """Retorna os traces mais recentes."""
         traces = []
         for f in sorted(self._dir.glob("traces_*.jsonl"), reverse=True)[:3]:
-            with open(f, "r", encoding="utf-8") as fp:
+            with open(f, encoding="utf-8") as fp:
                 for line in fp:
                     line = line.strip()
                     if line:
@@ -117,7 +118,7 @@ class TraceLogger:
         total_latency = 0.0
 
         for f in sorted(self._dir.glob("traces_*.jsonl"), reverse=True)[:5]:
-            with open(f, "r", encoding="utf-8") as fp:
+            with open(f, encoding="utf-8") as fp:
                 for line in fp:
                     line = line.strip()
                     if not line:
@@ -145,7 +146,7 @@ class TraceLogger:
 
 
 # Singleton
-_logger: Optional[TraceLogger] = None
+_logger: TraceLogger | None = None
 
 
 def get_trace_logger() -> TraceLogger:

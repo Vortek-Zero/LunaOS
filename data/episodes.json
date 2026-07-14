@@ -40,5 +40,19 @@
     ],
     "action_type": "conversa",
     "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1783991801961",
+    "ts": "2026-07-13T22:16:41.961111",
+    "date": "2026-07-13",
+    "hour": 22,
+    "weekday": "Monday",
+    "text": "o que temos pra hoje",
+    "summary": "Não consegui processar sua solicitação. Tente novamente.",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
   }
 ]

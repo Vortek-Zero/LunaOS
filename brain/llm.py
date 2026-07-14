@@ -12,138 +12,145 @@ Prioridade:
   7. Groq              → qwen3-32b, llama-4-scout (free tier)
   8. Ollama            → qwen2.5 local (fallback offline)
 """
+
 import json
+import os
 import time
 import time as _time
-import os
-from typing import Optional, Generator, Union
+from collections.abc import Generator
 from dataclasses import dataclass
 
 from error_codes import err as luna_err
 
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
-    import urllib.request
     import urllib.error
+    import urllib.request
 
 try:
     from mistralai.client import Mistral
+
     HAS_MISTRAL = True
 except ImportError:
     HAS_MISTRAL = False
 
 try:
     import google.generativeai as genai
+
     HAS_GEMINI = True
 except ImportError:
     HAS_GEMINI = False
 
 try:
     from groq import Groq as GroqClient
+
     HAS_GROQ_LIB = True
 except ImportError:
     HAS_GROQ_LIB = False
 
 try:
     from config import (
-        OLLAMA_GENERATE_URL as OLLAMA_URL,
-        OLLAMA_TAGS_URL,
-        MODELS,
-        MODEL_TIMEOUTS,
-        MISTRAL_API_KEY,
-        MISTRAL_MODELS,
-        GROQ_API_KEY,
-        GROQ_MODELS,
-        GEMINI_API_KEY,
-        GEMINI_MODELS,
-        GITHUB_TOKEN,
-        GITHUB_BASE_URL,
-        GITHUB_MODELS,
-        OPENROUTER_API_KEY,
-        OPENROUTER_BASE_URL,
-        OPENROUTER_MODELS,
-        CHUTES_API_KEY,
-        CHUTES_BASE_URL,
-        CHUTES_MODELS,
-        NAGA_API_KEY,
-        NAGA_BASE_URL,
-        NAGA_MODELS,
         BESTAI_API_KEY,
         BESTAI_BASE_URL,
         BESTAI_MODELS,
+        CHUTES_API_KEY,
+        CHUTES_BASE_URL,
+        CHUTES_MODELS,
+        GEMINI_API_KEY,
+        GEMINI_MODELS,
+        GITHUB_BASE_URL,
+        GITHUB_MODELS,
+        GITHUB_TOKEN,
+        GROQ_API_KEY,
+        GROQ_MODELS,
+        MISTRAL_API_KEY,
+        MISTRAL_MODELS,
+        MODEL_TIMEOUTS,
+        MODELS,
+        NAGA_API_KEY,
+        NAGA_BASE_URL,
+        NAGA_MODELS,
+        OLLAMA_TAGS_URL,
+        OPENROUTER_API_KEY,
+        OPENROUTER_BASE_URL,
+        OPENROUTER_MODELS,
+    )
+    from config import (
+        OLLAMA_GENERATE_URL as OLLAMA_URL,
     )
 except ImportError:
-    OLLAMA_URL      = "http://localhost:11434/api/generate"
+    OLLAMA_URL = "http://localhost:11434/api/generate"
     OLLAMA_TAGS_URL = "http://localhost:11434/api/tags"
     MODELS = {
         "heavy": "qwen2.5:7b-instruct-q4_K_M",
-        "main":  "qwen2.5:3b",
-        "fast":  "qwen2.5:0.5b-instruct-fp16",
+        "main": "qwen2.5:3b",
+        "fast": "qwen2.5:0.5b-instruct-fp16",
         "basic": "qwen2.5:0.5b",
     }
     MODEL_TIMEOUTS = {"fast": 30, "main": 120, "heavy": 600}
     MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "")
     MISTRAL_MODELS = {
         "heavy": "mistral-large-latest",
-        "main":  "mistral-large-latest",
-        "fast":  "mistral-small-latest",
+        "main": "mistral-large-latest",
+        "fast": "mistral-small-latest",
     }
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     GROQ_MODELS = {
         "heavy": "llama-3.3-70b-versatile",
-        "main":  "llama-3.1-8b-instant",
-        "fast":  "llama-3.1-8b-instant",
+        "main": "llama-3.1-8b-instant",
+        "fast": "llama-3.1-8b-instant",
     }
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
     GEMINI_MODELS = {
         "heavy": "gemini-2.5-flash",
-        "main":  "gemini-2.5-flash",
-        "fast":  "gemini-2.5-flash",
+        "main": "gemini-2.5-flash",
+        "fast": "gemini-2.5-flash",
     }
     GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
     GITHUB_BASE_URL = "https://models.inference.ai.azure.com"
     GITHUB_MODELS = {
-        "heavy":     "DeepSeek-R1",
-        "main":      "DeepSeek-V3-0324",
-        "fast":      "DeepSeek-V3-0324",
-        "fallback":  "DeepSeek-R1",
+        "heavy": "DeepSeek-R1",
+        "main": "DeepSeek-V3-0324",
+        "fast": "DeepSeek-V3-0324",
+        "fallback": "DeepSeek-R1",
     }
-    OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
+    OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
     OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
     OPENROUTER_MODELS = {
-        "heavy":     "deepseek/deepseek-chat-v3-0324",
-        "main":      "deepseek/deepseek-chat-v3-0324",
-        "fast":      "deepseek/deepseek-chat-v3-0324",
-        "fallback":  "deepseek/deepseek-r1",
+        "heavy": "deepseek/deepseek-chat-v3-0324",
+        "main": "deepseek/deepseek-chat-v3-0324",
+        "fast": "deepseek/deepseek-chat-v3-0324",
+        "fallback": "deepseek/deepseek-r1",
         "fallback2": "google/gemini-2.5-flash",
     }
-    CHUTES_API_KEY  = os.getenv("CHUTES_API_KEY", "")
+    CHUTES_API_KEY = os.getenv("CHUTES_API_KEY", "")
     CHUTES_BASE_URL = os.getenv("CHUTES_BASE_URL", "https://llm.chutes.ai/v1")
     CHUTES_MODELS = {
-        "heavy":     "deepseek-ai/DeepSeek-V3.2-TEE",
-        "main":      "deepseek-ai/DeepSeek-V3.2-TEE",
-        "fast":      "Qwen/Qwen3.6-27B-TEE",
-        "fallback":  "google/gemma-4-31B-turbo-TEE",
+        "heavy": "deepseek-ai/DeepSeek-V3.2-TEE",
+        "main": "deepseek-ai/DeepSeek-V3.2-TEE",
+        "fast": "Qwen/Qwen3.6-27B-TEE",
+        "fallback": "google/gemma-4-31B-turbo-TEE",
         "fallback2": "MiniMaxAI/MiniMax-M2.5-TEE",
     }
     NAGA_API_KEY = os.getenv("NAGA_API_KEY", "")
     NAGA_BASE_URL = "https://api.naga.ac/v1"
     NAGA_MODELS = {
-        "heavy":     "nemotron-3-ultra-550b-a55b:free",
-        "main":      "nemotron-3-super-120b-a12b:free",
-        "fast":      "llama-4-scout-17b-16e-instruct:free",
-        "fallback":  "llama-3.3-70b-instruct:free",
+        "heavy": "nemotron-3-ultra-550b-a55b:free",
+        "main": "nemotron-3-super-120b-a12b:free",
+        "fast": "llama-4-scout-17b-16e-instruct:free",
+        "fallback": "llama-3.3-70b-instruct:free",
     }
     BESTAI_API_KEY = os.getenv("BESTAI_API_KEY", "")
     BESTAI_BASE_URL = "https://api.oaibest.com/v1"
     BESTAI_MODELS = {
-        "heavy":     "deepseek-r1",
-        "main":      "deepseek-v3.1",
-        "fast":      "deepseek-v4-flash",
-        "fallback":  "qwen3.5-flash",
+        "heavy": "deepseek-r1",
+        "main": "deepseek-v3.1",
+        "fast": "deepseek-v4-flash",
+        "fallback": "qwen3.5-flash",
     }
 
 
@@ -169,39 +176,45 @@ def _normalize_tool_calls(raw_tool_calls) -> list:
             if isinstance(tc, dict):
                 fn = tc.get("function", {})
                 args = fn.get("arguments", {})
-                result.append(NormalizedToolCall(
-                    id=tc.get("id", f"call_{len(result)}"),
-                    type=tc.get("type", "function"),
-                    function=ToolCallFunction(
-                        name=fn.get("name", ""),
-                        arguments=json.dumps(args) if isinstance(args, dict) else str(args),
-                    ),
-                ))
+                result.append(
+                    NormalizedToolCall(
+                        id=tc.get("id", f"call_{len(result)}"),
+                        type=tc.get("type", "function"),
+                        function=ToolCallFunction(
+                            name=fn.get("name", ""),
+                            arguments=json.dumps(args) if isinstance(args, dict) else str(args),
+                        ),
+                    )
+                )
             else:
                 fn = tc.function
-                result.append(NormalizedToolCall(
-                    id=getattr(tc, "id", f"call_{len(result)}"),
-                    type=getattr(tc, "type", "function"),
-                    function=ToolCallFunction(name=fn.name, arguments=fn.arguments),
-                ))
+                result.append(
+                    NormalizedToolCall(
+                        id=getattr(tc, "id", f"call_{len(result)}"),
+                        type=getattr(tc, "type", "function"),
+                        function=ToolCallFunction(name=fn.name, arguments=fn.arguments),
+                    )
+                )
         except Exception as e:
             print(f"[LLM] ⚠ Erro ao normalizar tool_call: {e}")
     return result
 
 
 TASK_PARAMS = {
-    "factual":        {"temperature": 0.05, "top_p": 0.85, "max_tokens": 500},
-    "creative":       {"temperature": 0.85, "top_p": 0.95, "max_tokens": 3000},
-    "command":        {"temperature": 0.1,  "top_p": 0.90, "max_tokens": 200},
-    "planning":       {"temperature": 0.15, "top_p": 0.90, "max_tokens": 500},
-    "coding":         {"temperature": 0.1,  "top_p": 0.90, "max_tokens": 4000},
+    "factual": {"temperature": 0.05, "top_p": 0.85, "max_tokens": 500},
+    "creative": {"temperature": 0.85, "top_p": 0.95, "max_tokens": 3000},
+    "command": {"temperature": 0.1, "top_p": 0.90, "max_tokens": 200},
+    "planning": {"temperature": 0.15, "top_p": 0.90, "max_tokens": 500},
+    "coding": {"temperature": 0.1, "top_p": 0.90, "max_tokens": 4000},
     "conversational": {"temperature": 0.70, "top_p": 0.95, "max_tokens": 1500},
-    "default":        {"temperature": 0.2,  "top_p": 0.90, "max_tokens": 500},
+    "default": {"temperature": 0.2, "top_p": 0.90, "max_tokens": 500},
 }
 
 
 def _ollama_model_for_tier(model_name: str) -> str:
-    """Dado um modelo Gemini/Groq, retorna o equivalente Ollama."""
+    """Dado um tier (main/fast/heavy/basic) ou modelo, retorna o nome do modelo Ollama."""
+    if model_name in MODELS:
+        return MODELS[model_name]
     gemini_vals = set(GEMINI_MODELS.values()) if GEMINI_MODELS else set()
     groq_vals = set(GROQ_MODELS.values()) if GROQ_MODELS else set()
     if model_name in gemini_vals or model_name in groq_vals:
@@ -305,31 +318,14 @@ class LLMWrapper:
                 print(luna_err("GROQ_INIT_FAILED", str(e)))
                 self._groq_ok = False
 
-        # ── Ollama (fallback 8 — local) ───────────────────────
+        # Ollama local desabilitado — apenas provedores cloud
         if HAS_REQUESTS:
             self._session = requests.Session()
             self._session.headers.update({"Content-Type": "application/json"})
         else:
             self._session = None
 
-        self._ollama_ok = self._check_ollama()
-        if not self.available:
-            self.available = self._ollama_ok
-
-    def _check_ollama(self) -> bool:
-        try:
-            if self._session:
-                resp = self._session.get(OLLAMA_TAGS_URL, timeout=3)
-                ok = resp.status_code == 200
-            else:
-                req = urllib.request.Request(OLLAMA_TAGS_URL)
-                with urllib.request.urlopen(req, timeout=3) as resp:
-                    ok = resp.status == 200
-            if ok:
-                print("[LLM] ✓ Ollama disponível (fallback local)")
-            return ok
-        except Exception:
-            return False
+        self._ollama_ok = False
 
     def _mistral_available(self) -> bool:
         return self._mistral_ok and time.time() >= self._mistral_rl_until
@@ -361,18 +357,18 @@ class LLMWrapper:
         models = [GITHUB_MODELS.get(k) for k in ("heavy", "main", "fallback") if GITHUB_MODELS.get(k)]
         return any(now >= self._github_rl_per_model.get(m, 0) for m in models)
 
-    def _github_model_for(self, hint: str) -> Optional[str]:
+    def _github_model_for(self, hint: str) -> str | None:
         """Retorna o modelo GitHub adequado ao tier."""
         now = time.time()
-        
+
         tier_map = {
             "heavy": GITHUB_MODELS.get("heavy", "DeepSeek-R1"),
-            "main":  GITHUB_MODELS.get("main",  "DeepSeek-V3-0324"),
-            "fast":  GITHUB_MODELS.get("fast",  "DeepSeek-V3-0324"),
+            "main": GITHUB_MODELS.get("main", "DeepSeek-V3-0324"),
+            "fast": GITHUB_MODELS.get("fast", "DeepSeek-V3-0324"),
         }
-        
+
         target = tier_map.get(hint, GITHUB_MODELS.get("main", "DeepSeek-V3-0324"))
-        
+
         ordered = [target]
         for m in [GITHUB_MODELS.get("main"), GITHUB_MODELS.get("fallback")]:
             if m and m not in ordered:
@@ -390,10 +386,10 @@ class LLMWrapper:
         models = [OPENROUTER_MODELS.get(k) for k in ("main", "fallback", "fallback2") if OPENROUTER_MODELS.get(k)]
         return any(now >= self._openrouter_rl_per_model.get(m, 0) for m in models)
 
-    def _openrouter_model_for(self, hint: str) -> Optional[str]:
+    def _openrouter_model_for(self, hint: str) -> str | None:
         now = time.time()
         ordered = [
-            OPENROUTER_MODELS.get("main",     "deepseek/deepseek-chat-v3-0324"),
+            OPENROUTER_MODELS.get("main", "deepseek/deepseek-chat-v3-0324"),
             OPENROUTER_MODELS.get("fallback", "deepseek/deepseek-r1"),
             OPENROUTER_MODELS.get("fallback2"),
         ]
@@ -408,22 +404,22 @@ class LLMWrapper:
     def _gemini_model_for(self, model_hint: str) -> str:
         """Retorna o modelo Gemini adequado ao tier, respeitando rate limits."""
         now = time.time()
-        
+
         # Mapeamento de tier para modelos específicos
         tier_map = {
             "heavy": GEMINI_MODELS.get("heavy", "gemini-2.5-flash"),
-            "main":  GEMINI_MODELS.get("main",  "gemini-2.5-flash"),
-            "fast":  GEMINI_MODELS.get("fast",  "gemini-2.5-flash"),
+            "main": GEMINI_MODELS.get("main", "gemini-2.5-flash"),
+            "fast": GEMINI_MODELS.get("fast", "gemini-2.5-flash"),
         }
-        
+
         target = tier_map.get(model_hint, GEMINI_MODELS.get("main", "gemini-2.5-flash"))
-        
+
         # Lista de fallback ordenada
         ordered = [target]
         for m in [GEMINI_MODELS.get("main"), GEMINI_MODELS.get("fallback"), GEMINI_MODELS.get("fallback2")]:
             if m and m not in ordered:
                 ordered.append(m)
-                
+
         for m in ordered:
             if now >= self._gemini_rl_per_model.get(m, 0):
                 return m
@@ -443,19 +439,18 @@ class LLMWrapper:
         self,
         prompt: str = None,
         task_type: str = "default",
-        model: Optional[str] = None,
+        model: str | None = None,
         stream: bool = False,
         max_retries: int = 2,
         messages: list = None,
         tools: list = None,
-    ) -> Union[str, Generator, dict]:
-
+    ) -> str | Generator | dict:
         if tools:
             stream = False
 
         used_model = model or self.model
         _start_time = _time.time()
-        _global_timeout = 60  # 60 seconds max for entire cascade
+        _global_timeout = 60
 
         # 1. Mistral (primário)
         if self._mistral_available() and _time.time() - _start_time < _global_timeout:
@@ -516,30 +511,16 @@ class LLMWrapper:
             if result is not None:
                 return result
 
-        # 8. Ollama (fallback local)
-        if _time.time() - _start_time < _global_timeout:
-            ollama_model = _ollama_model_for_tier(used_model)
-            if self._ollama_ok or self._check_ollama():
-                self._ollama_ok = True
-                return self._generate_ollama(prompt, task_type, ollama_model, stream, max_retries, messages, tools)
-
-        # 9. Emergency fallback — always try Ollama
-        try:
-            ollama_model = _ollama_model_for_tier(used_model)
-            return self._generate_ollama(prompt, task_type, ollama_model, stream, max_retries, messages, tools)
-        except Exception:
-            pass
-
+        # Ollama local está desabilitado. Use Ollama Cloud ou provedores cloud com API key.
         if stream:
             return iter(["[LLM indisponível]"])
-        return "[LLM indisponível] - Todos os provedores de IA falharam. Verifique sua conexão ou tente novamente."
+        return "[LLM indisponível] - Nenhum provedor cloud configurado. Adicione uma API key no .env (GROQ, GEMINI, MISTRAL, etc.)."
 
     # ── Gemini ────────────────────────────────────────────────
 
     def _generate_gemini(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         """Gera com Gemini. Retorna None para fazer fallback."""
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
 
@@ -584,29 +565,37 @@ class LLMWrapper:
                         history.append({"role": "user", "parts": [content]})
                 elif role == "tool":
                     fn_name = msg.get("name") or "tool"
-                    history.append({
-                        "role": "user",
-                        "parts": [{
-                            "function_response": {
-                                "name": fn_name,
-                                "response": {"result": content},
-                            }
-                        }],
-                    })
+                    history.append(
+                        {
+                            "role": "user",
+                            "parts": [
+                                {
+                                    "function_response": {
+                                        "name": fn_name,
+                                        "response": {"result": content},
+                                    }
+                                }
+                            ],
+                        }
+                    )
             # Última mensagem — input atual ou continuação após ferramenta
             last = messages[-1]
             last_role = last.get("role", "user")
             if last_role == "tool":
                 fn_name = last.get("name") or "tool"
-                history.append({
-                    "role": "user",
-                    "parts": [{
-                        "function_response": {
-                            "name": fn_name,
-                            "response": {"result": last.get("content") or ""},
-                        }
-                    }],
-                })
+                history.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "function_response": {
+                                    "name": fn_name,
+                                    "response": {"result": last.get("content") or ""},
+                                }
+                            }
+                        ],
+                    }
+                )
                 user_content = "Responda ao usuário em português com base nos resultados das ferramentas."
             else:
                 user_content = last.get("content") or prompt or ""
@@ -641,14 +630,16 @@ class LLMWrapper:
                     args_dict = {}
                     for k, v in fc.args.items():
                         args_dict[k] = v
-                    tool_calls.append(NormalizedToolCall(
-                        id=f"gemini_{fc.name}_{int(time.time())}",
-                        type="function",
-                        function=ToolCallFunction(
-                            name=fc.name,
-                            arguments=json.dumps(args_dict),
-                        ),
-                    ))
+                    tool_calls.append(
+                        NormalizedToolCall(
+                            id=f"gemini_{fc.name}_{int(time.time())}",
+                            type="function",
+                            function=ToolCallFunction(
+                                name=fc.name,
+                                arguments=json.dumps(args_dict),
+                            ),
+                        )
+                    )
 
             if tool_calls:
                 return {"tool_calls": tool_calls, "message": response}
@@ -697,11 +688,13 @@ class LLMWrapper:
             for prop in clean_params.get("properties", {}).values():
                 prop.pop("default", None)
                 prop.pop("enum", None)  # enum pode causar problemas em alguns casos
-            declarations.append({
-                "name": fn.get("name", ""),
-                "description": fn.get("description", ""),
-                "parameters": clean_params,
-            })
+            declarations.append(
+                {
+                    "name": fn.get("name", ""),
+                    "description": fn.get("description", ""),
+                    "parameters": clean_params,
+                }
+            )
         return [{"function_declarations": declarations}]
 
     def _gemini_stream(self, client, history: list, user_content: str, model: str, task_type: str) -> Generator:
@@ -723,19 +716,25 @@ class LLMWrapper:
         # Fallback para GitHub Models no stream
         oai_msgs = []
         for m in history + [{"role": "user", "parts": [user_content]}]:
-            oai_msgs.append({
-                "role": "user" if m["role"] == "user" else "assistant",
-                "content": m["parts"][0] if isinstance(m.get("parts"), list) else m.get("content", ""),
-            })
+            oai_msgs.append(
+                {
+                    "role": "user" if m["role"] == "user" else "assistant",
+                    "content": m["parts"][0] if isinstance(m.get("parts"), list) else m.get("content", ""),
+                }
+            )
         if self._github_available():
             gh_model = self._github_model_for(model)
             gh_headers = {
                 "Authorization": f"Bearer {GITHUB_TOKEN}",
                 "Content-Type": "application/json",
             }
-            gh_payload = {"model": gh_model, "messages": oai_msgs, "stream": True,
-                          "temperature": TASK_PARAMS.get(task_type, TASK_PARAMS["default"])["temperature"],
-                          "max_tokens": min(TASK_PARAMS.get(task_type, TASK_PARAMS["default"])["max_tokens"], 8000)}
+            gh_payload = {
+                "model": gh_model,
+                "messages": oai_msgs,
+                "stream": True,
+                "temperature": TASK_PARAMS.get(task_type, TASK_PARAMS["default"])["temperature"],
+                "max_tokens": min(TASK_PARAMS.get(task_type, TASK_PARAMS["default"])["max_tokens"], 8000),
+            }
             yield from self._github_stream(gh_headers, gh_payload, gh_model, task_type, user_content)
             return
 
@@ -758,19 +757,14 @@ class LLMWrapper:
             yield from self._groq_stream(oai_msgs, groq_model, params, prompt=user_content, task_type=task_type)
             return
 
-        # Fallback para Ollama no stream
-        ollama_model = _ollama_model_for_tier(model)
-        yield from self._generate_ollama(
-            prompt=user_content, task_type=task_type, model=ollama_model,
-            stream=True, max_retries=1,
-        )
+        # Ollama local desabilitado
+        yield "[LLM indisponível] - Nenhum provedor stream disponível."
 
     # ── GitHub Models (DeepSeek V3 / R1) ──────────────────────
 
     def _generate_github(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
         headers = {
@@ -796,7 +790,9 @@ class LLMWrapper:
 
             resp = self._session.post(
                 f"{GITHUB_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120,
+                headers=headers,
+                json=payload,
+                timeout=120,
             )
             if resp.status_code == 413:
                 if tools:
@@ -838,7 +834,10 @@ class LLMWrapper:
         try:
             with self._session.post(
                 f"{GITHUB_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120, stream=True,
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
             ) as resp:
                 if resp.status_code == 429:
                     self._github_rl_per_model[model] = time.time() + 60
@@ -863,16 +862,19 @@ class LLMWrapper:
         except Exception as e:
             print(f"[LLM] ⚠ GitHub stream erro: {e} — fallback Naga")
             yield from self._generate_naga(
-                prompt, task_type, self._naga_model_for(model), False,
-                payload.get("messages"), None,
+                prompt,
+                task_type,
+                self._naga_model_for(model),
+                False,
+                payload.get("messages"),
+                None,
             )
 
     # ── OpenRouter (DeepSeek V3 / R1) ──────────────────────────
 
     def _generate_openrouter(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
         headers = {
@@ -898,7 +900,9 @@ class LLMWrapper:
 
             resp = self._session.post(
                 f"{OPENROUTER_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120,
+                headers=headers,
+                json=payload,
+                timeout=120,
             )
             if resp.status_code == 429:
                 self._openrouter_rl_per_model[model] = time.time() + 60
@@ -937,7 +941,10 @@ class LLMWrapper:
         try:
             with self._session.post(
                 f"{OPENROUTER_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120, stream=True,
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
             ) as resp:
                 if resp.status_code == 429:
                     self._openrouter_rl_per_model[model] = time.time() + 60
@@ -962,8 +969,12 @@ class LLMWrapper:
         except Exception as e:
             print(f"[LLM] ⚠ OpenRouter stream erro: {e} — fallback GitHub")
             yield from self._generate_github(
-                prompt, task_type, self._github_model_for(model), False,
-                payload.get("messages"), None,
+                prompt,
+                task_type,
+                self._github_model_for(model),
+                False,
+                payload.get("messages"),
+                None,
             )
 
     # ── Chutes.ai (DeepSeek-V3.2-TEE, Qwen3.6) ─────────────────
@@ -981,9 +992,8 @@ class LLMWrapper:
         return next((m for m in ordered if m), "deepseek-ai/DeepSeek-V3.2-TEE")
 
     def _generate_chutes(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
         headers = {
@@ -1009,11 +1019,13 @@ class LLMWrapper:
 
             resp = self._session.post(
                 f"{CHUTES_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120,
+                headers=headers,
+                json=payload,
+                timeout=120,
             )
             if resp.status_code == 429:
                 self._chutes_rl_until = time.time() + 60
-                print(f"[LLM] ⚠ Chutes.ai 429 — fallback GitHub por 60s")
+                print("[LLM] ⚠ Chutes.ai 429 — fallback GitHub por 60s")
                 return None
             resp.raise_for_status()
             data = resp.json()
@@ -1028,7 +1040,7 @@ class LLMWrapper:
             err = str(e)
             if "429" in err:
                 self._chutes_rl_until = time.time() + 60
-                print(f"[LLM] ⚠ Chutes.ai 429 — fallback GitHub")
+                print("[LLM] ⚠ Chutes.ai 429 — fallback GitHub")
             elif "401" in err or "403" in err:
                 print(luna_err("CHUTES_AUTH_FAILED", "Chutes.ai key inválida — desativando"))
                 self._chutes_ok = False
@@ -1040,7 +1052,10 @@ class LLMWrapper:
         try:
             with self._session.post(
                 f"{CHUTES_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120, stream=True,
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
             ) as resp:
                 if resp.status_code == 429:
                     self._chutes_rl_until = time.time() + 60
@@ -1065,8 +1080,12 @@ class LLMWrapper:
         except Exception as e:
             print(f"[LLM] ⚠ Chutes.ai stream erro: {e} — fallback GitHub")
             yield from self._generate_github(
-                prompt, task_type, self._github_model_for(model), False,
-                payload.get("messages"), None,
+                prompt,
+                task_type,
+                self._github_model_for(model),
+                False,
+                payload.get("messages"),
+                None,
             )
 
     # ── Naga AI (Nemotron, Llama gratuitos) ──────────────────
@@ -1084,9 +1103,8 @@ class LLMWrapper:
         return next((m for m in ordered if m), "nemotron-3-super-120b-a12b:free")
 
     def _generate_naga(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
         headers = {
@@ -1112,11 +1130,13 @@ class LLMWrapper:
 
             resp = self._session.post(
                 f"{NAGA_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120,
+                headers=headers,
+                json=payload,
+                timeout=120,
             )
             if resp.status_code == 429:
                 self._naga_rl_until = time.time() + 60
-                print(f"[LLM] ⚠ Naga AI 429 — fallback Best AI por 60s")
+                print("[LLM] ⚠ Naga AI 429 — fallback Best AI por 60s")
                 return None
             resp.raise_for_status()
             data = resp.json()
@@ -1131,7 +1151,7 @@ class LLMWrapper:
             err = str(e)
             if "429" in err:
                 self._naga_rl_until = time.time() + 60
-                print(f"[LLM] ⚠ Naga AI 429 — fallback Best AI")
+                print("[LLM] ⚠ Naga AI 429 — fallback Best AI")
             elif "401" in err or "403" in err:
                 print(luna_err("NAGA_AUTH_FAILED", "Naga AI key inválida — desativando"))
                 self._naga_ok = False
@@ -1143,7 +1163,10 @@ class LLMWrapper:
         try:
             with self._session.post(
                 f"{NAGA_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120, stream=True,
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
             ) as resp:
                 if resp.status_code == 429:
                     self._naga_rl_until = time.time() + 60
@@ -1168,8 +1191,12 @@ class LLMWrapper:
         except Exception as e:
             print(f"[LLM] ⚠ Naga stream erro: {e} — fallback Best AI")
             yield from self._generate_bestai(
-                prompt, task_type, self._bestai_model_for(model), False,
-                payload.get("messages"), None,
+                prompt,
+                task_type,
+                self._bestai_model_for(model),
+                False,
+                payload.get("messages"),
+                None,
             )
 
     # ── Best AI (DeepSeek, Qwen, Gemini gratuitos) ────────────
@@ -1187,9 +1214,8 @@ class LLMWrapper:
         return next((m for m in ordered if m), "deepseek-v3.1")
 
     def _generate_bestai(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
         headers = {
@@ -1215,11 +1241,13 @@ class LLMWrapper:
 
             resp = self._session.post(
                 f"{BESTAI_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120,
+                headers=headers,
+                json=payload,
+                timeout=120,
             )
             if resp.status_code == 429:
                 self._bestai_rl_until = time.time() + 60
-                print(f"[LLM] ⚠ Best AI 429 — fallback Groq por 60s")
+                print("[LLM] ⚠ Best AI 429 — fallback Groq por 60s")
                 return None
             resp.raise_for_status()
             data = resp.json()
@@ -1234,7 +1262,7 @@ class LLMWrapper:
             err = str(e)
             if "429" in err:
                 self._bestai_rl_until = time.time() + 60
-                print(f"[LLM] ⚠ Best AI 429 — fallback Groq")
+                print("[LLM] ⚠ Best AI 429 — fallback Groq")
             elif "401" in err or "403" in err:
                 print(luna_err("BESTAI_AUTH_FAILED", "Best AI key inválida — desativando"))
                 self._bestai_ok = False
@@ -1246,7 +1274,10 @@ class LLMWrapper:
         try:
             with self._session.post(
                 f"{BESTAI_BASE_URL}/chat/completions",
-                headers=headers, json=payload, timeout=120, stream=True,
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
             ) as resp:
                 if resp.status_code == 429:
                     self._bestai_rl_until = time.time() + 60
@@ -1274,19 +1305,17 @@ class LLMWrapper:
                 payload.get("messages", [{"role": "user", "content": prompt}]),
                 self._groq_model_for(model),
                 TASK_PARAMS.get(task_type, TASK_PARAMS["default"]),
-                prompt=prompt, task_type=task_type,
+                prompt=prompt,
+                task_type=task_type,
             )
 
     # ── Groq ──────────────────────────────────────────────────
 
     def _generate_groq(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
-        
-
 
         try:
             if stream:
@@ -1314,7 +1343,12 @@ class LLMWrapper:
             err = str(e)
             if "429" in err or "413" in err or "rate_limit" in err.lower() or "rate limit" in err.lower():
                 if "413" in err and tools:
-                    print(luna_err("GROQ_RATE_LIMIT", "Groq TPM Limit excedido com ferramentas. Tentando sem ferramentas (modo fallback seguro)..."))
+                    print(
+                        luna_err(
+                            "GROQ_RATE_LIMIT",
+                            "Groq TPM Limit excedido com ferramentas. Tentando sem ferramentas (modo fallback seguro)...",
+                        )
+                    )
                     return self._generate_groq(prompt, task_type, model, stream, messages, tools=None)
                 self._groq_rl_until = time.time() + 60
                 print(luna_err("GROQ_RATE_LIMIT", "Groq rate limit — fallback Ollama por 60s"))
@@ -1325,7 +1359,9 @@ class LLMWrapper:
                 print(luna_err("GROQ_API_ERROR", str(e)))
             return None
 
-    def _groq_stream(self, messages: list, model: str, params: dict, prompt: str = None, task_type: str = "default") -> Generator:
+    def _groq_stream(
+        self, messages: list, model: str, params: dict, prompt: str = None, task_type: str = "default"
+    ) -> Generator:
         try:
             print(f"[LLM] Groq stream: {model}")
             stream = self._groq.chat.completions.create(
@@ -1349,18 +1385,20 @@ class LLMWrapper:
             else:
                 print(luna_err("GROQ_API_ERROR", f"Stream: {e}"))
 
-        ollama_model = _ollama_model_for_tier(model)
-        yield from self._generate_ollama(
-            prompt=prompt, task_type=task_type, model=ollama_model,
-            stream=True, max_retries=1, messages=messages,
-        )
+        yield "[LLM indisponível] - Nenhum provedor cloud disponível para stream."
 
     # ── Ollama ────────────────────────────────────────────────
 
     def _generate_ollama(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        max_retries: int = 2, messages: list = None, tools: list = None
-    ) -> Union[str, Generator, dict]:
+        self,
+        prompt: str,
+        task_type: str,
+        model: str,
+        stream: bool,
+        max_retries: int = 2,
+        messages: list = None,
+        tools: list = None,
+    ) -> str | Generator | dict:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         print(f"[LLM] Usando Ollama: {model} (Task: {task_type})")
 
@@ -1374,15 +1412,17 @@ class LLMWrapper:
                 "temperature": params["temperature"],
                 "num_predict": params["max_tokens"],
                 "top_p": params["top_p"],
-            }
+            },
         }
         if tools and not stream:
             payload["tools"] = tools
 
         _model_tier = (
-            "heavy" if model == MODELS.get("heavy") else
-            "fast"  if model in (MODELS.get("fast"), MODELS.get("basic")) else
-            "main"
+            "heavy"
+            if model == MODELS.get("heavy")
+            else "fast"
+            if model in (MODELS.get("fast"), MODELS.get("basic"))
+            else "main"
         )
         timeout = MODEL_TIMEOUTS.get(_model_tier, 120)
         ollama_chat_url = OLLAMA_URL.replace("/api/generate", "/api/chat")
@@ -1393,12 +1433,14 @@ class LLMWrapper:
                     resp = self._session.post(ollama_chat_url, json=payload, timeout=timeout, stream=stream)
                     resp.raise_for_status()
                     if stream:
+
                         def ollama_generator():
                             for line in resp.iter_lines():
                                 if line:
                                     chunk = json.loads(line)
                                     if "message" in chunk and "content" in chunk["message"]:
                                         yield chunk["message"]["content"]
+
                         return ollama_generator()
                     else:
                         data = resp.json()
@@ -1408,15 +1450,19 @@ class LLMWrapper:
                         return msg.get("content", "").strip()
                 else:
                     data_json = json.dumps(payload).encode("utf-8")
-                    req = urllib.request.Request(ollama_chat_url, data=data_json, headers={"Content-Type": "application/json"})
+                    req = urllib.request.Request(
+                        ollama_chat_url, data=data_json, headers={"Content-Type": "application/json"}
+                    )
                     with urllib.request.urlopen(req, timeout=timeout) as resp:
                         if stream:
+
                             def ollama_generator():
                                 for line in resp:
                                     if line:
                                         chunk = json.loads(line)
                                         if "message" in chunk and "content" in chunk["message"]:
                                             yield chunk["message"]["content"]
+
                             return ollama_generator()
                         else:
                             data = json.loads(resp.read().decode())
@@ -1448,9 +1494,8 @@ class LLMWrapper:
     # ── Mistral ───────────────────────────────────────────────
 
     def _generate_mistral(
-        self, prompt: str, task_type: str, model: str, stream: bool,
-        messages: list = None, tools: list = None
-    ) -> Optional[Union[str, Generator, dict]]:
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
         params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
         req_msgs = messages if messages else [{"role": "user", "content": prompt}]
         try:
@@ -1487,7 +1532,9 @@ class LLMWrapper:
                 print(luna_err("MISTRAL_API_ERROR", str(e)))
             return None
 
-    def _mistral_stream(self, messages: list, model: str, params: dict, prompt: str = None, task_type: str = "default") -> Generator:
+    def _mistral_stream(
+        self, messages: list, model: str, params: dict, prompt: str = None, task_type: str = "default"
+    ) -> Generator:
         try:
             print(f"[LLM] Mistral stream: {model}")
             stream_resp = self._mistral_client.chat.stream(
@@ -1513,16 +1560,22 @@ class LLMWrapper:
         gemini_model = self._gemini_model_for(model)
         if self._gemini_available():
             yield from self._generate_gemini(
-                prompt=prompt, task_type=task_type, model=gemini_model,
-                stream=True, messages=messages,
+                prompt=prompt,
+                task_type=task_type,
+                model=gemini_model,
+                stream=True,
+                messages=messages,
             )
 
     def get_providers_status(self) -> list[dict]:
         now = time.time()
+
         def rl(t):
             return round(max(0, t - now), 1) if t > now else 0
+
         def model_for(mod_dict, hint="main"):
             return mod_dict.get(hint, mod_dict.get("main", "?")) if mod_dict else "?"
+
         return [
             {
                 "name": "Mistral",
@@ -1536,16 +1589,20 @@ class LLMWrapper:
                 "active": self._gemini_ok,
                 "available": self._gemini_available(),
                 "rate_limited_for": rl(self._gemini_rl_until),
-                "models": {k: {"name": v, "rate_limited_for": rl(self._gemini_rl_per_model.get(v, 0))}
-                          for k, v in (globals().get("GEMINI_MODELS") or {}).items()},
+                "models": {
+                    k: {"name": v, "rate_limited_for": rl(self._gemini_rl_per_model.get(v, 0))}
+                    for k, v in (globals().get("GEMINI_MODELS") or {}).items()
+                },
             },
             {
                 "name": "OpenRouter",
                 "active": self._openrouter_ok,
                 "available": self._openrouter_available(),
                 "rate_limited_for": 0,
-                "models": {k: {"name": v, "rate_limited_for": rl(self._openrouter_rl_per_model.get(v, 0))}
-                          for k, v in (globals().get("OPENROUTER_MODELS") or {}).items()},
+                "models": {
+                    k: {"name": v, "rate_limited_for": rl(self._openrouter_rl_per_model.get(v, 0))}
+                    for k, v in (globals().get("OPENROUTER_MODELS") or {}).items()
+                },
             },
             {
                 "name": "Chutes.ai",
@@ -1559,8 +1616,10 @@ class LLMWrapper:
                 "active": self._github_ok,
                 "available": self._github_available(),
                 "rate_limited_for": 0,
-                "models": {k: {"name": v, "rate_limited_for": rl(self._github_rl_per_model.get(v, 0))}
-                          for k, v in (globals().get("GITHUB_MODELS") or {}).items()},
+                "models": {
+                    k: {"name": v, "rate_limited_for": rl(self._github_rl_per_model.get(v, 0))}
+                    for k, v in (globals().get("GITHUB_MODELS") or {}).items()
+                },
             },
             {
                 "name": "Naga AI",
@@ -1612,7 +1671,8 @@ class LLMWrapper:
 
 
 # Singleton
-_llm_instance: Optional[LLMWrapper] = None
+_llm_instance: LLMWrapper | None = None
+
 
 def get_llm() -> LLMWrapper:
     global _llm_instance

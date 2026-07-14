@@ -3,13 +3,13 @@
 brain/dictionary.py — Dicionário inteligente da Luna ("Luna Words")
 Usa dictionaryapi.dev (PT) com fallback para geração pelo LLM.
 """
-import re
+
 import json
-from typing import Optional
-from pathlib import Path
+import re
 
 try:
     import requests
+
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
@@ -38,6 +38,7 @@ PT_DICT_URL = "https://api.dictionaryapi.dev/api/v2/entries/pt/{word}"
 # Sessão reutilizável
 _session = None
 
+
 def _get_session():
     global _session
     if _session is None and HAS_REQUESTS:
@@ -49,7 +50,7 @@ def _get_session():
 class DictionaryManager:
     """Gerencia consultas ao dicionário para o modo Luna Words."""
 
-    def is_dict_request(self, text: str) -> Optional[str]:
+    def is_dict_request(self, text: str) -> str | None:
         """
         Verifica se o texto é uma consulta ao dicionário.
         Retorna a palavra-chave consultada ou None.
@@ -59,7 +60,7 @@ class DictionaryManager:
             if trigger in tl:
                 # Extrai a palavra após o trigger
                 word = tl.replace(trigger, "").strip()
-                word = re.sub(r'[^\w\s]', '', word).strip()
+                word = re.sub(r"[^\w\s]", "", word).strip()
                 # Pega a última palavra significativa
                 parts = [p for p in word.split() if len(p) > 1]
                 if parts:
@@ -82,7 +83,7 @@ class DictionaryManager:
         # Fallback: gera definição básica offline
         return self._fallback_response(word)
 
-    def _fetch_pt_api(self, word: str) -> Optional[str]:
+    def _fetch_pt_api(self, word: str) -> str | None:
         """Consulta a API pública dictionaryapi.dev para PT."""
         try:
             url = PT_DICT_URL.format(word=word)
@@ -104,7 +105,7 @@ class DictionaryManager:
         except Exception:
             return None
 
-    def _parse_api_response(self, data: list, word: str) -> Optional[str]:
+    def _parse_api_response(self, data: list, word: str) -> str | None:
         """Formata a resposta da API em texto legível."""
         if not data or not isinstance(data, list):
             return None
@@ -134,9 +135,9 @@ class DictionaryManager:
                 definition = defn.get("definition", "")
                 example = defn.get("example", "")
                 if definition:
-                    lines.append(f"  {i+1}. {definition}")
+                    lines.append(f"  {i + 1}. {definition}")
                 if example:
-                    lines.append(f"     Ex: \"{example}\"")
+                    lines.append(f'     Ex: "{example}"')
 
             def_syns = definitions[0].get("synonyms", []) if definitions else []
             all_syns = list(dict.fromkeys(synonyms + def_syns))[:5]
@@ -160,6 +161,7 @@ class DictionaryManager:
 
 # Singleton
 _dict_instance = None
+
 
 def get_dictionary() -> DictionaryManager:
     global _dict_instance

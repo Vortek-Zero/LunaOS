@@ -1,9 +1,10 @@
 import os
-import sys
-from groq import Groq
 
 # Load .env
 from pathlib import Path
+
+from groq import Groq
+
 BASE_DIR = Path(__file__).parent.parent
 _env_file = BASE_DIR / ".env"
 if _env_file.exists():

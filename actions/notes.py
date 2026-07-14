@@ -2,11 +2,11 @@
 """
 actions/notes.py — Notas rápidas persistentes.
 """
+
 import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
 
 try:
     from config import DATA_DIR
@@ -81,21 +81,23 @@ class NotesManager:
         texts = [n["text"] for n in self._notes]
         return f"Você tem {len(texts)} notas: " + ". ".join(texts) + "."
 
-    def handle(self, text: str) -> Optional[str]:
+    def handle(self, text: str) -> str | None:
         tl = text.lower()
 
         # Listar / Ler
-        if any(w in tl for w in ["ver notas", "minhas notas", "lista de notas",
-                                   "leia as notas", "ler as notas", "mostra as notas"]):
+        if any(
+            w in tl
+            for w in ["ver notas", "minhas notas", "lista de notas", "leia as notas", "ler as notas", "mostra as notas"]
+        ):
             return self.list_notes()
 
         # Buscar
-        m = re.search(r'(?:busca|pesquisa|procura)\s+(?:nas notas|nas anotações)[:\s]+(.+)', tl)
+        m = re.search(r"(?:busca|pesquisa|procura)\s+(?:nas notas|nas anotações)[:\s]+(.+)", tl)
         if m:
             return self.search(m.group(1).strip())
 
         # Apagar por índice
-        m = re.search(r'(?:apaga|apague|deleta|delete|remove|remova)\s+(?:a\s+)?nota\s+(\d+)', tl)
+        m = re.search(r"(?:apaga|apague|deleta|delete|remove|remova)\s+(?:a\s+)?nota\s+(\d+)", tl)
         if m:
             return self.delete(int(m.group(1)))
 
@@ -104,7 +106,7 @@ class NotesManager:
             return self.clear()
 
         # Anotar
-        m = re.search(r'(?:anota|anote|nota|registra|registre|salva|salve)[:\s]+(.+)', tl)
+        m = re.search(r"(?:anota|anote|nota|registra|registre|salva|salve)[:\s]+(.+)", tl)
         if m:
             return self.add(m.group(1).strip())
 
@@ -112,7 +114,8 @@ class NotesManager:
 
 
 # Singleton
-_notes_instance: Optional[NotesManager] = None
+_notes_instance: NotesManager | None = None
+
 
 def get_notes() -> NotesManager:
     global _notes_instance

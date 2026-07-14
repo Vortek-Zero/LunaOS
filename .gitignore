@@ -1,35 +1,45 @@
+# Environment & secrets
 .env
 .api_key
 token.json
 credentials.json
-__pycache__/
-*.py[cod]
 *.db-wal
 *.db-shm
+client_secret_*.json
+lights/tinytuya.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
 .venv/
 venv/
+
+# Runtime data
 temp/
 *.log
 brain/chroma_db/
 data/cache.json
-.DS_Store
-*.onnx
-*.bin
-voice/models/
-client_secret_*.json
-lights/tinytuya.json
-n8n_install/
-luna-desktop/src-tauri/target/
-config/ssl/
-
-# Browser profile cache (auto-generated, huge)
 data/browser_profile/
+data/users.json
+data/chat_history.db
 
-# Backup files
+# OS files
+.DS_Store
 *.bak
 *~
 
-# Embedded/experimental repos (external)
+# ML models
+*.onnx
+*.bin
+voice/models/
+piper_models/
+
+# External repos
 Agent-S/
 OpenJarvis/
 agno/
@@ -39,10 +49,18 @@ langgraph/
 openclaw/
 Terminal-assistent/
 Nina-folders/
+n8n_install/
 
-# AUR build artifacts
+# Tauri desktop
+luna-desktop/src-tauri/target/
+luna-desktop/src-tauri/icons_backup/
 luna-desktop/packaging/aur/pkg/
 luna-desktop/packaging/aur/*.zst
 luna-desktop/packaging/aur/src/
 luna-desktop/packaging/aur/LunaOS/
-luna-desktop/src-tauri/icons_backup/
+
+# Config overrides
+config/ssl/
+
+# uv
+uv.lock

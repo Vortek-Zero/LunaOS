@@ -4,11 +4,12 @@ brain/scheduler.py — Camada 2: Scheduler (Llama 70B ou 8B - Groq)
 Responsável por analisar o plano e escolher as ferramentas necessárias.
 Objetivo: Reduzir drasticamente o uso de tokens.
 """
+
 import json
 import logging
-from typing import Dict, Any, List, Optional
+from typing import Any
 
-from brain.llm import get_llm, GROQ_MODELS
+from brain.llm import GROQ_MODELS, get_llm
 
 logger = logging.getLogger("luna.scheduler")
 
@@ -68,7 +69,8 @@ Utilidades e Outros:
 - save_skill: salva sequência de passos como habilidade.
 """
 
-SCHEDULER_PROMPT = """Você é o Scheduler da Luna. Sua função é escolher APENAS as ferramentas necessárias para executar o PLANO ESTRATÉGICO fornecido.
+SCHEDULER_PROMPT = (
+    """Você é o Scheduler da Luna. Sua função é escolher APENAS as ferramentas necessárias para executar o PLANO ESTRATÉGICO fornecido.
 
 REGRAS DE PARÂMETROS:
 - LIMPEZA: Nunca inclua pontuação desnecessária (como '?' ou '.') no final de caminhos de arquivos ou nomes de pastas.
@@ -93,7 +95,10 @@ Você deve retornar APENAS um JSON válido seguindo este formato:
 }
 
 LISTA DE FERRAMENTAS DISPONÍVEIS:
-""" + COMPACT_TOOLS_LIST
+"""
+    + COMPACT_TOOLS_LIST
+)
+
 
 def _repair_json(text: str) -> str:
     """Tenta reparar JSON truncado ou malformado de forma agressiva."""
@@ -109,11 +114,12 @@ def _repair_json(text: str) -> str:
 
     # Extrai o primeiro bloco JSON { ... } via regex (remove texto antes/depois)
     import re
-    m = re.search(r'(\{.*\})', text, re.DOTALL)
+
+    m = re.search(r"(\{.*\})", text, re.DOTALL)
     if m:
         text = m.group(1).strip()
     else:
-        m = re.search(r'(\[.*\])', text, re.DOTALL)
+        m = re.search(r"(\[.*\])", text, re.DOTALL)
         if m:
             text = m.group(1).strip()
         else:
@@ -124,34 +130,42 @@ def _repair_json(text: str) -> str:
     except json.JSONDecodeError:
         text = text.replace("\n", " ").replace("\r", " ")
         if text.count('"') % 2 != 0:
-             text += '"'
+            text += '"'
     return text
 
-def select_tools(plan_json: Dict[str, Any], user_input: str, context: str = "") -> Dict[str, Any]:
+
+def select_tools(plan_json: dict[str, Any], user_input: str, context: str = "") -> dict[str, Any]:
     """
     Analisa o plano e seleciona as ferramentas usando Llama 70B ou 8B.
     """
     llm = get_llm()
     plan_text = json.dumps(plan_json, indent=2, ensure_ascii=False)
-    
+
     messages = [
         {"role": "system", "content": SCHEDULER_PROMPT},
-        {"role": "user", "content": f"Pedido do Usuário: {user_input}\n\nPlano Estratégico:\n{plan_text}\n\nResponda APENAS o JSON puro:"}
+        {
+            "role": "user",
+            "content": f"Pedido do Usuário: {user_input}\n\nPlano Estratégico:\n{plan_text}\n\nResponda APENAS o JSON puro:",
+        },
     ]
-    
+
     model = GROQ_MODELS.get("heavy", "llama-3.3-70b-versatile")
-    
+
     content = ""
     try:
         raw_response = llm.generate(messages=messages, task_type="planning", model=model)
-        content = raw_response.get("message", {}).get("content", "") if isinstance(raw_response, dict) else (raw_response or "")
-        
+        content = (
+            raw_response.get("message", {}).get("content", "")
+            if isinstance(raw_response, dict)
+            else (raw_response or "")
+        )
+
         repaired_content = _repair_json(str(content))
         scheduler_json = json.loads(repaired_content)
         tools = scheduler_json.get("tools_to_call", [])
         logger.info(f"Ferramentas selecionadas: {[t['tool_name'] for t in tools]}")
         return scheduler_json
-        
+
     except Exception as e:
         logger.error(f"Erro no Scheduler: {e}. Raw: {str(content)[:100]}")
         # Fallback: tenta inferir ferramentas por keyword matching
@@ -161,52 +175,127 @@ def select_tools(plan_json: Dict[str, Any], user_input: str, context: str = "") 
             "tools_to_call": tools,
             "execution_mode": "sequential",
             "confidence": 0.5,
-            "fallback": tools[0]["tool_name"] if tools else "Conversar com o usuário sobre o erro."
+            "fallback": tools[0]["tool_name"] if tools else "Conversar com o usuário sobre o erro.",
         }
 
 
 def _fallback_tools(user_input: str) -> list:
     """Fallback baseado em keywords quando o scheduler falha."""
     tl = user_input.lower()
-    
+
     # Mapeamento keyword → (tool_name, params)
     rules = [
-        (["pasta", "pastas", "arquivo", "arquivos", "home", "diretório", "diretorio", "lista", "listar"],
-         {"tool_name": "filesystem", "parameters": {"action": "list", "path": "~"}}),
-        (["luz", "lâmpada", "lampada", "iluminação", "iluminacao", "sala"],
-         {"tool_name": "control_lights", "parameters": {"state": "off" if any(w in tl for w in ["apaga", "desliga", "desligar", "apagar"]) else "on"}}),
-        (["processo", "processador", "cpu", "memória", "memoria", "ram", "desempenho", "performance", "status do pc"],
-         {"tool_name": "system_control", "parameters": {"action": "status"}}),
-        (["tempo", "clima", "chuva", "temperatura", "chove", "previsão", "previsao"],
-         {"tool_name": "get_weather", "parameters": {}}),
-        (["timer", "cronometro", "cronômetro", "segundos", "minutos", "despertador"],
-         {"tool_name": "set_timer", "parameters": {}}),
-        (["nota", "anota", "bloco", "anotação", "anotacao"],
-         {"tool_name": "manage_notes", "parameters": {}}),
-        (["lembra", "lembrete", "avisa", "avisar"],
-         {"tool_name": "manage_reminder", "parameters": {}}),
-        (["spotify", "toca", "tocar", "musica", "música", "playlist"],
-         {"tool_name": "control_spotify", "parameters": {}}),
-        (["abre", "abrir", "inicia", "iniciar", "firefox", "chrome", "terminal", "navegador"],
-         {"tool_name": "open_app", "parameters": {"app_name": ""}}),
-        (["lê", "ler", "leia", "mostra", "exibe", "abrir arquivo", "conteúdo"],
-         {"tool_name": "filesystem", "parameters": {"action": "read", "path": "~"}}),
-        (["edita", "editar", "modifica", "modificar", "altera", "alterar", "muda", "mudar", "substitui", "reescreve"],
-         {"tool_name": "filesystem", "parameters": {"action": "write", "path": "", "content": ""}}),
-        (["cria", "criar", "escreve", "escrever", "codigo", "código", "arquivo", "script", "programa", "app", "site", "pagina", "página"],
-         {"tool_name": "write_code", "parameters": {"filename": "", "content": ""}}),
-        (["projeto", "project", "sistema completo", "aplicação", "aplicacao", "cria um", "faz um", "crie um", "desenvolve"],
-         {"tool_name": "create_project", "parameters": {"project_name": "", "files": []}}),
-        (["pesquisa", "pesquisar", "busca", "buscar", "google", "pesquise", "procura"],
-         {"tool_name": "search_web", "parameters": {}}),
-        (["checa", "checar", "verifica", "verificar", "estado do projeto", "como está o", "status do"],
-         {"tool_name": "check_project", "parameters": {"path": "auto", "deep": False}}),
-        (["briefing", "resumo do dia", "hoje", "dia"],
-         {"tool_name": "get_daily_briefing", "parameters": {}}),
-        (["tela", "print", "screenshot", "captura"],
-         {"tool_name": "system_control", "parameters": {"action": "screenshot"}}),
+        (
+            ["pasta", "pastas", "arquivo", "arquivos", "home", "diretório", "diretorio", "lista", "listar"],
+            {"tool_name": "filesystem", "parameters": {"action": "list", "path": "~"}},
+        ),
+        (
+            ["luz", "lâmpada", "lampada", "iluminação", "iluminacao", "sala"],
+            {
+                "tool_name": "control_lights",
+                "parameters": {
+                    "state": "off" if any(w in tl for w in ["apaga", "desliga", "desligar", "apagar"]) else "on"
+                },
+            },
+        ),
+        (
+            [
+                "processo",
+                "processador",
+                "cpu",
+                "memória",
+                "memoria",
+                "ram",
+                "desempenho",
+                "performance",
+                "status do pc",
+            ],
+            {"tool_name": "system_control", "parameters": {"action": "status"}},
+        ),
+        (
+            ["tempo", "clima", "chuva", "temperatura", "chove", "previsão", "previsao"],
+            {"tool_name": "get_weather", "parameters": {}},
+        ),
+        (
+            ["timer", "cronometro", "cronômetro", "segundos", "minutos", "despertador"],
+            {"tool_name": "set_timer", "parameters": {}},
+        ),
+        (["nota", "anota", "bloco", "anotação", "anotacao"], {"tool_name": "manage_notes", "parameters": {}}),
+        (["lembra", "lembrete", "avisa", "avisar"], {"tool_name": "manage_reminder", "parameters": {}}),
+        (
+            ["spotify", "toca", "tocar", "musica", "música", "playlist"],
+            {"tool_name": "control_spotify", "parameters": {}},
+        ),
+        (
+            ["abre", "abrir", "inicia", "iniciar", "firefox", "chrome", "terminal", "navegador"],
+            {"tool_name": "open_app", "parameters": {"app_name": ""}},
+        ),
+        (
+            ["lê", "ler", "leia", "mostra", "exibe", "abrir arquivo", "conteúdo"],
+            {"tool_name": "filesystem", "parameters": {"action": "read", "path": "~"}},
+        ),
+        (
+            [
+                "edita",
+                "editar",
+                "modifica",
+                "modificar",
+                "altera",
+                "alterar",
+                "muda",
+                "mudar",
+                "substitui",
+                "reescreve",
+            ],
+            {"tool_name": "filesystem", "parameters": {"action": "write", "path": "", "content": ""}},
+        ),
+        (
+            [
+                "cria",
+                "criar",
+                "escreve",
+                "escrever",
+                "codigo",
+                "código",
+                "arquivo",
+                "script",
+                "programa",
+                "app",
+                "site",
+                "pagina",
+                "página",
+            ],
+            {"tool_name": "write_code", "parameters": {"filename": "", "content": ""}},
+        ),
+        (
+            [
+                "projeto",
+                "project",
+                "sistema completo",
+                "aplicação",
+                "aplicacao",
+                "cria um",
+                "faz um",
+                "crie um",
+                "desenvolve",
+            ],
+            {"tool_name": "create_project", "parameters": {"project_name": "", "files": []}},
+        ),
+        (
+            ["pesquisa", "pesquisar", "busca", "buscar", "google", "pesquise", "procura"],
+            {"tool_name": "search_web", "parameters": {}},
+        ),
+        (
+            ["checa", "checar", "verifica", "verificar", "estado do projeto", "como está o", "status do"],
+            {"tool_name": "check_project", "parameters": {"path": "auto", "deep": False}},
+        ),
+        (["briefing", "resumo do dia", "hoje", "dia"], {"tool_name": "get_daily_briefing", "parameters": {}}),
+        (
+            ["tela", "print", "screenshot", "captura"],
+            {"tool_name": "system_control", "parameters": {"action": "screenshot"}},
+        ),
     ]
-    
+
     for keywords, tool in rules:
         if any(kw in tl for kw in keywords):
             # Extrai nome do app se for open_app
@@ -216,19 +305,41 @@ def _fallback_tools(user_input: str) -> list:
                         tool["parameters"]["app_name"] = app
                         break
                 if not tool["parameters"]["app_name"]:
-                    tool["parameters"]["app_name"] = tl.split("abre")[-1].split("abrir")[-1].strip() or tl.split("inicia")[-1].split("iniciar")[-1].strip()
+                    tool["parameters"]["app_name"] = (
+                        tl.split("abre")[-1].split("abrir")[-1].strip()
+                        or tl.split("inicia")[-1].split("iniciar")[-1].strip()
+                    )
             # Extrai nome do projeto para check_project
             if tool["tool_name"] == "check_project" and tool["parameters"].get("path") == "auto":
                 import re as _re
+
                 # Tenta extrair nome após "projeto" ou "fogos" ou palavras-chave
                 m = _re.search(r'(?:projeto|fogos|pasta|dire[tto][óo]rio)\s+["""]?([\w\-\./]+)["""]?', tl)
                 if m:
                     tool["parameters"]["path"] = m.group(1)
                 else:
                     # Pega a última palavra da query como nome do projeto
-                    words = [w for w in tl.split() if len(w) > 2 and w not in ("checa", "checar", "verifica", "verificar", "estado", "como", "está", "o", "da", "do", "de")]
+                    words = [
+                        w
+                        for w in tl.split()
+                        if len(w) > 2
+                        and w
+                        not in (
+                            "checa",
+                            "checar",
+                            "verifica",
+                            "verificar",
+                            "estado",
+                            "como",
+                            "está",
+                            "o",
+                            "da",
+                            "do",
+                            "de",
+                        )
+                    ]
                     tool["parameters"]["path"] = words[-1] if words else "."
                 tool["parameters"]["deep"] = True
             return [tool]
-    
+
     return []

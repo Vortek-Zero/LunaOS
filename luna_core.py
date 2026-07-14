@@ -2,45 +2,42 @@
 """
 luna_core.py — Cérebro central da Luna (Singleton)
 """
-import sys
+
 import ast
+import sys
 
 # 🚨 Monkey patch para compatibilidade com Python 3.14+ (evita erros em dependências legadas como CrewAI)
 if sys.version_info >= (3, 14):
-    if not hasattr(ast, 'NameConstant'):
-        setattr(ast, 'NameConstant', ast.Constant)
-    if not hasattr(ast, 'Num'):
-        setattr(ast, 'Num', ast.Constant)
-    if not hasattr(ast, 'Str'):
-        setattr(ast, 'Str', ast.Constant)
+    if not hasattr(ast, "NameConstant"):
+        ast.NameConstant = ast.Constant
+    if not hasattr(ast, "Num"):
+        ast.Num = ast.Constant
+    if not hasattr(ast, "Str"):
+        ast.Str = ast.Constant
 
 import json
 import re
-import time
 import threading
-from typing import Optional
+import time
 from pathlib import Path
 
 # ── Módulos internos ──────────────────────────────────────────
 import config
-from brain.llm import get_llm, MODELS, GROQ_MODELS, GEMINI_MODELS
-from brain.memory import get_memory
-from voice.tts import get_tts
-from voice.stt import get_stt
 from actions.executor import get_executor
 from actions.writer import get_writer
+from brain.daily_routine import get_activity_logger, get_background_worker, get_routine_manager
 from brain.dictionary import get_dictionary
-from brain.daily_routine import (
-    get_routine_manager, get_activity_logger, get_background_worker
-)
-from brain.reflection import OutputValidator, VerificationSystem
-from brain.query_complexity import classify_query
+from brain.llm import MODELS, get_llm
 from brain.loop_guard import LoopGuard
+from brain.memory import get_memory
+from brain.query_complexity import classify_query
+from brain.reflection import OutputValidator, VerificationSystem
 from brain.trace_logger import get_trace_logger
-from vision.screen import get_vision
-from performance_cache import SmartCache, PerformanceMonitor
 from output_parser import OutputParser
-
+from performance_cache import PerformanceMonitor, SmartCache
+from vision.screen import get_vision
+from voice.stt import get_stt
+from voice.tts import get_tts
 
 # ── Personalidade da Luna ─────────────────────────────────────
 PERSONALITY_FILE = Path(__file__).parent / "config" / "personality.json"
@@ -48,12 +45,43 @@ USER_PROFILE_FILE = Path(__file__).parent / "config" / "user_profile.json"
 
 # Comandos locais — não disparam fact-check web nem extração de memória
 _LOCAL_ACTION_KEYWORDS = (
-    "print", "screenshot", "captura", "tira um print", "tira print",
-    "timer", "toca", "abre", "fecha", "clica", "digita", "whatsapp",
-    "manda", "envia", "pesquisa", "busca", "lista", "listar", "lembret", "nota",
-    "luz", "volume", "workspace", "mata", "processo", "brilho", "copia",
-    "clipboard", "arquivo", "arquivos", "pasta", "pastas", "home", "diretório", "diretorio",
-    "screenshot", "print da tela",
+    "print",
+    "screenshot",
+    "captura",
+    "tira um print",
+    "tira print",
+    "timer",
+    "toca",
+    "abre",
+    "fecha",
+    "clica",
+    "digita",
+    "whatsapp",
+    "manda",
+    "envia",
+    "pesquisa",
+    "busca",
+    "lista",
+    "listar",
+    "lembret",
+    "nota",
+    "luz",
+    "volume",
+    "workspace",
+    "mata",
+    "processo",
+    "brilho",
+    "copia",
+    "clipboard",
+    "arquivo",
+    "arquivos",
+    "pasta",
+    "pastas",
+    "home",
+    "diretório",
+    "diretorio",
+    "screenshot",
+    "print da tela",
 )
 
 
@@ -118,40 +146,40 @@ def _sanitize_user_response(text: str) -> str:
             pass
 
     # Remove blocos de função vazados como `create_project("x", [...])`
-    t = re.sub(r'`\w+\([^`]*\)`', '', t)
+    t = re.sub(r"`\w+\([^`]*\)`", "", t)
     # Remove checkmarks/emojis de "passo concluído"
-    t = re.sub(r'✅.*', '', t)
+    t = re.sub(r"✅.*", "", t)
     # Remove **Passo N:** headings
-    t = re.sub(r'\*{1,2}Passo \d+.*?\*{1,2}', '', t)
+    t = re.sub(r"\*{1,2}Passo \d+.*?\*{1,2}", "", t)
 
     t = re.sub(r"```(?:json)?\s*\{.*?\}\s*```", "", t, flags=re.DOTALL).strip()
     return t.strip() or "Pronto."
 
 
 _TEXT_FUNCTIONS = {
-    "write_code":         ("filename", "content"),
-    "create_project":     ("project_name", "files"),
-    "open_app":           ("app",),
-    "open_url":           ("url",),
-    "search_web":         ("query",),
-    "run_bash_command":   ("command",),
-    "get_weather":        ("city",),
-    "system_control":     ("action", "command"),
-    "document_services":  ("action", "data", "content", "filename"),
-    "set_timer":          ("action", "minutes", "seconds", "name"),
-    "manage_reminder":    ("action", "message", "when"),
-    "manage_notes":       ("action", "content", "query", "index"),
-    "google_services":    ("action", "service", "query", "date", "max_results"),
+    "write_code": ("filename", "content"),
+    "create_project": ("project_name", "files"),
+    "open_app": ("app",),
+    "open_url": ("url",),
+    "search_web": ("query",),
+    "run_bash_command": ("command",),
+    "get_weather": ("city",),
+    "system_control": ("action", "command"),
+    "document_services": ("action", "data", "content", "filename"),
+    "set_timer": ("action", "minutes", "seconds", "name"),
+    "manage_reminder": ("action", "message", "when"),
+    "manage_notes": ("action", "content", "query", "index"),
+    "google_services": ("action", "service", "query", "date", "max_results"),
     "trigger_n8n_workflow": ("path", "data"),
-    "agno_run":           ("task",),
-    "save_skill":         ("name", "description", "steps"),
-    "ui_click":           ("target",),
-    "ui_type":            ("text",),
-    "ui_key":             ("key",),
-    "ui_scroll":          ("direction",),
-    "see_screen":         (),
-    "self_diagnostic":    (),
-    "image_generate":     ("prompt", "size"),
+    "agno_run": ("task",),
+    "save_skill": ("name", "description", "steps"),
+    "ui_click": ("target",),
+    "ui_type": ("text",),
+    "ui_key": ("key",),
+    "ui_scroll": ("direction",),
+    "see_screen": (),
+    "self_diagnostic": (),
+    "image_generate": ("prompt", "size"),
 }
 
 
@@ -168,25 +196,25 @@ def _split_function_args(text: str) -> list:
             elif ch == quote:
                 in_str = False
             current.append(ch)
-        elif ch == '(' and not in_str:
+        elif ch == "(" and not in_str:
             depth += 1
             current.append(ch)
-        elif ch == ')' and not in_str:
+        elif ch == ")" and not in_str:
             depth -= 1
             current.append(ch)
-        elif ch == '[' and not in_str:
+        elif ch == "[" and not in_str:
             bracket_depth += 1
             current.append(ch)
-        elif ch == ']' and not in_str:
+        elif ch == "]" and not in_str:
             bracket_depth -= 1
             current.append(ch)
-        elif ch == ',' and depth == 0 and bracket_depth == 0 and not in_str:
-            args.append(''.join(current).strip())
+        elif ch == "," and depth == 0 and bracket_depth == 0 and not in_str:
+            args.append("".join(current).strip())
             current = []
         else:
             current.append(ch)
     if current:
-        args.append(''.join(current).strip())
+        args.append("".join(current).strip())
     return args
 
 
@@ -197,7 +225,7 @@ def _parse_arg_value(arg: str):
         return arg[1:-1]
     if arg.startswith("'") and arg.endswith("'") and len(arg) >= 2:
         return arg[1:-1]
-    if arg.startswith('[') and arg.endswith(']'):
+    if arg.startswith("[") and arg.endswith("]"):
         try:
             return json.loads(arg)
         except json.JSONDecodeError:
@@ -206,7 +234,7 @@ def _parse_arg_value(arg: str):
     return arg
 
 
-def _parse_function_block(block: str) -> Optional[dict]:
+def _parse_function_block(block: str) -> dict | None:
     """Parseia uma chamada de função tipo create_project('nome', [files])."""
     block = block.strip().strip("`").strip()
     m = re.match(r"(\w+)\s*\((.*)\)\s*$", block, re.DOTALL)
@@ -280,7 +308,7 @@ def _extract_functions_from_text(text: str) -> list:
                     end = paren_start + i + 1
                     break
         if end > 0:
-            call = _parse_function_block(text[m.start():end])
+            call = _parse_function_block(text[m.start() : end])
             if call:
                 results.append(call)
     return _normalize_text_calls(results) if results else []
@@ -293,14 +321,16 @@ def _normalize_text_calls(calls: list) -> list:
     for idx, c in enumerate(calls):
         if not c or "name" not in c or "arguments" not in c:
             continue
-        normalized.append({
-            "id": f"parsed_{ts}_{idx}_{c['name']}",
-            "type": "function",
-            "function": {
-                "name": c["name"],
-                "arguments": json.dumps(c["arguments"], ensure_ascii=False),
-            },
-        })
+        normalized.append(
+            {
+                "id": f"parsed_{ts}_{idx}_{c['name']}",
+                "type": "function",
+                "function": {
+                    "name": c["name"],
+                    "arguments": json.dumps(c["arguments"], ensure_ascii=False),
+                },
+            }
+        )
     return normalized
 
 
@@ -321,11 +351,13 @@ def _extract_tool_calls_from_text(raw: str) -> list:
                     fn = tc.get("function") or {}
                     name = fn.get("name")
                     if name:
-                        normalized.append({
-                            "id": tc.get("id", f"parsed_{int(time.time())}"),
-                            "type": "function",
-                            "function": {"name": name, "arguments": fn.get("arguments", "{}")},
-                        })
+                        normalized.append(
+                            {
+                                "id": tc.get("id", f"parsed_{int(time.time())}"),
+                                "type": "function",
+                                "function": {"name": name, "arguments": fn.get("arguments", "{}")},
+                            }
+                        )
                 if normalized:
                     return normalized
         except Exception:
@@ -335,14 +367,17 @@ def _extract_tool_calls_from_text(raw: str) -> list:
         if names:
             args_m = re.search(r'"arguments"\s*:\s*"(\{.*?\})"', raw)
             args = args_m.group(1).replace('\\"', '"') if args_m else "{}"
-            return [{
-                "id": f"parsed_{int(time.time())}",
-                "type": "function",
-                "function": {"name": names[0], "arguments": args},
-            }]
+            return [
+                {
+                    "id": f"parsed_{int(time.time())}",
+                    "type": "function",
+                    "function": {"name": names[0], "arguments": args},
+                }
+            ]
 
     # 2) Funções no texto: função("arg1", "arg2") ou plano **Passo N:** `função(...)`
     return _extract_functions_from_text(raw)
+
 
 def _parse_tc_args(tool_call) -> dict:
     """Extrai argumentos de um tool_call (dict ou objeto)."""
@@ -357,6 +392,7 @@ def _parse_tc_args(tool_call) -> dict:
     except (json.JSONDecodeError, TypeError):
         return {}
 
+
 def _agent_result(base: dict, tools_executed: int = 0) -> dict:
     """Normaliza retorno do agente; evita re-execução legacy após ferramentas."""
     out = dict(base)
@@ -364,6 +400,7 @@ def _agent_result(base: dict, tools_executed: int = 0) -> dict:
     if tools_executed > 0:
         out["action"] = "conversar"
     return out
+
 
 SYSTEM_PROMPT = """Você é Luna, uma assistente pessoal brasileira autônoma inteligente criada pelo Pera.
 Você é mulher, 28 anos, madura, calma, sincera e inteligente. Você fala de forma natural e espontânea, sem soar robótica.
@@ -407,18 +444,18 @@ Exemplos de Tom:
 
 # Ações que Luna pode executar
 ACTIONS = {
-    "conversar":     "Apenas responder (sem ação no sistema)",
-    "open_app":      "Abrir aplicativo — params: {app: nome}",
-    "open_url":      "Abrir URL — params: {url: endereço}",
-    "search_web":    "Pesquisar na web — params: {query: texto}",
-    "ui_click":      "Clicar em elemento — params: {target: texto ou x,y}",
-    "ui_type":       "Digitar texto — params: {text: conteúdo}",
-    "ui_key":        "Pressionar tecla — params: {key: tecla}",
-    "ui_scroll":     "Rolar tela — params: {direction: up/down}",
-    "see_screen":    "Descrever a tela atual",
-    "write_code":    "Escrever código pronto na pasta de programação — params: {filename: nome, content: codigo}",
-    "write_text":    "Escrever texto criativo/dissertativo na pasta de trabalho com streaming — params: {filename: nome}",
-    "luna_words":    "Consultar dicionário — params: {word: palavra}",
+    "conversar": "Apenas responder (sem ação no sistema)",
+    "open_app": "Abrir aplicativo — params: {app: nome}",
+    "open_url": "Abrir URL — params: {url: endereço}",
+    "search_web": "Pesquisar na web — params: {query: texto}",
+    "ui_click": "Clicar em elemento — params: {target: texto ou x,y}",
+    "ui_type": "Digitar texto — params: {text: conteúdo}",
+    "ui_key": "Pressionar tecla — params: {key: tecla}",
+    "ui_scroll": "Rolar tela — params: {direction: up/down}",
+    "see_screen": "Descrever a tela atual",
+    "write_code": "Escrever código pronto na pasta de programação — params: {filename: nome, content: codigo}",
+    "write_text": "Escrever texto criativo/dissertativo na pasta de trabalho com streaming — params: {filename: nome}",
+    "luna_words": "Consultar dicionário — params: {word: palavra}",
     "controlar_luz": "Ligar ou desligar a luz da sala — params: {state: liga/desliga}",
     "google_query": "Consulta Gmail ou Calendar — params: {service: calendar/gmail, max_results: 5}",
     "google_send_email": "Enviar email via Gmail — params: {to: email, subject: assunto, body: corpo, attachments: arquivos_separados_por_virgula}",
@@ -460,7 +497,7 @@ class LunaCore:
     def __init__(self, test_mode: bool = False):
         print("\n[Luna] Iniciando sistema...")
         self.test_mode = test_mode
-        
+
         # Módulos
         self._llm = get_llm()
         self._memory = get_memory()
@@ -476,6 +513,7 @@ class LunaCore:
         try:
             from brain.event_bus import get_event_bus
             from brain.hierarchical_memory import HierarchicalMemory
+
             self._event_bus = get_event_bus()
             self._hierarchical_memory = HierarchicalMemory(self._memory)
             print("[Luna] ✓ Barramento de Eventos (EventBus) e Memória Hierárquica carregados.")
@@ -490,18 +528,19 @@ class LunaCore:
         self.last_metrics = {"time_ms": 0, "model": "N/A", "tails": 0}
         self.in_conversation_mode = False
         self.user_profile = self._load_user_profile()
-        self._pending_click: Optional[str] = None  # alvo de clique aguardando app
+        self._pending_click: str | None = None  # alvo de clique aguardando app
 
         # Seletor de modelo: "main" (médio 3B) ou "heavy" (alto 7B)
         self._writing_model: str = "main"  # default: médio
 
         # Estado
         self.processing = False
-        self.current_action: Optional[str] = None
+        self.current_action: str | None = None
         self._progress_callback = None
         self._expected_tool_steps = 1
+        self._max_steps = getattr(config, "MAX_STEPS", 15)
         self._lock = threading.Lock()
-        self._dialog: dict = {}   # estado do diálogo guiado atual
+        self._dialog: dict = {}  # estado do diálogo guiado atual
         self._confirm_edit_callback = None  # chamado para confirmar edições de arquivo
         self._code_mode_result = None  # último código escrito via write_code em modo code
 
@@ -593,12 +632,13 @@ class LunaCore:
         if not text or not text.strip():
             return ""
 
-        text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', text)
-        text = re.sub(r'[ \t]+', ' ', text).strip()
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
+        text = re.sub(r"[ \t]+", " ", text).strip()
         if not text:
             return ""
 
         from brain.safety import check_safety
+
         safety_response = check_safety(text)
         if safety_response:
             return safety_response
@@ -617,10 +657,11 @@ class LunaCore:
             self._progress_callback = progress_callback
             try:
                 response = self._run_autonomous_loop(text, mode=mode, extra_context=extra_context)
-                
+
                 # 4. Atualiza perfil do usuário assincronamente a partir da fala
                 try:
                     from brain.user_model import get_user_model
+
                     get_user_model().update_from_text(text)
                 except Exception as e:
                     print(f"[Core] Erro ao atualizar perfil do usuário: {e}")
@@ -628,11 +669,12 @@ class LunaCore:
                 # 5. Registra o episódio ocorrido na memória episódica
                 try:
                     from brain.episodic_memory import get_episodic_memory
+
                     get_episodic_memory().log_episode(
                         text=text,
                         response_summary=response,
                         action_type="conversa" if mode == "" else mode,
-                        outcome="sucesso" if response and "erro" not in response.lower() else "falha"
+                        outcome="sucesso" if response and "erro" not in response.lower() else "falha",
                     )
                 except Exception as e:
                     print(f"[Core] Erro ao registrar episódio: {e}")
@@ -640,7 +682,9 @@ class LunaCore:
                 return response
             except Exception as e:
                 print(f"[Luna] Erro no loop autônomo: {e}")
-                import traceback; traceback.print_exc()
+                import traceback
+
+                traceback.print_exc()
                 return "Ocorreu um erro interno. Tente novamente."
             finally:
                 self.processing = False
@@ -653,7 +697,7 @@ class LunaCore:
         O LLM recebe as tools e decide quando usá-las, igual Claw Code/Claude Code.
         """
         timer_start = self._perf.start_timer()
-        max_steps = 5
+        max_steps = getattr(self, "_max_steps", 15)
         loop_blocked = False
 
         # ══ Trace Logger: inicia gravação da interação ══
@@ -661,7 +705,7 @@ class LunaCore:
         self._loop_guard.reset()
 
         # ══ FASE -1: Diálogo guiado (formulários) ══
-        if hasattr(self, '_dialog') and self._dialog:
+        if hasattr(self, "_dialog") and self._dialog:
             result = self._dialog_step(text)
             if result:
                 return result
@@ -681,10 +725,15 @@ class LunaCore:
 
         # ══ PLANEJAMENTO EXPLICÍTO (Planner) ══
         plan_str = ""
-        is_complex = query_info.get("complexity") == "high" or mode == "code" or any(kw in text.lower() for kw in ["crie", "faça", "construa", "projeto", "desenvolva"])
+        is_complex = (
+            query_info.get("complexity") == "high"
+            or mode == "code"
+            or any(kw in text.lower() for kw in ["crie", "faça", "construa", "projeto", "desenvolva"])
+        )
         if is_complex:
             try:
-                from brain.planner import generate_plan, format_plan_for_prompt
+                from brain.planner import format_plan_for_prompt, generate_plan
+
                 self._emit_progress("thinking", label="Planejando ações...")
                 plan_json = generate_plan(text, context)
                 if plan_json and plan_json.get("needs_tools"):
@@ -729,12 +778,14 @@ class LunaCore:
             system_parts.append(plan_str)
 
         # ── Injeta regras de estilo do personality.json ──
-        style = self._personality_data.get("response_style", {}) if hasattr(self, '_personality_data') else {}
+        style = self._personality_data.get("response_style", {}) if hasattr(self, "_personality_data") else {}
         if style:
-            system_parts.extend([
-                "",
-                "ESTILO DE RESPOSTA (Jarvis + Grok):",
-            ])
+            system_parts.extend(
+                [
+                    "",
+                    "ESTILO DE RESPOSTA (Jarvis + Grok):",
+                ]
+            )
             principles = style.get("principles", [])
             if principles:
                 system_parts.append("Princípios:")
@@ -767,44 +818,52 @@ class LunaCore:
                     system_parts.append(f"- {r}")
 
         if mode == "code":
-            system_parts.extend([
-                "",
-                "VOCÊ ESTÁ EM MODO CÓDIGO:",
-                "- Você é uma engenheira full-stack de elite. Pode programar em QUALQUER linguagem.",
-                "- O usuário está num editor ao vivo. Você DEVE escrever o código COMPLETO usando write_code.",
-                "- VOCÊ DEVE incluir o código COMPLETO na sua resposta em texto, em um bloco markdown ```.",
-                "- NUNCA confie apenas no write_code — o código PRECISA estar visível na resposta em texto.",
-                "- Formato obrigatório: 1) explicação curta em português 2) linha em branco 3) bloco ``` com o código completo.",
-                "- Se o usuário pedir alterações, MOSTRE o código completo de novo no bloco markdown.",
-            ])
+            system_parts.extend(
+                [
+                    "",
+                    "VOCÊ ESTÁ EM MODO CÓDIGO:",
+                    "- Você é uma engenheira full-stack de elite. Pode programar em QUALQUER linguagem.",
+                    "- O usuário está num editor ao vivo. Você DEVE escrever o código COMPLETO usando write_code.",
+                    "- VOCÊ DEVE incluir o código COMPLETO na sua resposta em texto, em um bloco markdown ```.",
+                    "- NUNCA confie apenas no write_code — o código PRECISA estar visível na resposta em texto.",
+                    "- Formato obrigatório: 1) explicação curta em português 2) linha em branco 3) bloco ``` com o código completo.",
+                    "- Se o usuário pedir alterações, MOSTRE o código completo de novo no bloco markdown.",
+                ]
+            )
         elif mode == "voice":
-            system_parts.extend([
-                "",
-                "MODO VOZ: a resposta será lida em voz alta. Seja conversada, frases curtas.",
-                "Sem formatação, sem markdown, sem emojis. Fale diretamente com o usuário.",
-                "No final, sugira algo criativo relacionado ao assunto — nunca apenas 'mais algo?'.",
-            ])
+            system_parts.extend(
+                [
+                    "",
+                    "MODO VOZ: a resposta será lida em voz alta. Seja conversada, frases curtas.",
+                    "Sem formatação, sem markdown, sem emojis. Fale diretamente com o usuário.",
+                    "No final, sugira algo criativo relacionado ao assunto — nunca apenas 'mais algo?'.",
+                ]
+            )
         elif mode == "write":
-            system_parts.extend([
-                "",
-                "VOCÊ ESTÁ EM MODO ESCRITA CRIATIVA:",
-                "- Você é uma escritora de ficção brasileira. Show, don't tell.",
-                "- Parágrafos curtos, diálogos naturais. ZERO formalidade acadêmica.",
-                "- Pode usar search_web para pesquisa, manage_notes para salvar ideias, filesystem para organizar.",
-                "- Use TODO o seu sistema de pensamento: planeje a estrutura, pesquise se necessário, depois escreva.",
-                "- NUNCA use markdown ou JSON na resposta final. Apenas texto narrativo puro.",
-            ])
+            system_parts.extend(
+                [
+                    "",
+                    "VOCÊ ESTÁ EM MODO ESCRITA CRIATIVA:",
+                    "- Você é uma escritora de ficção brasileira. Show, don't tell.",
+                    "- Parágrafos curtos, diálogos naturais. ZERO formalidade acadêmica.",
+                    "- Pode usar search_web para pesquisa, manage_notes para salvar ideias, filesystem para organizar.",
+                    "- Use TODO o seu sistema de pensamento: planeje a estrutura, pesquise se necessário, depois escreva.",
+                    "- NUNCA use markdown ou JSON na resposta final. Apenas texto narrativo puro.",
+                ]
+            )
         elif mode == "joy":
-            system_parts.extend([
-                "",
-                "VOCÊ ESTÁ EM MODO JOGO (JOY):",
-                "- Você é uma companheira de jogo carismática e divertida.",
-                "- Seja expressiva: provocações leves, comemore vitórias, lamente derrotas.",
-                "- Mantenha o personagem: você é competitiva mas adora jogar junto.",
-                "- Responda com 1-3 frases naturais, como se estivesse no mesmo sofá.",
-                "- NUNCA revele estratégia ou próximas jogadas.",
-                "- Varie as reações: não repete a mesma frase.",
-            ])
+            system_parts.extend(
+                [
+                    "",
+                    "VOCÊ ESTÁ EM MODO JOGO (JOY):",
+                    "- Você é uma companheira de jogo carismática e divertida.",
+                    "- Seja expressiva: provocações leves, comemore vitórias, lamente derrotas.",
+                    "- Mantenha o personagem: você é competitiva mas adora jogar junto.",
+                    "- Responda com 1-3 frases naturais, como se estivesse no mesmo sofá.",
+                    "- NUNCA revele estratégia ou próximas jogadas.",
+                    "- Varie as reações: não repete a mesma frase.",
+                ]
+            )
 
         system_prompt = "\n".join(system_parts)
 
@@ -824,7 +883,7 @@ class LunaCore:
 
             # Chama o LLM com o tier adequado (permite fallback entre provedores)
             tier = query_info.get("model_tier", "main")
-            
+
             raw = self._llm.generate(
                 messages=messages,
                 task_type=query_info.get("task_type", "command"),
@@ -869,19 +928,33 @@ class LunaCore:
             # DETECÇÃO DE ALUCINAÇÃO DE AÇÃO (Lying Detection)
             # Se o LLM diz que fez algo mas não tem tool_calls_list, forçamos um erro interno para ele se corrigir
             if not tool_calls_list and assistant_content:
-                creation_keywords = ["criei", "salvei", "escrevi", "deletei", "mandei", "enviei", "alterei", "modifiquei"]
+                creation_keywords = [
+                    "criei",
+                    "salvei",
+                    "escrevi",
+                    "deletei",
+                    "mandei",
+                    "enviei",
+                    "alterei",
+                    "modifiquei",
+                ]
                 if any(kw in assistant_content.lower() for kw in creation_keywords) and tools_executed_count == 0:
                     # O LLM está mentindo que fez algo sem ter usado ferramentas.
                     print("[Agente] ⚠️ Alucinação detectada: o modelo alega ter feito algo sem usar tools.")
                     messages.append({"role": "assistant", "content": assistant_content})
-                    messages.append({"role": "user", "content": "ERRO: Você disse que fez uma ação, mas não chamou nenhuma ferramenta. Se você quer criar/salvar/enviar algo, você DEVE chamar a função apropriada. Tente novamente usando tools."})
+                    messages.append(
+                        {
+                            "role": "user",
+                            "content": "ERRO: Você disse que fez uma ação, mas não chamou nenhuma ferramenta. Se você quer criar/salvar/enviar algo, você DEVE chamar a função apropriada. Tente novamente usando tools.",
+                        }
+                    )
                     continue
 
             # Se não tem tool_calls, esta é a resposta final
             if not tool_calls_list:
                 cleaned = assistant_content
                 if "<think>" in cleaned:
-                    cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL).strip()
+                    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.DOTALL).strip()
                 final_response = _sanitize_user_response(cleaned)
 
                 # Auto-avaliação (Reflexão) se alguma ferramenta foi executada
@@ -919,8 +992,14 @@ class LunaCore:
                 if verdict.blocked:
                     msg = f"⚠️ LoopGuard bloqueou '{name}': {verdict.reason}"
                     print(f"[Agente] {msg}")
-                    tool_results.append({"role": "tool", "content": msg, "name": name,
-                                         "tool_call_id": getattr(tc, "id", f"blocked_{step}")})
+                    tool_results.append(
+                        {
+                            "role": "tool",
+                            "content": msg,
+                            "name": name,
+                            "tool_call_id": getattr(tc, "id", f"blocked_{step}"),
+                        }
+                    )
                     self._emit_progress("tool_done", name=name, label=label, ok=False)
                     loop_blocked = True
                     continue
@@ -935,8 +1014,14 @@ class LunaCore:
                         content = params.get("content", "")
                         if not self._request_edit_permission(path, content):
                             msg = f"USUÁRIO NEGOU permissão para editar {path}"
-                            tool_results.append({"role": "tool", "content": msg, "name": name,
-                                                 "tool_call_id": getattr(tc, "id", f"denied_{step}")})
+                            tool_results.append(
+                                {
+                                    "role": "tool",
+                                    "content": msg,
+                                    "name": name,
+                                    "tool_call_id": getattr(tc, "id", f"denied_{step}"),
+                                }
+                            )
                             self._emit_progress("tool_done", name=name, label=label, ok=False)
                             continue
 
@@ -963,20 +1048,20 @@ class LunaCore:
                             res += f" | VERIFICADO: {v['size']}B em {v['path']}"
                     elif name == "create_project":
                         pdir = _parse_tc_args(tc).get("project_name", "")
-                        v = VerificationSystem.verify_directory_created(
-                            str(VerificationSystem.WORKSPACE / pdir)
-                        )
+                        v = VerificationSystem.verify_directory_created(str(VerificationSystem.WORKSPACE / pdir))
                         if v["success"]:
                             res += f" | VERIFICADO: {v['files_count']} arquivo(s)"
                         else:
                             res += f" | VERIFICAÇÃO: {v['reason']}"
 
-                tool_results.append({
-                    "role": "tool",
-                    "content": res,
-                    "name": name,
-                    "tool_call_id": getattr(tc, "id", f"tc_{step}_{tools_executed_count}"),
-                })
+                tool_results.append(
+                    {
+                        "role": "tool",
+                        "content": res,
+                        "name": name,
+                        "tool_call_id": getattr(tc, "id", f"tc_{step}_{tools_executed_count}"),
+                    }
+                )
                 tools_executed_count += 1
 
                 self._trace_logger.add_step("tool_call", name, args_str, res, success)
@@ -985,18 +1070,35 @@ class LunaCore:
             # Adiciona a mensagem do assistente (com tool_calls) + resultados ao histórico
             if tool_calls_list:
                 msg_entry = {"role": "assistant", "content": assistant_content or None}
-                if raw and isinstance(raw, dict) and hasattr(raw.get("message"), "tool_calls"):
-                    msg_entry["tool_calls"] = [
-                        {"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                         "type": "function"}
-                        for tc in raw["message"].tool_calls
-                    ]
-                elif raw and isinstance(raw, dict):
-                    msg_entry["tool_calls"] = [
-                        {"id": tc.id, "function": {"name": tc.function.name, "arguments": tc.function.arguments},
-                         "type": "function"}
-                        for tc in (raw.get("tool_calls") or [])
-                    ]
+                # Normaliza tool_calls para dict (suporta tanto objetos NormalizedToolCall quanto dicts)
+                raw_tcs = None
+                if isinstance(raw, dict):
+                    if hasattr(raw.get("message"), "tool_calls"):
+                        raw_tcs = list(raw["message"].tool_calls)
+                    else:
+                        raw_tcs = raw.get("tool_calls")
+                if not raw_tcs:
+                    raw_tcs = tool_calls_list
+                if raw_tcs:
+                    msg_entry["tool_calls"] = []
+                    for tc in raw_tcs:
+                        if isinstance(tc, dict):
+                            fn = tc.get("function", {})
+                            msg_entry["tool_calls"].append(
+                                {
+                                    "id": tc.get("id", ""),
+                                    "function": {"name": fn.get("name", ""), "arguments": fn.get("arguments", "")},
+                                    "type": tc.get("type", "function"),
+                                }
+                            )
+                        else:
+                            msg_entry["tool_calls"].append(
+                                {
+                                    "id": tc.id,
+                                    "function": {"name": tc.function.name, "arguments": tc.function.arguments},
+                                    "type": "function",
+                                }
+                            )
                 messages.append(msg_entry)
                 messages.extend(tool_results)
 
@@ -1005,10 +1107,11 @@ class LunaCore:
 
         # Fallback: se nunca teve resposta do LLM (só ferramentas), gera sumário
         if not final_response:
-            tool_obs = [
-                m.get("content", "") for m in messages
-                if isinstance(m, dict) and m.get("role") == "tool"
-            ] if tools_executed_count > 0 else []
+            tool_obs = (
+                [m.get("content", "") for m in messages if isinstance(m, dict) and m.get("role") == "tool"]
+                if tools_executed_count > 0
+                else []
+            )
             final_response = self._run_executor_layer(text, context, {}, tool_obs)
 
         # Sanitiza
@@ -1055,27 +1158,27 @@ class LunaCore:
             f"[RESULTADOS DAS AÇÕES]\n{obs_block}"
             f"{force_failure_response}\n"
         )
-        
+
         user_name = self.user_profile.get("user_name", "você")
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": f"Mensagem de {user_name}: \"{text}\"\nContexto:\n{context}"}
+            {"role": "user", "content": f'Mensagem de {user_name}: "{text}"\nContexto:\n{context}'},
         ]
-        
+
         # Usa task_type command (temperatura baixa) para respostas factuais de ferramentas
         response = self._llm.generate(
             messages=messages,
             task_type="command",
-            model=config.GEMINI_MODELS.get("main", config.GEMINI_MODELS["fallback"])
+            model=config.GEMINI_MODELS.get("main", config.GEMINI_MODELS["fallback"]),
         )
-        
+
         if isinstance(response, dict):
             response = response.get("message", {}).get("content", "")
-            
+
         # 🚨 FILTRO ANTI-THINK (DeepSeek R1)
         if "<think>" in response:
-            response = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL).strip()
-            
+            response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+
         final_text = _sanitize_user_response(response)
 
         # Validação de alucinação pós-resposta (inspirada no format checker do Agent-S)
@@ -1085,16 +1188,19 @@ class LunaCore:
             # Se detectou alucinação, tenta gerar resposta corrigida
             corrected = self._llm.generate(
                 messages=[
-                    {"role": "system", "content": (
-                        f"Você é Luna, assistente pessoal. Sua resposta anterior tinha um problema:\n"
-                        f"{hallucination_feedback}\n\n"
-                        f"RESULTADOS REAIS DAS AÇÕES:\n{obs_block}\n\n"
-                        f"Gere uma resposta CORRIGIDA, honesta e direta baseada APENAS nos resultados reais."
-                    )},
-                    {"role": "user", "content": text}
+                    {
+                        "role": "system",
+                        "content": (
+                            f"Você é Luna, assistente pessoal. Sua resposta anterior tinha um problema:\n"
+                            f"{hallucination_feedback}\n\n"
+                            f"RESULTADOS REAIS DAS AÇÕES:\n{obs_block}\n\n"
+                            f"Gere uma resposta CORRIGIDA, honesta e direta baseada APENAS nos resultados reais."
+                        ),
+                    },
+                    {"role": "user", "content": text},
                 ],
                 task_type="command",
-                model=config.GEMINI_MODELS.get("main", config.GEMINI_MODELS["fallback"])
+                model=config.GEMINI_MODELS.get("main", config.GEMINI_MODELS["fallback"]),
             )
             if isinstance(corrected, dict):
                 corrected = corrected.get("message", {}).get("content", "")
@@ -1109,6 +1215,7 @@ class LunaCore:
     def _request_edit_permission(self, path: str, new_content: str) -> bool:
         """Solicita permissão do usuário antes de editar um arquivo."""
         from actions.filesystem import get_filesystem
+
         fs = get_filesystem()
         current = None
         try:
@@ -1118,24 +1225,24 @@ class LunaCore:
         except Exception:
             pass
 
-        print(f"\n{'='*60}")
-        print(f"✏️  LUNA QUER EDITAR UM ARQUIVO")
-        print(f"{'='*60}")
+        print(f"\n{'=' * 60}")
+        print("✏️  LUNA QUER EDITAR UM ARQUIVO")
+        print(f"{'=' * 60}")
         print(f"Arquivo: {path}")
         if current is not None:
             preview = current[:1500]
             if len(current) > 1500:
                 preview += "\n... [truncado]"
-            print(f"\nConteúdo ATUAL:")
-            print(f"{'─'*40}")
+            print("\nConteúdo ATUAL:")
+            print(f"{'─' * 40}")
             print(preview)
         preview_new = new_content[:1500]
         if len(new_content) > 1500:
             preview_new += "\n... [truncado]"
-        print(f"\nNovo conteúdo:")
-        print(f"{'─'*40}")
+        print("\nNovo conteúdo:")
+        print(f"{'─' * 40}")
         print(preview_new)
-        print(f"{'='*60}")
+        print(f"{'=' * 60}")
 
         if self._confirm_edit_callback:
             return self._confirm_edit_callback(path, current, new_content)
@@ -1153,6 +1260,7 @@ class LunaCore:
         Retorna dict com: name, tails, flags (use_fast, use_heavy, use_basic).
         """
         from config import MODELS
+
         qi = classify_query(text)
         tier = qi.get("model_tier", "main")
         model_name = MODELS.get(tier, MODELS["main"])
@@ -1171,20 +1279,21 @@ class LunaCore:
 
     def _run_writer_stream(self, text: str) -> str:
         """Modo Escritor Engine: Planejamento -> Stream -> Refinamento."""
-        from config import MODELS
         import re
         import threading
-        
+
+        from config import MODELS
+
         model_key = self._writing_model
         model_name = MODELS[model_key]
-        
-        print(f"\n[Writer] Iniciando Engine Literária...")
-        print(f"[Writer] Fase 1: Planejamento Arquitetural (Fast LLM)...")
-        
+
+        print("\n[Writer] Iniciando Engine Literária...")
+        print("[Writer] Fase 1: Planejamento Arquitetural (Fast LLM)...")
+
         # Etapa 1: Planning
         plan_prompt = self._writer.build_planning_prompt(text)
         plan_text = self._llm.generate(plan_prompt, task_type="planning", model=MODELS.get("fast", model_name))
-        print(f"[Writer] Estrutura montada.")
+        print("[Writer] Estrutura montada.")
 
         # Etapa 2: Streaming Draft
         print(f"[Writer] Fase 2: Streaming Draft ({model_name})...")
@@ -1214,10 +1323,10 @@ class LunaCore:
                 buffer += chunk
                 if "\n" in buffer:
                     first_line, rest = buffer.split("\n", 1)
-                    m = re.search(r'\[FILE:\s*(.+)\]', first_line, re.IGNORECASE)
+                    m = re.search(r"\[FILE:\s*(.+)\]", first_line, re.IGNORECASE)
                     if m:
                         raw = m.group(1).strip()
-                        raw = re.sub(r'[\\/"\'\\[\\]{}]', '', raw).strip()
+                        raw = re.sub(r'[\\/"\'\\[\\]{}]', "", raw).strip()
                         if raw:
                             filename = raw if raw.endswith(".txt") else raw + ".txt"
 
@@ -1241,13 +1350,9 @@ class LunaCore:
 
         # Etapa 3: Refinamento Semântico em Background
         def bg_refine():
-            print(f"\n[Writer] Fase 3: Refinamento Semântico Background inciado...")
+            print("\n[Writer] Fase 3: Refinamento Semântico Background inciado...")
             refiner_prompt = self._writer.build_refiner_prompt(full_draft)
-            refined_text = self._llm.generate(
-                refiner_prompt, 
-                task_type="creative", 
-                model=model_name
-            )
+            refined_text = self._llm.generate(refiner_prompt, task_type="creative", model=model_name)
             if filepath and filepath.exists() and len(refined_text) > 50:
                 final_clean = self._writer.clean_chunk(refined_text)
                 with open(filepath, "w", encoding="utf-8") as f:
@@ -1272,7 +1377,7 @@ class LunaCore:
         if hasattr(self._executor, "web_manager"):
             self._executor.web_manager.last_search_query = ""
 
-    def _handle_internal_command(self, text: str) -> tuple[Optional[str], Optional[bool]]:
+    def _handle_internal_command(self, text: str) -> tuple[str | None, bool | None]:
         """
         Apenas meta/admin da Luna (sem manipular PC).
         Abrir apps, cliques, timers, web etc. → FASE 5 (agente + LLM).
@@ -1323,6 +1428,7 @@ class LunaCore:
             cache_count = len(self._cache.cache.get("entries", {}))
             try:
                 from brain.agent_tools import LUNA_TOOLS
+
                 n_tools = len(LUNA_TOOLS)
             except Exception:
                 n_tools = "?"
@@ -1338,8 +1444,7 @@ class LunaCore:
             hits = self._perf.metrics.get("cache_hits", 0)
             misses = self._perf.metrics.get("cache_misses", 0)
             return (
-                f"Tempo médio: {avg_req:.0f}ms | Modelo: {avg_mdl:.0f}ms | "
-                f"Cache hits: {hits} | misses: {misses}"
+                f"Tempo médio: {avg_req:.0f}ms | Modelo: {avg_mdl:.0f}ms | Cache hits: {hits} | misses: {misses}"
             ), None
 
         return None, None
@@ -1347,26 +1452,24 @@ class LunaCore:
     def _daily_briefing(self) -> str:
         """Briefing diário estilo Jarvis: clima, calendário, lembretes, notas e frase do dia."""
         from datetime import datetime as _dt
-        from actions.weather import get_weather
-        from actions.reminders import get_reminders
+
         from actions.notes import get_notes
+        from actions.reminders import get_reminders
+        from actions.weather import get_weather
         from config import MODELS
 
         now = _dt.now()
-        weekdays = ["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"]
+        weekdays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
         date_str = f"{weekdays[now.weekday()]}, {now.strftime('%d/%m/%Y')} — {now.strftime('%H:%M')}"
 
         # Clima nas duas cidades
-        w_sp  = get_weather().get_weather("São Paulo")
+        w_sp = get_weather().get_weather("São Paulo")
         w_ita = get_weather().get_weather("Itapecerica da Serra")
 
         # Lembretes do dia
         reminders_raw = get_reminders().list_reminders()
         today_str = now.strftime("%d/%m")
-        reminders_today = [
-            line for line in reminders_raw.splitlines()
-            if today_str in line or "Nenhum" in line
-        ]
+        reminders_today = [line for line in reminders_raw.splitlines() if today_str in line or "Nenhum" in line]
         reminders_text = "\n".join(reminders_today) if reminders_today else "Nenhum lembrete para hoje."
 
         # Notas recentes (últimas 3)
@@ -1385,6 +1488,7 @@ class LunaCore:
 
         # Frase motivacional do dia
         from brain.daily_routine import get_activity_logger
+
         patterns = get_activity_logger().get_patterns(days=3)
         activity_hint = ""
         if patterns.get("peak_hours"):
@@ -1416,6 +1520,7 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         # Se o LLM retornou JSON (não deveria, mas por segurança)
         if response and response.strip().startswith("{"):
             import json as _json
+
             try:
                 response = _json.loads(response).get("response", response)
             except Exception:
@@ -1428,7 +1533,7 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         Executa a auto-avaliação (Reflexão) para validar se a tarefa foi cumprida de verdade.
         """
         llm = self._llm
-        
+
         # Filtra apenas o histórico desta interação para não poluir
         recent_history = []
         for m in messages:
@@ -1442,9 +1547,9 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
                 recent_history.append(f"Luna: {content}")
             elif role == "tool":
                 recent_history.append(f"Ferramenta ({m.get('name')}): {content}")
-                
+
         history_str = "\n".join(recent_history)
-        
+
         prompt = f"""Você é o validador de qualidade da Luna (Self-Reflection Layer).
 Analise o histórico da execução recente e responda de forma ultra precisa.
 
@@ -1470,21 +1575,23 @@ Você deve responder APENAS com um JSON estruturado:
             raw = llm.generate(
                 messages=[
                     {"role": "system", "content": "Você é um validador de qualidade JSON rigoroso."},
-                    {"role": "user", "content": prompt}
+                    {"role": "user", "content": prompt},
                 ],
                 task_type="utility",
-                model=self._writing_model
+                model=self._writing_model,
             )
             content = raw.get("message", {}).get("content", "") if isinstance(raw, dict) else (raw or "")
-            
+
             import re
-            m = re.search(r'(\{.*\})', str(content), re.DOTALL)
+
+            m = re.search(r"(\{.*\})", str(content), re.DOTALL)
             if m:
                 import json as _json
+
                 return _json.loads(m.group(1))
         except Exception as e:
             print(f"[Reflection] Erro ao auto-avaliar: {e}")
-            
+
         return {"goal_achieved": True, "failed_tools": [], "critique": "", "action_required": False}
 
     def _build_context(self, text: str, mode: str = "", extra_context: str = "") -> str:
@@ -1505,14 +1612,26 @@ Você deve responder APENAS com um JSON estruturado:
             print(f"[Core] Erro ao obter contexto da memória hierárquica: {e}")
 
         vision_triggers = [
-            "tela", "vendo", "enxerga", "print", "screen", "vê", "monitor",
-            "o que está aberto", "imagem", "gráfico", "video", "vídeo",
+            "tela",
+            "vendo",
+            "enxerga",
+            "print",
+            "screen",
+            "vê",
+            "monitor",
+            "o que está aberto",
+            "imagem",
+            "gráfico",
+            "video",
+            "vídeo",
         ]
         wants_vision = any(w in text.lower() for w in vision_triggers)
-        is_screenshot_only = bool(re.search(
-            r'^\s*(?:luna[, ]+)?(?:tira(?:\s+um)?|faz(?:\s+um)?)\s+print',
-            text.lower(),
-        ))
+        is_screenshot_only = bool(
+            re.search(
+                r"^\s*(?:luna[, ]+)?(?:tira(?:\s+um)?|faz(?:\s+um)?)\s+print",
+                text.lower(),
+            )
+        )
         if wants_vision and not is_screenshot_only:
             desc = self._vision.capture_and_describe()
             if desc:
@@ -1525,20 +1644,33 @@ Você deve responder APENAS com um JSON estruturado:
         if system_state:
             parts.append(system_state)
 
-        urls = re.findall(r'(https?://[^\s]+)', text)
+        urls = re.findall(r"(https?://[^\s]+)", text)
         for url in urls[:1]:
             print(f"[Core] Lendo conteúdo da URL: {url}")
             page_content = self._executor.web_manager.read_page(url)
             if page_content:
-                parts.append(
-                    f"[CONTEÚDO DA URL: {url}]\n{page_content[:4000]}"
-                )
+                parts.append(f"[CONTEÚDO DA URL: {url}]\n{page_content[:4000]}")
 
         # Pesquisa web automática só quando o usuário pede informação factual externa
         web_info_kw = (
-            "pesquisa", "pesquise", "busca", "busque", "notícia", "noticia",
-            "quem é", "quem e", "o que é", "o que e", "quando foi", "onde fica",
-            "preço de", "preco de", "cotação", "cotacao", "clima", "tempo hoje",
+            "pesquisa",
+            "pesquise",
+            "busca",
+            "busque",
+            "notícia",
+            "noticia",
+            "quem é",
+            "quem e",
+            "o que é",
+            "o que e",
+            "quando foi",
+            "onde fica",
+            "preço de",
+            "preco de",
+            "cotação",
+            "cotacao",
+            "clima",
+            "tempo hoje",
         )
         if any(kw in text.lower() for kw in web_info_kw) and not _is_local_action(text):
             search_data = self._quick_fact_check(text)
@@ -1550,6 +1682,7 @@ Você deve responder APENAS com um JSON estruturado:
     def _clear_search_cache(self) -> None:
         """Limpa cache SQLite de pesquisas rápidas (facts_cache.db)."""
         import sqlite3
+
         db_path = Path(__file__).parent / "brain" / "facts_cache.db"
         if db_path.exists():
             try:
@@ -1565,12 +1698,27 @@ Você deve responder APENAS com um JSON estruturado:
         """Retorna estado atual do sistema APENAS se relevante ao pedido do usuário.
         Só inclui timers/lembretes/lista de compras se o usuário perguntar sobre eles."""
         tl = query.lower()
-        talk_about_state = any(w in tl for w in [
-            "timer", "alarme", "lembrete", "lembra", "compras",
-            "foco", "pomodoro", "status", "o que tem", "o que está",
-            "o que esta", "notificação", "notificacao", "aviso",
-            "meu dia", "minhas coisas",
-        ])
+        talk_about_state = any(
+            w in tl
+            for w in [
+                "timer",
+                "alarme",
+                "lembrete",
+                "lembra",
+                "compras",
+                "foco",
+                "pomodoro",
+                "status",
+                "o que tem",
+                "o que está",
+                "o que esta",
+                "notificação",
+                "notificacao",
+                "aviso",
+                "meu dia",
+                "minhas coisas",
+            ]
+        )
         if not talk_about_state:
             return ""
 
@@ -1603,7 +1751,12 @@ Você deve responder APENAS com um JSON estruturado:
 
     def _quick_fact_check(self, query: str) -> str:
         """Busca rápida via Tavily AI (primário) com fallback Wikipedia + DuckDuckGo."""
-        import urllib.request, urllib.parse, re, json, sqlite3, os
+        import json
+        import os
+        import re
+        import sqlite3
+        import urllib.parse
+        import urllib.request
         from pathlib import Path
 
         # ── Cache SQLite ──────────────────────────────────────
@@ -1613,17 +1766,56 @@ Você deve responder APENAS com um JSON estruturado:
         cur = conn.cursor()
         cur.execute("CREATE TABLE IF NOT EXISTS cache (query TEXT PRIMARY KEY, result TEXT, ts REAL)")
 
-        stopwords = {"o","que","você","acha","do","da","de","um","uma","para","como",
-                     "qual","quais","me","mim","eu","ele","ela","nós","é","foi","vai",
-                     "ser","tem","por","sobre","ao","aos","das","dos","na","no","nas",
-                     "nos","com","sem","isso","a","e","i"}
-        words = re.findall(r'\b\w+\b', query.lower())
+        stopwords = {
+            "o",
+            "que",
+            "você",
+            "acha",
+            "do",
+            "da",
+            "de",
+            "um",
+            "uma",
+            "para",
+            "como",
+            "qual",
+            "quais",
+            "me",
+            "mim",
+            "eu",
+            "ele",
+            "ela",
+            "nós",
+            "é",
+            "foi",
+            "vai",
+            "ser",
+            "tem",
+            "por",
+            "sobre",
+            "ao",
+            "aos",
+            "das",
+            "dos",
+            "na",
+            "no",
+            "nas",
+            "nos",
+            "com",
+            "sem",
+            "isso",
+            "a",
+            "e",
+            "i",
+        }
+        words = re.findall(r"\b\w+\b", query.lower())
         clean_query = " ".join([w for w in words if len(w) > 1 and w not in stopwords])
         if not clean_query.strip():
             clean_query = query
 
         # Cache hit (TTL 6h)
         import time as _time
+
         cur.execute("SELECT result, ts FROM cache WHERE query=?", (clean_query,))
         row = cur.fetchone()
         if row and (_time.time() - row[1]) < 21600:
@@ -1642,13 +1834,15 @@ Você deve responder APENAS com um JSON estruturado:
 
         if TAVILY_API_KEY:
             try:
-                payload = json.dumps({
-                    "api_key":        TAVILY_API_KEY,
-                    "query":          query,
-                    "search_depth":   "basic",
-                    "max_results":    3,
-                    "include_answer": True,
-                }).encode("utf-8")
+                payload = json.dumps(
+                    {
+                        "api_key": TAVILY_API_KEY,
+                        "query": query,
+                        "search_depth": "basic",
+                        "max_results": 3,
+                        "include_answer": True,
+                    }
+                ).encode("utf-8")
                 req = urllib.request.Request(
                     "https://api.tavily.com/search",
                     data=payload,
@@ -1684,10 +1878,7 @@ Você deve responder APENAS com um JSON estruturado:
                     data = json.loads(resp.read().decode())
                     items = data.get("query", {}).get("search", [])
                     if items:
-                        snippets = [
-                            f"{i['title']}: {re.sub(r'<[^>]+>', '', i['snippet'])}"
-                            for i in items[:2]
-                        ]
+                        snippets = [f"{i['title']}: {re.sub(r'<[^>]+>', '', i['snippet'])}" for i in items[:2]]
                         result_text = " | ".join(snippets)
                         print(f"[🔍 Wikipedia] {len(items)} resultado(s)")
             except Exception as e:
@@ -1696,8 +1887,7 @@ Você deve responder APENAS com um JSON estruturado:
         # ── Fallback: DuckDuckGo ──────────────────────────────
         if not result_text:
             ddg_url = (
-                f"https://api.duckduckgo.com/?q={urllib.parse.quote(clean_query)}"
-                f"&format=json&no_html=1&skip_disambig=1"
+                f"https://api.duckduckgo.com/?q={urllib.parse.quote(clean_query)}&format=json&no_html=1&skip_disambig=1"
             )
             try:
                 req = urllib.request.Request(ddg_url, headers={"User-Agent": "LunaAI/1.0"})
@@ -1730,7 +1920,6 @@ Você deve responder APENAS com um JSON estruturado:
         conn.close()
         return result_text
 
-
     def _filter_tools(self, prompt_text: str, context_text: str, all_tools: list) -> list:
         """
         Filtra dinamicamente a lista de ferramentas (LUNA_TOOLS) com base na intenção do usuário,
@@ -1739,39 +1928,135 @@ Você deve responder APENAS com um JSON estruturado:
         """
         if not all_tools:
             return []
-            
+
         p_lower = prompt_text.lower()
         c_lower = context_text.lower() if context_text else ""
         full_text = f"{p_lower} {c_lower}"
-        
+
         # Lista de verbos/ações que indicam que o usuário quer uma interação
         action_keywords = [
-            "abre", "abrir", "inicia", "iniciar", "pesquisa", "pesquisar", "busca", "buscar", 
-            "procura", "procurar", "clica", "clicar", "digita", "digitar", "roda", "rodar", 
-            "executa", "executar", "comando", "terminal", "mostra", "mostrar", "veja", "ver", 
-            "olha", "olhar", "clique", "spotify", "toca", "tocar", "musica", "música", 
-            "playlist", "pausa", "parar", "luz", "lâmpada", "lampada", "desliga", "liga", 
-            "temperatura", "clima", "tempo", "chove", "chuva", "previsão", "previsao", 
-            "timer", "cronometro", "cronômetro", "minutos", "segundos", "lembrete", "lembrar", 
-            "lembra", "anota", "anotar", "bloco", "nota", "compras", "compra", "mercado", 
-            "planilha", "excel", "pdf", "briefing", "resumo", "hoje", "print", "screenshot", 
-            "tela", "copia", "copiar", "colar", "email", "gmail", "agenda", "compromisso", 
-            "evento", "drive", "pasta", "upload", "baixar", "download", "arquivo", 
-            "escreva", "escrever", "crie", "criar", "desenvolva", "desenvolver", 
-            "programe", "programar", "codigo", "código", "browser", "navegador", 
-            "site", "url", "http", "www.", "janela", "maximize", "minimize", "fechar",
-            "clipboard", "copie", "foco", "pomodoro"
+            "abre",
+            "abrir",
+            "inicia",
+            "iniciar",
+            "pesquisa",
+            "pesquisar",
+            "busca",
+            "buscar",
+            "procura",
+            "procurar",
+            "clica",
+            "clicar",
+            "digita",
+            "digitar",
+            "roda",
+            "rodar",
+            "executa",
+            "executar",
+            "comando",
+            "terminal",
+            "mostra",
+            "mostrar",
+            "veja",
+            "ver",
+            "olha",
+            "olhar",
+            "clique",
+            "spotify",
+            "toca",
+            "tocar",
+            "musica",
+            "música",
+            "playlist",
+            "pausa",
+            "parar",
+            "luz",
+            "lâmpada",
+            "lampada",
+            "desliga",
+            "liga",
+            "temperatura",
+            "clima",
+            "tempo",
+            "chove",
+            "chuva",
+            "previsão",
+            "previsao",
+            "timer",
+            "cronometro",
+            "cronômetro",
+            "minutos",
+            "segundos",
+            "lembrete",
+            "lembrar",
+            "lembra",
+            "anota",
+            "anotar",
+            "bloco",
+            "nota",
+            "compras",
+            "compra",
+            "mercado",
+            "planilha",
+            "excel",
+            "pdf",
+            "briefing",
+            "resumo",
+            "hoje",
+            "print",
+            "screenshot",
+            "tela",
+            "copia",
+            "copiar",
+            "colar",
+            "email",
+            "gmail",
+            "agenda",
+            "compromisso",
+            "evento",
+            "drive",
+            "pasta",
+            "upload",
+            "baixar",
+            "download",
+            "arquivo",
+            "escreva",
+            "escrever",
+            "crie",
+            "criar",
+            "desenvolva",
+            "desenvolver",
+            "programe",
+            "programar",
+            "codigo",
+            "código",
+            "browser",
+            "navegador",
+            "site",
+            "url",
+            "http",
+            "www.",
+            "janela",
+            "maximize",
+            "minimize",
+            "fechar",
+            "clipboard",
+            "copie",
+            "foco",
+            "pomodoro",
         ]
-        
+
         # Se não houver absolutamente nenhuma keyword de ação, assumimos conversa pura
         has_action = any(kw in full_text for kw in action_keywords)
         if not has_action:
             # Se for curto e sem ação, retorna lista vazia (sem ferramentas)
             # Poupa 7000 tokens por chat para Gemini/OpenRouter/Groq!
             if len(p_lower.split()) < 10 or any(p_lower.startswith(w) for w in ["oi", "olá", "como", "tudo", "quem"]):
-                print("[Core Router] 🧠 Intenção Conversacional Pura detectada. Omitindo todas as ferramentas (Economia de ~6500 tokens).")
+                print(
+                    "[Core Router] 🧠 Intenção Conversacional Pura detectada. Omitindo todas as ferramentas (Economia de ~6500 tokens)."
+                )
                 return []
-                
+
         # Base de ferramentas essenciais para ações em desktop (sempre presentes se houver ação)
         base_tool_names = {
             "open_app",
@@ -1780,9 +2065,9 @@ Você deve responder APENAS com um JSON estruturado:
             "see_screen",
             "click_on_screen",
             "run_bash_command",
-            "run_terminal_command"
+            "run_terminal_command",
         }
-        
+
         # Mapeamento de keywords para ferramentas especializadas
         specialized_mappings = [
             # Spotify
@@ -1807,55 +2092,102 @@ Você deve responder APENAS com um JSON estruturado:
             (["excel", "planilha", "xls"], ["create_excel"]),
             (["pdf"], ["create_pdf_drive"]),
             # Gmail / Email
-            (["gmail", "email", "mande", "enviar", "envie", "assunto", "corpo", "destinatario", "destinatário"], 
-             ["google_query", "google_send_email", "google_search_emails", "google_read_email", 
-              "google_reply_email", "google_forward_email", "google_mark_read", "google_delete_email", "google_list_files"]),
+            (
+                ["gmail", "email", "mande", "enviar", "envie", "assunto", "corpo", "destinatario", "destinatário"],
+                [
+                    "google_query",
+                    "google_send_email",
+                    "google_search_emails",
+                    "google_read_email",
+                    "google_reply_email",
+                    "google_forward_email",
+                    "google_mark_read",
+                    "google_delete_email",
+                    "google_list_files",
+                ],
+            ),
             # Calendar / Agenda
-            (["agenda", "calendar", "compromisso", "evento", "data", "calendario", "calendário"], 
-             ["google_query", "google_create_event", "google_edit_event", "google_delete_event", "google_events_by_date"]),
+            (
+                ["agenda", "calendar", "compromisso", "evento", "data", "calendario", "calendário"],
+                [
+                    "google_query",
+                    "google_create_event",
+                    "google_edit_event",
+                    "google_delete_event",
+                    "google_events_by_date",
+                ],
+            ),
             # Google Drive / Arquivos em nuvem
-            (["drive", "upload", "baixar", "pasta", "nuvem"], 
-             ["google_drive_upload", "google_drive_list", "google_drive_search", "google_drive_create_folder", "google_drive_delete"]),
+            (
+                ["drive", "upload", "baixar", "pasta", "nuvem"],
+                [
+                    "google_drive_upload",
+                    "google_drive_list",
+                    "google_drive_search",
+                    "google_drive_create_folder",
+                    "google_drive_delete",
+                ],
+            ),
             # Screenshots
             (["print", "screenshot", "captura"], ["take_screenshot"]),
             # Clipboard
-            (["copia", "copiar", "colar", "clipboard", "área de transferência", "area de transferencia"], ["clipboard_action"]),
+            (
+                ["copia", "copiar", "colar", "clipboard", "área de transferência", "area de transferencia"],
+                ["clipboard_action"],
+            ),
             # Filesystem local
-            (["arquivo", "txt", "ler", "salvar", "escrever", "escreva", "crie um arquivo", "pasta", "pastas", "home", "diretório", "diretorio", "workspace"], 
-             ["read_file", "save_file", "filesystem", "google_list_files"]),
+            (
+                [
+                    "arquivo",
+                    "txt",
+                    "ler",
+                    "salvar",
+                    "escrever",
+                    "escreva",
+                    "crie um arquivo",
+                    "pasta",
+                    "pastas",
+                    "home",
+                    "diretório",
+                    "diretorio",
+                    "workspace",
+                ],
+                ["read_file", "save_file", "filesystem", "google_list_files"],
+            ),
             # Window control
             (["janela", "maximize", "minimize", "workspace", "fechar janela"], ["control_window"]),
             # Browser task complexa
-            (["browser", "navegador", "site", "url", "automatize", "clique no link", "clique no resultado"], ["run_browser_task", "click_web_result", "read_webpage"])
+            (
+                ["browser", "navegador", "site", "url", "automatize", "clique no link", "clique no resultado"],
+                ["run_browser_task", "click_web_result", "read_webpage"],
+            ),
         ]
-        
+
         selected_tool_names = set(base_tool_names)
-        
+
         # Varre os mapeamentos e adiciona ferramentas extras se bater com a palavra-chave
         for keywords, tools in specialized_mappings:
             if any(kw in full_text for kw in keywords):
                 selected_tool_names.update(tools)
-                
+
         # Filtra a lista de ferramentas real com base nos nomes selecionados
         filtered = [t for t in all_tools if t.get("function", {}).get("name", "") in selected_tool_names]
-        
+
         # Exibe métricas de otimização
         import json
-        savings = len(all_tools) - len(filtered)
-        print(f"[Core Router] 🔧 Otimização de Ferramentas: {len(filtered)} ativas (omitidas {savings}). Reduziu tokens de tools de ~6200 para ~{len(json.dumps(filtered)) // 4}!")
-        
-        return filtered
 
+        savings = len(all_tools) - len(filtered)
+        print(
+            f"[Core Router] 🔧 Otimização de Ferramentas: {len(filtered)} ativas (omitidas {savings}). Reduziu tokens de tools de ~6200 para ~{len(json.dumps(filtered)) // 4}!"
+        )
+
+        return filtered
 
     def _auto_extract_facts(self, user_text: str, response: str) -> None:
         """Extrai fatos memoráveis via LLM em thread background."""
         if not user_text or len(user_text.strip()) < 10:
             return
-        threading.Thread(
-            target=self._llm_extract_facts_bg,
-            args=(user_text,),
-            daemon=True
-        ).start()
+        threading.Thread(target=self._llm_extract_facts_bg, args=(user_text,), daemon=True).start()
 
     def _llm_extract_facts_bg(self, user_text: str) -> None:
         """
@@ -1864,7 +2196,6 @@ Você deve responder APENAS com um JSON estruturado:
         Só salva fatos com importance >= 0.85 para evitar poluição da memória.
         """
         try:
-            from brain.llm import GROQ_MODELS, MODELS
             prompt = f"""Analise a mensagem do usuário e extraia APENAS informações factuais importantes sobre ele.
 Ignore perguntas, pedidos, comandos, e conteúdo que não seja sobre o usuário em si.
 
@@ -1884,17 +2215,16 @@ Formato:
 
 Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para preferências fortes e projetos pessoais. Ignore importance < 0.85."""
 
-            fast_model = MODELS.get("fast", "qwen2.5:0.5b-instruct-fp16")
-            # Força Ollama local — não consome quota do Gemini/Groq para tarefa de background
-            raw = self._llm._generate_ollama(prompt, task_type="command", model=fast_model,
-                                              stream=False, max_retries=1)
+            raw = self._llm.generate(prompt, task_type="command", model="fast", max_retries=1)
 
             if not raw:
                 return
 
-            import json as _json, re as _re
+            import json as _json
+            import re as _re
+
             # Extrai JSON da resposta
-            json_match = _re.search(r'\{.*\}', str(raw), _re.DOTALL)
+            json_match = _re.search(r"\{.*\}", str(raw), _re.DOTALL)
             if not json_match:
                 return
 
@@ -1918,17 +2248,17 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
                 tag = "🔴" if importance >= 0.85 else "🟡"
                 print(f"[Memory] {tag} Fato salvo ({category}, {importance:.2f}): {fact[:60]}")
 
-        except Exception as e:
+        except Exception:
             # Não interfere na experiência do usuário
             pass
-
 
     # ── Interface de voz ──────────────────────────────────────
 
     def speak(self, text: str) -> None:
         """Fala o texto (não bloqueia). Permite interrupção por voz."""
         self._tts.speak(
-            text, blocking=False,
+            text,
+            blocking=False,
             barge_in_callback=lambda interruption: self._handle_barge_in(interruption),
         )
 
@@ -1945,7 +2275,7 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
         self._dialog = {"flow": flow, "step": 0, "data": initial_data or {}}
         return self._dialog_step(None)
 
-    def _dialog_step(self, user_input: str) -> Optional[str]:
+    def _dialog_step(self, user_input: str) -> str | None:
         """Processa a resposta do usuário e avança o diálogo."""
         if not self._dialog:
             return None
@@ -1966,8 +2296,9 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
         return None
 
     def _dialog_reminder(self, step: int, user_input: str, data: dict) -> str:
-        from datetime import datetime as _dt, timedelta as _td
         import re as _re
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
 
         # Passo 0 — pede o nome/mensagem
         if step == 0:
@@ -1990,7 +2321,7 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
             elif "amanhã" in tl or "amanha" in tl:
                 data["date"] = now + _td(days=1)
             else:
-                m = _re.search(r'(\d{1,2})[/\-](\d{1,2})', tl)
+                m = _re.search(r"(\d{1,2})[/\-](\d{1,2})", tl)
                 if m:
                     day, month = int(m.group(1)), int(m.group(2))
                     year = now.year if month >= now.month else now.year + 1
@@ -2006,7 +2337,7 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
         # Passo 3 — recebe hora, cria lembrete
         if step == 3:
             tl = user_input.strip().lower()
-            m = _re.search(r'(\d{1,2})[h:](\d{0,2})', tl)
+            m = _re.search(r"(\d{1,2})[h:](\d{0,2})", tl)
             if not m:
                 return "Não entendi a hora. Tente novamente (ex: 15:30 ou 15h30)."
 
@@ -2031,12 +2362,16 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
         self.processing = False
         # Reseta flag após breve delay para próxima chamada funcionar
         import threading
+
         def _reset():
-            import time; time.sleep(0.5)
+            import time
+
+            time.sleep(0.5)
             self._llm._stop_flag = False
+
         threading.Thread(target=_reset, daemon=True).start()
 
-    def listen(self) -> Optional[str]:
+    def listen(self) -> str | None:
         """Escuta e retorna texto transcrito, ou None."""
         return self._stt.listen_once()
 
@@ -2052,7 +2387,7 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
     def stt(self):
         return self._stt
 
-    @property  
+    @property
     def voice_input_enabled(self) -> bool:
         return self._stt.enabled
 
@@ -2067,7 +2402,7 @@ Importância: APENAS use 0.95 para informações técnicas críticas, 0.85 para 
 
 # ── Singleton ─────────────────────────────────────────────────
 
-_luna_instance: Optional[LunaCore] = None
+_luna_instance: LunaCore | None = None
 _luna_lock = threading.Lock()
 
 
@@ -2083,21 +2418,22 @@ def get_luna(test_mode: bool = False) -> LunaCore:
 
 # ── Teste / CLI standalone ────────────────────────────────────
 
+
 def run_tests():
     """Suite de testes básicos."""
     print("\n" + "=" * 50)
     print("LUNA — Suite de Testes")
     print("=" * 50)
-    
+
     luna = get_luna()
-    
+
     tests = [
         ("status", None),
         ("apps", None),
         ("oi Luna, como você está?", "conversar"),
         ("qual é a capital do Brasil?", "conversar"),
     ]
-    
+
     all_ok = True
     for text, expected_action in tests:
         print(f"\n[Teste] Input: '{text}'")
@@ -2106,7 +2442,7 @@ def run_tests():
         ok = bool(resp)
         all_ok = all_ok and ok
         print(f"[Teste] {'✓ OK' if ok else '✗ FALHOU'}")
-    
+
     print("\n" + "=" * 50)
     print(f"Resultado: {'✓ TODOS OS TESTES PASSARAM' if all_ok else '✗ ALGUNS TESTES FALHARAM'}")
     print("=" * 50 + "\n")
@@ -2118,12 +2454,14 @@ def run_cli():
     luna = get_luna()
 
     print("\n" + "=" * 60)
-    print(f"   LUNA — Sistema Autônomo Inteligente")
+    print("   LUNA — Sistema Autônomo Inteligente")
     print("=" * 60)
     print("  Comandos: 'status', 'apps', 'ouvir', 'falar', 'sair'")
     print("=" * 60 + "\n")
-    
-    luna.speak("Sistemas online. Pronta para ajudar.", )
+
+    luna.speak(
+        "Sistemas online. Pronta para ajudar.",
+    )
 
     while True:
         try:

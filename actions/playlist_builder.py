@@ -9,13 +9,12 @@ Detecção de intenção via LLM leve — aceita pedidos expressivos:
 
 Pular: "pula", "próxima", "skip" → avança para a próxima da sequência gerada.
 """
+
 import re
 import threading
 import time
-from typing import Optional
 
 from config import MODELS, OLLAMA_GENERATE_URL
-
 
 # ── Detecção de intenção via LLM leve ────────────────────────
 
@@ -29,27 +28,27 @@ Texto: "{text}"
 JSON:"""
 
 
-def detect_playlist_intent(text: str) -> Optional[dict]:
+def detect_playlist_intent(text: str) -> dict | None:
     """
     Usa o modelo fast (0.5B) para detectar intenção de playlist.
     Retorna {genre, count} ou None.
     """
-    import requests as _req
     import json as _json
 
-    tl = re.sub(r'^(?:luna)[,:\s]+', '', text.lower().strip()).strip()
+    import requests as _req
+
+    tl = re.sub(r"^(?:luna)[,:\s]+", "", text.lower().strip()).strip()
 
     # Pré-filtro rápido: se não tem nenhuma palavra-chave, nem chama o LLM
-    _kw = ["playlist", "top ", "músicas", "musicas", "monta ", "cria ",
-           "faz ", "quero ouvir"]
+    _kw = ["playlist", "top ", "músicas", "musicas", "monta ", "cria ", "faz ", "quero ouvir"]
     if not any(k in tl for k in _kw):
         return None
 
     # Regex rápido para "top N gênero" e "toca top N gênero" (evita chamar LLM)
-    m = re.match(r'(?:toca\s+)?top\s+(\d+)\s+(?:melhores?\s+)?(.+?)(?:\s+de\s+\d{4})?$', tl)
+    m = re.match(r"(?:toca\s+)?top\s+(\d+)\s+(?:melhores?\s+)?(.+?)(?:\s+de\s+\d{4})?$", tl)
     if m:
         count = max(1, min(1000, int(m.group(1))))
-        genre = re.sub(r'\b(?:musicas?|músicas?|melhores?|hits?)\b', '', m.group(2), flags=re.I).strip()
+        genre = re.sub(r"\b(?:musicas?|músicas?|melhores?|hits?)\b", "", m.group(2), flags=re.I).strip()
         if genre:
             return {"genre": genre, "count": count}
 
@@ -95,8 +94,9 @@ REGRAS:
 
 def generate_playlist_with_llm(genre: str, count: int) -> list[str]:
     """Gera lista via streaming, imprimindo tokens em tempo real."""
-    import requests as _req
     import json as _json
+
+    import requests as _req
 
     prompt = _PLAYLIST_PROMPT.format(genre=genre, count=count)
     payload = {
@@ -135,7 +135,7 @@ def generate_playlist_with_llm(genre: str, count: int) -> list[str]:
 def _parse_track_list(raw: str, max_count: int) -> list[str]:
     tracks = []
     for line in raw.splitlines():
-        line = re.sub(r'^\d+[\.\)\-\s]+', '', line.strip()).strip()
+        line = re.sub(r"^\d+[\.\)\-\s]+", "", line.strip()).strip()
         if len(line) > 3:
             tracks.append(line)
         if len(tracks) >= max_count:
@@ -145,31 +145,42 @@ def _parse_track_list(raw: str, max_count: int) -> list[str]:
 
 # ── PlaylistBuilder ───────────────────────────────────────────
 
-class PlaylistBuilder:
 
+class PlaylistBuilder:
     def __init__(self):
         self._spotify = None
-        self._current_thread: Optional[threading.Thread] = None
+        self._current_thread: threading.Thread | None = None
         self._stop_flag = threading.Event()
-        self._skip_flag = threading.Event()   # sinaliza pular para próxima
-        self._pending_genre: Optional[str] = None
-        self._active = False                  # True enquanto playlist roda
+        self._skip_flag = threading.Event()  # sinaliza pular para próxima
+        self._pending_genre: str | None = None
+        self._active = False  # True enquanto playlist roda
 
     @property
     def spotify(self):
         if self._spotify is None:
             from actions.spotify import get_spotify
+
             self._spotify = get_spotify()
         return self._spotify
 
-    def handle(self, text: str) -> Optional[str]:
-        tl = re.sub(r'^(?:luna)[,:\s]+', '', text.lower().strip()).strip()
+    def handle(self, text: str) -> str | None:
+        tl = re.sub(r"^(?:luna)[,:\s]+", "", text.lower().strip()).strip()
 
         # ── Pular música (só quando playlist ativa) ───────────
-        if self._active and any(w in tl for w in [
-            "pula", "pular", "próxima", "proxima", "skip", "avança", "avanca",
-            "próxima música", "proxima musica"
-        ]):
+        if self._active and any(
+            w in tl
+            for w in [
+                "pula",
+                "pular",
+                "próxima",
+                "proxima",
+                "skip",
+                "avança",
+                "avanca",
+                "próxima música",
+                "proxima musica",
+            ]
+        ):
             self._skip_flag.set()
             return "⏭ Pulando para a próxima da playlist..."
 
@@ -179,7 +190,7 @@ class PlaylistBuilder:
 
         # ── Resposta a pergunta de quantidade pendente ────────
         if self._pending_genre:
-            m = re.search(r'(\d+)', tl)
+            m = re.search(r"(\d+)", tl)
             if m:
                 count = max(1, min(1000, int(m.group(1))))
                 genre = self._pending_genre
@@ -210,9 +221,7 @@ class PlaylistBuilder:
         self._skip_flag.clear()
         self._active = True
 
-        self._current_thread = threading.Thread(
-            target=self._run_playlist, args=(genre, count), daemon=True
-        )
+        self._current_thread = threading.Thread(target=self._run_playlist, args=(genre, count), daemon=True)
         self._current_thread.start()
         return f"🎵 Montando playlist de {count} músicas — {genre}... iniciando em breve!"
 
@@ -228,6 +237,7 @@ class PlaylistBuilder:
         print(f"[Playlist] ✓ {len(tracks)} músicas. Iniciando reprodução...")
 
         from voice.tts import get_tts
+
         tts = get_tts()
 
         for i, track in enumerate(tracks):
@@ -235,8 +245,8 @@ class PlaylistBuilder:
                 break
 
             self._skip_flag.clear()
-            pos_label = f"Top {i+1}"
-            print(f"\n[Playlist] ▶ {i+1}/{len(tracks)}: {track}")
+            pos_label = f"Top {i + 1}"
+            print(f"\n[Playlist] ▶ {i + 1}/{len(tracks)}: {track}")
 
             # Fala o nome antes de tocar
             tts.speak(f"{pos_label}: {track}", blocking=False)
@@ -253,19 +263,22 @@ class PlaylistBuilder:
         self._active = False
 
     def _play_fallback(self, track: str):
-        import subprocess, urllib.parse
+        import subprocess
+        import urllib.parse
+
         query = urllib.parse.quote(track)
         subprocess.Popen(
             ["xdg-open", f"spotify:search:{query}"],
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     def _playerctl(self, *args) -> str:
         import subprocess
+
         try:
             r = subprocess.run(
-                ["playerctl", "--player=spotify"] + list(args),
-                capture_output=True, text=True, timeout=3
+                ["playerctl", "--player=spotify"] + list(args), capture_output=True, text=True, timeout=3
             )
             return r.stdout.strip()
         except Exception:
@@ -321,7 +334,7 @@ class PlaylistBuilder:
 
 
 # Singleton
-_instance: Optional[PlaylistBuilder] = None
+_instance: PlaylistBuilder | None = None
 
 
 def get_playlist_builder() -> PlaylistBuilder:

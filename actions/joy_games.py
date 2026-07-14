@@ -3,24 +3,25 @@ joy_games.py — Lógica dos jogos do modo Luna Joy
 Jogos: Damas, Xadrez, Jogo da Memória, Forca
 A IA joga contra o usuário e conversa em tempo real.
 """
+
 import random
-import json
-from typing import Optional
 
 # ── Dificuldade ───────────────────────────────────────────────
 
 DIFFICULTY_LEVELS = {
-    "facil":  {"name": "Fácil",  "depth": 1, "random_chance": 0.5},
-    "medio":  {"name": "Médio",  "depth": 2, "random_chance": 0.2},
-    "dificil":{"name": "Difícil","depth": 3, "random_chance": 0.0},
+    "facil": {"name": "Fácil", "depth": 1, "random_chance": 0.5},
+    "medio": {"name": "Médio", "depth": 2, "random_chance": 0.2},
+    "dificil": {"name": "Difícil", "depth": 3, "random_chance": 0.0},
 }
 
 # ── Damas ─────────────────────────────────────────────────────
+
 
 class Damas:
     """
     Tabuleiro 8x8. Peças: 1=jogador, 2=Luna, 3=dama jogador, 4=dama Luna.
     """
+
     def __init__(self):
         self.board = self._init_board()
         self.turn = "player"  # "player" ou "luna"
@@ -28,7 +29,7 @@ class Damas:
         self.winner = None
 
     def _init_board(self):
-        b = [[0]*8 for _ in range(8)]
+        b = [[0] * 8 for _ in range(8)]
         for r in range(3):
             for c in range(8):
                 if (r + c) % 2 == 1:
@@ -83,7 +84,7 @@ class Damas:
             return {"ok": False, "msg": "Não é sua vez."}
 
         valid = self._valid_moves(1)
-        match = [(m[0]==fr and m[1]==fc and m[2]==tr and m[3]==tc) for m in valid]
+        match = [(m[0] == fr and m[1] == fc and m[2] == tr and m[3] == tc) for m in valid]
         if not any(match):
             return {"ok": False, "msg": "Movimento inválido."}
 
@@ -108,8 +109,8 @@ class Damas:
             self.board[cap[0]][cap[1]] = 0
 
     def _check_winner(self):
-        p1 = any(self.board[r][c] in [1,3] for r in range(8) for c in range(8))
-        p2 = any(self.board[r][c] in [2,4] for r in range(8) for c in range(8))
+        p1 = any(self.board[r][c] in [1, 3] for r in range(8) for c in range(8))
+        p2 = any(self.board[r][c] in [2, 4] for r in range(8) for c in range(8))
         if not p1:
             self.winner = "luna"
         elif not p2:
@@ -153,19 +154,33 @@ class Damas:
 # ── Xadrez (simplificado) ─────────────────────────────────────
 
 CHESS_PIECES = {
-    "wP": "♙", "wR": "♖", "wN": "♘", "wB": "♗", "wQ": "♕", "wK": "♔",
-    "bP": "♟", "bR": "♜", "bN": "♞", "bB": "♝", "bQ": "♛", "bK": "♚",
+    "wP": "♙",
+    "wR": "♖",
+    "wN": "♘",
+    "wB": "♗",
+    "wQ": "♕",
+    "wK": "♔",
+    "bP": "♟",
+    "bR": "♜",
+    "bN": "♞",
+    "bB": "♝",
+    "bQ": "♛",
+    "bK": "♚",
 }
 
 INIT_CHESS = [
-    ["bR","bN","bB","bQ","bK","bB","bN","bR"],
-    ["bP","bP","bP","bP","bP","bP","bP","bP"],
-    [None]*8, [None]*8, [None]*8, [None]*8,
-    ["wP","wP","wP","wP","wP","wP","wP","wP"],
-    ["wR","wN","wB","wQ","wK","wB","wN","wR"],
+    ["bR", "bN", "bB", "bQ", "bK", "bB", "bN", "bR"],
+    ["bP", "bP", "bP", "bP", "bP", "bP", "bP", "bP"],
+    [None] * 8,
+    [None] * 8,
+    [None] * 8,
+    [None] * 8,
+    ["wP", "wP", "wP", "wP", "wP", "wP", "wP", "wP"],
+    ["wR", "wN", "wB", "wQ", "wK", "wB", "wN", "wR"],
 ]
 
 PIECE_VALUES = {"P": 1, "N": 3, "B": 3, "R": 5, "Q": 9, "K": 100}
+
 
 class Xadrez:
     def __init__(self):
@@ -192,7 +207,8 @@ class Xadrez:
         return "b" if self.turn == "luna" else "w"
 
     def _color(self, piece):
-        if not piece: return None
+        if not piece:
+            return None
         return "w" if piece[0] == "w" else "b"
 
     def _valid_moves(self, color: str):
@@ -220,7 +236,7 @@ class Xadrez:
 
         def slide(drs):
             for dr, dc in drs:
-                nr, nc = r+dr, c+dc
+                nr, nc = r + dr, c + dc
                 while 0 <= nr < 8 and 0 <= nc < 8:
                     t = self.board[nr][nc]
                     if t:
@@ -228,32 +244,34 @@ class Xadrez:
                             moves.append((r, c, nr, nc))
                         break
                     moves.append((r, c, nr, nc))
-                    nr += dr; nc += dc
+                    nr += dr
+                    nc += dc
 
         if kind == "P":
             d = -1 if color == "w" else 1
             start = 6 if color == "w" else 1
-            if 0 <= r+d < 8 and not self.board[r+d][c]:
-                moves.append((r, c, r+d, c))
-                if r == start and not self.board[r+2*d][c]:
-                    moves.append((r, c, r+2*d, c))
+            if 0 <= r + d < 8 and not self.board[r + d][c]:
+                moves.append((r, c, r + d, c))
+                if r == start and not self.board[r + 2 * d][c]:
+                    moves.append((r, c, r + 2 * d, c))
             for dc in [-1, 1]:
-                nr, nc = r+d, c+dc
+                nr, nc = r + d, c + dc
                 if 0 <= nr < 8 and 0 <= nc < 8 and self.board[nr][nc] and self._color(self.board[nr][nc]) == opp:
                     moves.append((r, c, nr, nc))
         elif kind == "R":
-            slide([(0,1),(0,-1),(1,0),(-1,0)])
+            slide([(0, 1), (0, -1), (1, 0), (-1, 0)])
         elif kind == "B":
-            slide([(1,1),(1,-1),(-1,1),(-1,-1)])
+            slide([(1, 1), (1, -1), (-1, 1), (-1, -1)])
         elif kind == "Q":
-            slide([(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)])
+            slide([(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)])
         elif kind == "N":
-            for dr, dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
-                add(r+dr, c+dc)
+            for dr, dc in [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]:
+                add(r + dr, c + dc)
         elif kind == "K":
-            for dr in [-1,0,1]:
-                for dc in [-1,0,1]:
-                    if dr or dc: add(r+dr, c+dc)
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr or dc:
+                        add(r + dr, c + dc)
         return moves
 
     def move(self, fr, fc, tr, tc) -> dict:
@@ -333,14 +351,16 @@ class Xadrez:
         color = piece[0]
         opp = "b" if color == "w" else "w"
         moves = []
+
         def add(nr, nc):
             if 0 <= nr < 8 and 0 <= nc < 8:
                 t = b[nr][nc]
                 if not t or t[0] == opp:
                     moves.append((nr, nc))
+
         def slide(drs):
             for dr, dc in drs:
-                nr, nc = r+dr, c+dc
+                nr, nc = r + dr, c + dc
                 while 0 <= nr < 8 and 0 <= nc < 8:
                     t = b[nr][nc]
                     if t:
@@ -348,25 +368,31 @@ class Xadrez:
                             moves.append((nr, nc))
                         break
                     moves.append((nr, nc))
-                    nr += dr; nc += dc
+                    nr += dr
+                    nc += dc
+
         if kind == "P":
             d = -1 if color == "w" else 1
-            if 0 <= r+d < 8 and not b[r+d][c]:
-                moves.append((r+d, c))
+            if 0 <= r + d < 8 and not b[r + d][c]:
+                moves.append((r + d, c))
             for dc in [-1, 1]:
-                nr, nc = r+d, c+dc
+                nr, nc = r + d, c + dc
                 if 0 <= nr < 8 and 0 <= nc < 8 and b[nr][nc] and b[nr][nc][0] == opp:
                     moves.append((nr, nc))
-        elif kind == "R": slide([(0,1),(0,-1),(1,0),(-1,0)])
-        elif kind == "B": slide([(1,1),(1,-1),(-1,1),(-1,-1)])
-        elif kind == "Q": slide([(0,1),(0,-1),(1,0),(-1,0),(1,1),(1,-1),(-1,1),(-1,-1)])
+        elif kind == "R":
+            slide([(0, 1), (0, -1), (1, 0), (-1, 0)])
+        elif kind == "B":
+            slide([(1, 1), (1, -1), (-1, 1), (-1, -1)])
+        elif kind == "Q":
+            slide([(0, 1), (0, -1), (1, 0), (-1, 0), (1, 1), (1, -1), (-1, 1), (-1, -1)])
         elif kind == "N":
-            for dr, dc in [(-2,-1),(-2,1),(-1,-2),(-1,2),(1,-2),(1,2),(2,-1),(2,1)]:
-                add(r+dr, c+dc)
+            for dr, dc in [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]:
+                add(r + dr, c + dc)
         elif kind == "K":
-            for dr in [-1,0,1]:
-                for dc in [-1,0,1]:
-                    if dr or dc: add(r+dr, c+dc)
+            for dr in [-1, 0, 1]:
+                for dc in [-1, 0, 1]:
+                    if dr or dc:
+                        add(r + dr, c + dc)
         return moves
 
     def _apply_move(self, fr, fc, tr, tc):
@@ -440,11 +466,31 @@ class Xadrez:
 # ── Forca ─────────────────────────────────────────────────────
 
 WORDS_FORCA = [
-    "abacaxi","borboleta","computador","diamante","elefante",
-    "fantasia","girassol","horizonte","infinito","jornada",
-    "kaleidoscopio","luminoso","maravilha","nebulosa","oceano",
-    "papagaio","quilombo","relampago","saudade","tartaruga",
-    "universo","ventania","xadrez","zumbido","aventura",
+    "abacaxi",
+    "borboleta",
+    "computador",
+    "diamante",
+    "elefante",
+    "fantasia",
+    "girassol",
+    "horizonte",
+    "infinito",
+    "jornada",
+    "kaleidoscopio",
+    "luminoso",
+    "maravilha",
+    "nebulosa",
+    "oceano",
+    "papagaio",
+    "quilombo",
+    "relampago",
+    "saudade",
+    "tartaruga",
+    "universo",
+    "ventania",
+    "xadrez",
+    "zumbido",
+    "aventura",
 ]
 
 FORCA_HINTS = {
@@ -474,6 +520,7 @@ FORCA_HINTS = {
     "zumbido": "Som contínuo e baixo, como de abelha",
     "aventura": "Experiência emocionante e arriscada",
 }
+
 
 class Forca:
     def __init__(self):
@@ -522,8 +569,10 @@ class Forca:
 
 _sessions: dict[str, dict] = {}
 
+
 def get_joy_session(session_id: str) -> dict:
     return _sessions.get(session_id, {})
+
 
 def create_joy_session(session_id: str, game: str, difficulty: str = "medio") -> dict:
     if game == "damas":
@@ -540,6 +589,7 @@ def create_joy_session(session_id: str, game: str, difficulty: str = "medio") ->
 
     _sessions[session_id] = {"game": game, "obj": g, "difficulty": difficulty}
     return {"ok": True, "game": game, "state": g.get_state()}
+
 
 def joy_action(session_id: str, action: str, data: dict) -> dict:
     sess = _sessions.get(session_id)
@@ -577,9 +627,10 @@ def joy_action(session_id: str, action: str, data: dict) -> dict:
 
     return {"error": f"Ação '{action}' desconhecida."}
 
+
 def list_games() -> list:
     return [
-        {"id": "damas",  "name": "Damas",   "icon": "checkers", "desc": "Jogo de damas clássico 8x8"},
-        {"id": "xadrez", "name": "Xadrez",  "icon": "chess",   "desc": "Xadrez completo contra a Luna"},
-        {"id": "forca",  "name": "Forca",   "icon": "target",  "desc": "Adivinhe a palavra letra por letra"},
+        {"id": "damas", "name": "Damas", "icon": "checkers", "desc": "Jogo de damas clássico 8x8"},
+        {"id": "xadrez", "name": "Xadrez", "icon": "chess", "desc": "Xadrez completo contra a Luna"},
+        {"id": "forca", "name": "Forca", "icon": "target", "desc": "Adivinhe a palavra letra por letra"},
     ]
