@@ -4,8 +4,11 @@ brain/metrics_aggregator.py — Agregador de Métricas (Luna v1.4.1 Stabilizatio
 Coleta estatísticas do Planner, Memória, EventBus e Ferramentas para gerar o painel Luna Debug.
 """
 import json
+import logging
 from pathlib import Path
 from typing import Dict, Any
+
+logger = logging.getLogger("luna.metrics")
 
 try:
     from config import DATA_DIR
@@ -90,14 +93,15 @@ class MetricsAggregator:
         metrics["tools"] = dict(sorted_tools)
 
     def _aggregate_memory(self, metrics: Dict[str, Any]):
-        # Episodic Memory
+        # Episodic Memory — usa API pública get_episode_count()
         try:
             from brain.episodic_memory import get_episodic_memory
             episodic = get_episodic_memory()
-            with episodic._lock:
-                metrics["memory"]["episodes"] = len(episodic._episodes)
-        except Exception:
-            pass
+            metrics["memory"]["episodes"] = episodic.get_episode_count()
+        except ImportError:
+            logger.debug("Módulo episodic_memory não disponível.")
+        except Exception as e:
+            logger.warning(f"Erro ao agregar memória episódica: {e}")
 
         # User Model (Profile)
         try:
@@ -112,8 +116,12 @@ class MetricsAggregator:
                 elif v:
                     count += 1
             metrics["memory"]["profile_items"] = count
-        except Exception:
-            pass
+        except ImportError:
+            logger.debug("Módulo user_model não disponível.")
+        except AttributeError as e:
+            logger.warning(f"Atributo inesperado no user_model (API mudou?): {e}")
+        except Exception as e:
+            logger.warning(f"Erro ao agregar perfil do usuário: {e}")
 
         # Goals
         try:
@@ -121,8 +129,10 @@ class MetricsAggregator:
             if goals_file.exists():
                 goals_data = json.loads(goals_file.read_text(encoding="utf-8"))
                 metrics["memory"]["goals"] = len(goals_data)
-        except Exception:
-            pass
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            logger.warning(f"Erro ao ler goals.json: {e}")
+        except Exception as e:
+            logger.warning(f"Erro inesperado ao agregar goals: {e}")
 
 def get_metrics_aggregator():
     return MetricsAggregator()
