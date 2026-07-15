@@ -1,16 +1,18 @@
 #!/usr/bin/env python3
 """
-brain/llm.py — LLM híbrido: Mistral → Gemini → OpenRouter → GitHub → Naga → Best AI → Groq → Ollama
+brain/llm.py — LLM híbrido: Mistral → Gemini → OpenRouter → Completions.me → Chutes.ai → GitHub → Naga → Best AI → Groq
 
 Prioridade:
   1. Mistral           → mistral-large/small (primário quando key disponível)
   2. Gemini 2.5 Flash  → direto via SDK (grátis, ~1500 req/dia)
   3. OpenRouter        → DeepSeek-V3 via OpenRouter (se tiver créditos)
-  4. GitHub Models     → DeepSeek-V3-0324 / DeepSeek-R1 (free tier — rate limitado)
-  5. Naga AI           → Nemotron 3, Llama (gratuito)
-  6. Best AI           → DeepSeek, Qwen, Gemini (gratuito)
-  7. Groq              → qwen3-32b, llama-4-scout (free tier)
-  8. Ollama            → qwen2.5 local (fallback offline)
+  4. Completions.me    → Claude Opus 4.6, GPT-5.2, Gemini 3.1 Pro (grátis, ilimitado)
+  5. Chutes.ai         → DeepSeek-V3.2-TEE (se tiver créditos)
+  6. GitHub Models     → DeepSeek-V3-0324 / DeepSeek-R1 (free tier — rate limitado)
+  7. Naga AI           → Nemotron 3, Llama (gratuito)
+  8. Best AI           → DeepSeek, Qwen, Gemini (gratuito)
+  9. Groq              → qwen3-32b, llama-4-scout (free tier)
+  10. Ollama            → qwen2.5 local (fallback offline)
 """
 
 import json
@@ -28,8 +30,6 @@ try:
     HAS_REQUESTS = True
 except ImportError:
     HAS_REQUESTS = False
-    import urllib.error
-    import urllib.request
 
 try:
     from mistralai.client import Mistral
@@ -60,6 +60,9 @@ try:
         CHUTES_API_KEY,
         CHUTES_BASE_URL,
         CHUTES_MODELS,
+        COMPLETIONS_API_KEY,
+        COMPLETIONS_BASE_URL,
+        COMPLETIONS_MODELS,
         GEMINI_API_KEY,
         GEMINI_MODELS,
         GITHUB_BASE_URL,
@@ -74,17 +77,11 @@ try:
         NAGA_API_KEY,
         NAGA_BASE_URL,
         NAGA_MODELS,
-        OLLAMA_TAGS_URL,
         OPENROUTER_API_KEY,
         OPENROUTER_BASE_URL,
         OPENROUTER_MODELS,
     )
-    from config import (
-        OLLAMA_GENERATE_URL as OLLAMA_URL,
-    )
 except ImportError:
-    OLLAMA_URL = "http://localhost:11434/api/generate"
-    OLLAMA_TAGS_URL = "http://localhost:11434/api/tags"
     MODELS = {
         "heavy": "qwen2.5:7b-instruct-q4_K_M",
         "main": "qwen2.5:3b",
@@ -200,6 +197,25 @@ def _normalize_tool_calls(raw_tool_calls) -> list:
     return result
 
 
+def _parse_sse_stream(response) -> Generator[str]:
+    """Shared SSE stream parser for OpenAI-compatible chat completions APIs."""
+    for line in response.iter_lines():
+        if not line:
+            continue
+        line = line.decode("utf-8") if isinstance(line, bytes) else line
+        if line.startswith("data: "):
+            line = line[6:]
+        if line == "[DONE]":
+            break
+        try:
+            chunk = json.loads(line)
+            delta = chunk["choices"][0].get("delta", {}).get("content")
+            if delta:
+                yield delta
+        except Exception:
+            continue
+
+
 TASK_PARAMS = {
     "factual": {"temperature": 0.05, "top_p": 0.85, "max_tokens": 500},
     "creative": {"temperature": 0.85, "top_p": 0.95, "max_tokens": 3000},
@@ -209,17 +225,6 @@ TASK_PARAMS = {
     "conversational": {"temperature": 0.70, "top_p": 0.95, "max_tokens": 1500},
     "default": {"temperature": 0.2, "top_p": 0.90, "max_tokens": 500},
 }
-
-
-def _ollama_model_for_tier(model_name: str) -> str:
-    """Dado um tier (main/fast/heavy/basic) ou modelo, retorna o nome do modelo Ollama."""
-    if model_name in MODELS:
-        return MODELS[model_name]
-    gemini_vals = set(GEMINI_MODELS.values()) if GEMINI_MODELS else set()
-    groq_vals = set(GROQ_MODELS.values()) if GROQ_MODELS else set()
-    if model_name in gemini_vals or model_name in groq_vals:
-        return MODELS["main"]
-    return model_name
 
 
 class LLMWrapper:
@@ -261,7 +266,7 @@ class LLMWrapper:
                 print(f"[LLM] ✓ Gemini ativo — {GEMINI_MODELS['main']} → {fb} → {fb2}")
                 self.available = True
             except Exception as e:
-                print(err("GEMINI_INIT_FAILED", str(e)))
+                print(luna_err("GEMINI_INIT_FAILED", str(e)))
                 self._gemini_ok = False
 
         # ── OpenRouter (DeepSeek V3 via OpenRouter — se tiver créditos) ──
@@ -269,6 +274,14 @@ class LLMWrapper:
         self._openrouter_rl_per_model: dict = {}
         if self._openrouter_ok:
             print(f"[LLM] ✓ OpenRouter ativo — {OPENROUTER_MODELS['main']}")
+            if not self.available:
+                self.available = True
+
+        # ── Completions.me (gratuito, ilimitado — Claude, GPT, Gemini, Grok) ──
+        self._completions_ok = HAS_REQUESTS and bool(COMPLETIONS_API_KEY)
+        self._completions_rl_until = 0.0
+        if self._completions_ok:
+            print(f"[LLM] ✓ Completions.me ativo — {COMPLETIONS_MODELS['main']}")
             if not self.available:
                 self.available = True
 
@@ -318,14 +331,11 @@ class LLMWrapper:
                 print(luna_err("GROQ_INIT_FAILED", str(e)))
                 self._groq_ok = False
 
-        # Ollama local desabilitado — apenas provedores cloud
         if HAS_REQUESTS:
             self._session = requests.Session()
             self._session.headers.update({"Content-Type": "application/json"})
         else:
             self._session = None
-
-        self._ollama_ok = False
 
     def _mistral_available(self) -> bool:
         return self._mistral_ok and time.time() >= self._mistral_rl_until
@@ -474,7 +484,15 @@ class LLMWrapper:
                 if result is not None:
                     return result
 
-        # 4. Chutes.ai (DeepSeek-V3.2-TEE)
+        # 4. Completions.me (gratuito, ilimitado — Claude, GPT, Gemini, Grok)
+        if self._completions_available() and _time.time() - _start_time < _global_timeout:
+            comp_model = self._completions_model_for(used_model)
+            if comp_model:
+                result = self._generate_completions(prompt, task_type, comp_model, stream, messages, tools)
+                if result is not None:
+                    return result
+
+        # 5. Chutes.ai (DeepSeek-V3.2-TEE)
         if self._chutes_available() and _time.time() - _start_time < _global_timeout:
             chutes_model = self._chutes_model_for(used_model)
             if chutes_model:
@@ -482,7 +500,7 @@ class LLMWrapper:
                 if result is not None:
                     return result
 
-        # 5. GitHub Models (fallback — DeepSeek via free tier)
+        # 6. GitHub Models (fallback — DeepSeek via free tier)
         if self._github_available() and _time.time() - _start_time < _global_timeout:
             github_model = self._github_model_for(used_model)
             if github_model:
@@ -490,21 +508,21 @@ class LLMWrapper:
                 if result is not None:
                     return result
 
-        # 5. Naga AI (fallback 5)
+        # 7. Naga AI (fallback 7)
         if self._naga_available() and _time.time() - _start_time < _global_timeout:
             naga_model = self._naga_model_for(used_model)
             result = self._generate_naga(prompt, task_type, naga_model, stream, messages, tools)
             if result is not None:
                 return result
 
-        # 6. Best AI (fallback 6)
+        # 8. Best AI (fallback 8)
         if self._bestai_available() and _time.time() - _start_time < _global_timeout:
             bestai_model = self._bestai_model_for(used_model)
             result = self._generate_bestai(prompt, task_type, bestai_model, stream, messages, tools)
             if result is not None:
                 return result
 
-        # 7. Groq (fallback 7)
+        # 9. Groq (fallback 9)
         if self._groq_available() and _time.time() - _start_time < _global_timeout:
             groq_model = self._groq_model_for(used_model)
             result = self._generate_groq(prompt, task_type, groq_model, stream, messages, tools)
@@ -843,21 +861,7 @@ class LLMWrapper:
                     self._github_rl_per_model[model] = time.time() + 60
                     raise Exception("429")
                 resp.raise_for_status()
-                for line in resp.iter_lines():
-                    if not line:
-                        continue
-                    line = line.decode("utf-8") if isinstance(line, bytes) else line
-                    if line.startswith("data: "):
-                        line = line[6:]
-                    if line == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(line)
-                        delta = chunk["choices"][0].get("delta", {}).get("content")
-                        if delta:
-                            yield delta
-                    except Exception:
-                        continue
+                yield from _parse_sse_stream(resp)
             return
         except Exception as e:
             print(f"[LLM] ⚠ GitHub stream erro: {e} — fallback Naga")
@@ -950,21 +954,7 @@ class LLMWrapper:
                     self._openrouter_rl_per_model[model] = time.time() + 60
                     raise Exception("429")
                 resp.raise_for_status()
-                for line in resp.iter_lines():
-                    if not line:
-                        continue
-                    line = line.decode("utf-8") if isinstance(line, bytes) else line
-                    if line.startswith("data: "):
-                        line = line[6:]
-                    if line == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(line)
-                        delta = chunk["choices"][0].get("delta", {}).get("content")
-                        if delta:
-                            yield delta
-                    except Exception:
-                        continue
+                yield from _parse_sse_stream(resp)
             return
         except Exception as e:
             print(f"[LLM] ⚠ OpenRouter stream erro: {e} — fallback GitHub")
@@ -1061,21 +1051,7 @@ class LLMWrapper:
                     self._chutes_rl_until = time.time() + 60
                     raise Exception("429")
                 resp.raise_for_status()
-                for line in resp.iter_lines():
-                    if not line:
-                        continue
-                    line = line.decode("utf-8") if isinstance(line, bytes) else line
-                    if line.startswith("data: "):
-                        line = line[6:]
-                    if line == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(line)
-                        delta = chunk["choices"][0].get("delta", {}).get("content")
-                        if delta:
-                            yield delta
-                    except Exception:
-                        continue
+                yield from _parse_sse_stream(resp)
             return
         except Exception as e:
             print(f"[LLM] ⚠ Chutes.ai stream erro: {e} — fallback GitHub")
@@ -1172,21 +1148,7 @@ class LLMWrapper:
                     self._naga_rl_until = time.time() + 60
                     raise Exception("429")
                 resp.raise_for_status()
-                for line in resp.iter_lines():
-                    if not line:
-                        continue
-                    line = line.decode("utf-8") if isinstance(line, bytes) else line
-                    if line.startswith("data: "):
-                        line = line[6:]
-                    if line == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(line)
-                        delta = chunk["choices"][0].get("delta", {}).get("content")
-                        if delta:
-                            yield delta
-                    except Exception:
-                        continue
+                yield from _parse_sse_stream(resp)
             return
         except Exception as e:
             print(f"[LLM] ⚠ Naga stream erro: {e} — fallback Best AI")
@@ -1283,21 +1245,7 @@ class LLMWrapper:
                     self._bestai_rl_until = time.time() + 60
                     raise Exception("429")
                 resp.raise_for_status()
-                for line in resp.iter_lines():
-                    if not line:
-                        continue
-                    line = line.decode("utf-8") if isinstance(line, bytes) else line
-                    if line.startswith("data: "):
-                        line = line[6:]
-                    if line == "[DONE]":
-                        break
-                    try:
-                        chunk = json.loads(line)
-                        delta = chunk["choices"][0].get("delta", {}).get("content")
-                        if delta:
-                            yield delta
-                    except Exception:
-                        continue
+                yield from _parse_sse_stream(resp)
             return
         except Exception as e:
             print(f"[LLM] ⚠ Best AI stream erro: {e} — fallback Groq")
@@ -1307,6 +1255,104 @@ class LLMWrapper:
                 TASK_PARAMS.get(task_type, TASK_PARAMS["default"]),
                 prompt=prompt,
                 task_type=task_type,
+            )
+
+    # ── Completions.me (gratuito, ilimitado) ───────────────────
+
+    def _completions_available(self) -> bool:
+        return self._completions_ok and time.time() >= self._completions_rl_until
+
+    def _completions_model_for(self, hint: str) -> str | None:
+        ordered = [
+            COMPLETIONS_MODELS.get("main"),
+            COMPLETIONS_MODELS.get("heavy"),
+            COMPLETIONS_MODELS.get("fast"),
+            COMPLETIONS_MODELS.get("fallback"),
+            COMPLETIONS_MODELS.get("fallback2"),
+        ]
+        return next((m for m in ordered if m), None)
+
+    def _generate_completions(
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
+        params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
+        req_msgs = messages if messages else [{"role": "user", "content": prompt}]
+        headers = {
+            "Authorization": f"Bearer {COMPLETIONS_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": req_msgs,
+            "temperature": params["temperature"],
+            "max_tokens": min(params["max_tokens"], 32000),
+            "top_p": params["top_p"],
+            "stream": stream,
+        }
+        if tools and not stream:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        try:
+            print(f"[LLM] Usando Completions.me: {model} (Task: {task_type})")
+            if stream:
+                return self._completions_stream(headers, payload, model, task_type, prompt)
+
+            resp = self._session.post(
+                f"{COMPLETIONS_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            if resp.status_code == 429:
+                self._completions_rl_until = time.time() + 60
+                print("[LLM] ⚠ Completions.me 429 — fallback Chutes.ai por 60s")
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+            choice = data["choices"][0]
+            msg = choice.get("message", {})
+            raw_tcs = msg.get("tool_calls")
+            if raw_tcs:
+                return {"tool_calls": _normalize_tool_calls(raw_tcs), "message": msg}
+            return (msg.get("content") or "").strip() or None
+
+        except Exception as e:
+            err = str(e)
+            if "429" in err:
+                self._completions_rl_until = time.time() + 60
+                print("[LLM] ⚠ Completions.me 429 — fallback Chutes.ai")
+            elif "401" in err or "403" in err:
+                print(luna_err("COMPLETIONS_AUTH_FAILED", "Completions.me key inválida — desativando"))
+                self._completions_ok = False
+            else:
+                print(f"[LLM] ⚠ Completions.me erro: {e} — fallback Chutes.ai")
+            return None
+
+    def _completions_stream(self, headers: dict, payload: dict, model: str, task_type: str, prompt: str) -> Generator:
+        try:
+            with self._session.post(
+                f"{COMPLETIONS_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
+            ) as resp:
+                if resp.status_code == 429:
+                    self._completions_rl_until = time.time() + 60
+                    raise Exception("429")
+                resp.raise_for_status()
+                yield from _parse_sse_stream(resp)
+            return
+        except Exception as e:
+            print(f"[LLM] ⚠ Completions.me stream erro: {e} — fallback Chutes.ai")
+            yield from self._generate_chutes(
+                prompt,
+                task_type,
+                self._chutes_model_for(model),
+                False,
+                payload.get("messages"),
+                None,
             )
 
     # ── Groq ──────────────────────────────────────────────────
@@ -1386,96 +1432,6 @@ class LLMWrapper:
                 print(luna_err("GROQ_API_ERROR", f"Stream: {e}"))
 
         yield "[LLM indisponível] - Nenhum provedor cloud disponível para stream."
-
-    # ── Ollama ────────────────────────────────────────────────
-
-    def _generate_ollama(
-        self,
-        prompt: str,
-        task_type: str,
-        model: str,
-        stream: bool,
-        max_retries: int = 2,
-        messages: list = None,
-        tools: list = None,
-    ) -> str | Generator | dict:
-        params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
-        print(f"[LLM] Usando Ollama: {model} (Task: {task_type})")
-
-        req_msgs = messages if messages else [{"role": "user", "content": prompt}]
-        payload = {
-            "model": model,
-            "messages": req_msgs,
-            "stream": stream,
-            "keep_alive": "10m",
-            "options": {
-                "temperature": params["temperature"],
-                "num_predict": params["max_tokens"],
-                "top_p": params["top_p"],
-            },
-        }
-        if tools and not stream:
-            payload["tools"] = tools
-
-        _model_tier = (
-            "heavy"
-            if model == MODELS.get("heavy")
-            else "fast"
-            if model in (MODELS.get("fast"), MODELS.get("basic"))
-            else "main"
-        )
-        timeout = MODEL_TIMEOUTS.get(_model_tier, 120)
-        ollama_chat_url = OLLAMA_URL.replace("/api/generate", "/api/chat")
-
-        for attempt in range(max_retries + 1):
-            try:
-                if self._session:
-                    resp = self._session.post(ollama_chat_url, json=payload, timeout=timeout, stream=stream)
-                    resp.raise_for_status()
-                    if stream:
-
-                        def ollama_generator():
-                            for line in resp.iter_lines():
-                                if line:
-                                    chunk = json.loads(line)
-                                    if "message" in chunk and "content" in chunk["message"]:
-                                        yield chunk["message"]["content"]
-
-                        return ollama_generator()
-                    else:
-                        data = resp.json()
-                        msg = data.get("message", {})
-                        if msg.get("tool_calls"):
-                            return {"tool_calls": _normalize_tool_calls(msg["tool_calls"]), "message": msg}
-                        return msg.get("content", "").strip()
-                else:
-                    data_json = json.dumps(payload).encode("utf-8")
-                    req = urllib.request.Request(
-                        ollama_chat_url, data=data_json, headers={"Content-Type": "application/json"}
-                    )
-                    with urllib.request.urlopen(req, timeout=timeout) as resp:
-                        if stream:
-
-                            def ollama_generator():
-                                for line in resp:
-                                    if line:
-                                        chunk = json.loads(line)
-                                        if "message" in chunk and "content" in chunk["message"]:
-                                            yield chunk["message"]["content"]
-
-                            return ollama_generator()
-                        else:
-                            data = json.loads(resp.read().decode())
-                            msg = data.get("message", {})
-                            if msg.get("tool_calls"):
-                                return {"tool_calls": _normalize_tool_calls(msg["tool_calls"]), "message": msg}
-                            return msg.get("content", "").strip()
-            except Exception as e:
-                if attempt < max_retries:
-                    time.sleep(1.5)
-                else:
-                    return "" if not stream else iter([f"[Erro Ollama: {e}]"])
-        return ""
 
     def classify(self, text: str, categories: list[str]) -> str:
         cats = ", ".join(f'"{c}"' for c in categories)
@@ -1605,6 +1561,16 @@ class LLMWrapper:
                 },
             },
             {
+                "name": "Completions.me",
+                "active": self._completions_ok,
+                "available": self._completions_available(),
+                "rate_limited_for": rl(self._completions_rl_until),
+                "models": {
+                    k: {"name": v, "rate_limited_for": 0}
+                    for k, v in (globals().get("COMPLETIONS_MODELS") or {}).items()
+                },
+            },
+            {
                 "name": "Chutes.ai",
                 "active": self._chutes_ok,
                 "available": self._chutes_available(),
@@ -1642,13 +1608,6 @@ class LLMWrapper:
                 "rate_limited_for": rl(self._groq_rl_until),
                 "model": model_for(globals().get("GROQ_MODELS")),
             },
-            {
-                "name": "Ollama",
-                "active": self._ollama_ok,
-                "available": self._ollama_ok,
-                "rate_limited_for": 0,
-                "model": self.model,
-            },
         ]
 
     def is_ready(self) -> bool:
@@ -1659,15 +1618,80 @@ class LLMWrapper:
         return (
             self._mistral_available()
             or self._gemini_available()
+            or self._completions_available()
             or self._github_available()
             or self._naga_available()
             or self._bestai_available()
             or self._groq_available()
         )
 
-    # Expõe _use_groq para compatibilidade com luna_core.py
-    def _use_groq(self, task_type: str = "default") -> bool:
-        return self._groq_available()
+    def build_langchain_llm(self, provider: str, temperature: float = 0.3):
+        """Cria um Chat model do LangChain apontando pro provedor especificado."""
+        provider = provider.lower()
+        try:
+            if provider == "groq":
+                from langchain_groq import ChatGroq
+
+                model = GROQ_MODELS.get("main", "qwen/qwen3-32b")
+                if GROQ_API_KEY:
+                    return ChatGroq(groq_api_key=GROQ_API_KEY, model_name=model, temperature=temperature)
+            elif provider == "completions":
+                from langchain_openai import ChatOpenAI
+
+                model = COMPLETIONS_MODELS.get("main", "claude-sonnet-4.6")
+                if COMPLETIONS_API_KEY:
+                    return ChatOpenAI(
+                        api_key=COMPLETIONS_API_KEY, model=model, base_url=COMPLETIONS_BASE_URL, temperature=temperature
+                    )
+            elif provider == "gemini":
+                from langchain_google_genai import ChatGoogleGenerativeAI
+
+                model = GEMINI_MODELS.get("main", "gemini-2.5-flash")
+                if GEMINI_API_KEY:
+                    return ChatGoogleGenerativeAI(api_key=GEMINI_API_KEY, model=model, temperature=temperature)
+            elif provider == "openrouter":
+                from langchain_openai import ChatOpenAI
+
+                model = OPENROUTER_MODELS.get("main", "deepseek/deepseek-chat-v3-0324")
+                if OPENROUTER_API_KEY:
+                    return ChatOpenAI(
+                        api_key=OPENROUTER_API_KEY, model=model, base_url=OPENROUTER_BASE_URL, temperature=temperature
+                    )
+            elif provider == "mistral":
+                from langchain_mistralai import ChatMistralAI
+
+                model = MISTRAL_MODELS.get("main", "mistral-large-latest")
+                if MISTRAL_API_KEY:
+                    return ChatMistralAI(api_key=MISTRAL_API_KEY, model=model, temperature=temperature)
+            elif provider == "github":
+                from langchain_openai import ChatOpenAI
+
+                model = GITHUB_MODELS.get("main", "DeepSeek-V3-0324")
+                if GITHUB_TOKEN:
+                    return ChatOpenAI(
+                        api_key=GITHUB_TOKEN, model=model, base_url=GITHUB_BASE_URL, temperature=temperature
+                    )
+            elif provider == "naga":
+                from langchain_openai import ChatOpenAI
+
+                model = NAGA_MODELS.get("main", "nemotron-3-super-120b-a12b:free")
+                if NAGA_API_KEY:
+                    return ChatOpenAI(
+                        api_key=NAGA_API_KEY, model=model, base_url=NAGA_BASE_URL, temperature=temperature
+                    )
+            elif provider == "bestai":
+                from langchain_openai import ChatOpenAI
+
+                model = BESTAI_MODELS.get("main", "deepseek-v3.1")
+                if BESTAI_API_KEY:
+                    return ChatOpenAI(
+                        api_key=BESTAI_API_KEY, model=model, base_url=BESTAI_BASE_URL, temperature=temperature
+                    )
+        except ImportError as e:
+            print(f"[LLM] ⚠ langchain lib não disponível para {provider}: {e}")
+        except Exception as e:
+            print(f"[LLM] ⚠ Erro ao criar ChatLangChain para {provider}: {e}")
+        return None
 
 
 # Singleton
