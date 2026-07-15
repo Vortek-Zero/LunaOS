@@ -12,15 +12,6 @@ logger = logging.getLogger("luna.agent_tools")
 
 
 # Importações protegidas
-def safe_import(module_path, class_name):
-    try:
-        import importlib
-
-        mod = importlib.import_module(module_path)
-        return getattr(mod, class_name)
-    except (ImportError, AttributeError):
-        return None
-
 
 # Funções reais
 from pathlib import Path
@@ -156,6 +147,23 @@ LUNA_TOOLS = [
                     "max_results": {"type": "integer", "default": 10},
                 },
                 "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "open_interpreter",
+            "description": "Abre e interage com QUALQUER aplicativo do sistema via código. Ideal para abrir programas, manipular janelas, clicar, digitar, ou qualquer automação de desktop. Ex: 'abre o Firefox e pesquisa por gatos', 'abre o Spotify e toca minha playlist'.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "Descrição completa do que fazer no computador.",
+                    }
+                },
+                "required": ["task"],
             },
         },
     },
@@ -980,7 +988,7 @@ LUNA_TOOLS = [
 # Substrings proibidas — o LLM pode alucinar comandos destrutivos
 _CMD_BLOCKLIST = [
     "rm -rf",
-    "rm -r",
+    "rm -r /",
     "sudo rm",
     "mkfs",
     "dd if=",
@@ -992,8 +1000,33 @@ _CMD_BLOCKLIST = [
     "chmod 777 /",
     "chown -R",
     "curl | sh",
+    "curl | bash",
     "wget | sh",
+    "wget | bash",
     "bash <(",
+    "bash -c",
+    "sh -c",
+    "eval ",
+    "exec ",
+    "import os; os.system",
+    "import subprocess",
+    "import shutil",
+    "from os import",
+    "from subprocess import",
+    "socket.",
+    "reverse shell",
+    "bind shell",
+    "chmod +x /",
+    "chmod 777 /",
+    "> /dev/",
+    "| sh",
+    "| bash",
+    "`rm",
+    "`wget",
+    "`curl",
+    "$(rm",
+    "$(wget",
+    "$(curl",
 ]
 
 # Palavras que indicam controle de playback (não são buscas)
@@ -1107,8 +1140,12 @@ def tool_call_signature(tool_call) -> str:
 
 def _is_blocked(cmd: str) -> bool:
     """Retorna True se o comando contém substring perigosa."""
+    import re
+
     cmd_lower = cmd.lower()
-    return any(bad in cmd_lower for bad in _CMD_BLOCKLIST)
+    if any(bad in cmd_lower for bad in _CMD_BLOCKLIST):
+        return True
+    return bool(re.search(r"(?:^|\||;|&&)\s*(rm|dd|mkfs|wget|curl)\s", cmd_lower))
 
 
 def _parse_arguments(raw_arguments) -> dict:
@@ -1259,7 +1296,6 @@ def _run_diagnostics() -> str:
 
     # notes
     try:
-        st_note = getattr(st, "_notes", None) or getattr(fs, "_notes", None)
         test("manage_notes", True, "módulo presente")
     except Exception as e:
         test("manage_notes", False, str(e))
@@ -1296,7 +1332,7 @@ def _run_diagnostics() -> str:
         import subprocess as _sp
 
         r = _sp.run(["wmctrl", "-l"], capture_output=True, text=True, timeout=5).stdout
-        count = len([l for l in r.split("\n") if l.strip()])
+        count = len([line for line in r.split("\n") if line.strip()])
         test("list_windows", True, f"{count} janela(s)")
     except Exception as e:
         test("list_windows", False, str(e))
@@ -1385,6 +1421,14 @@ def _run_diagnostics() -> str:
     except Exception as e:
         test("crew_run", False, str(e))
 
+    # open_interpreter
+    try:
+        from actions.open_interpreter import open_interpreter_run
+
+        test("open_interpreter", callable(open_interpreter_run), "módulo carregado")
+    except Exception as e:
+        test("open_interpreter", False, str(e))
+
     # skill
     try:
         from brain.skills.skill_manager import get_skill_manager
@@ -1416,6 +1460,11 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
         # ── Novas Integrações ─────────────────────────────────
         if name == "agno_run":
             return _format_result(run_agno_task(args.get("task", "")))
+
+        elif name == "open_interpreter":
+            from actions.open_interpreter import open_interpreter_run
+
+            return _format_result(open_interpreter_run(args.get("task", "")))
 
         elif name == "crew_run":
             return _format_result(run_crew_task(args.get("task_description", "")))

@@ -80,7 +80,6 @@ _LOCAL_ACTION_KEYWORDS = (
     "home",
     "diretório",
     "diretorio",
-    "screenshot",
     "print da tela",
 )
 
@@ -126,13 +125,13 @@ def _sanitize_user_response(text: str) -> str:
         return text
     t = text.strip()
 
-    if "tool_calls" in t.lower() or '"action"' in t:
-        # Nunca mostrar vazamento de ferramentas/JSON de ação
-        if re.search(r'"tool_calls"\s*:', t) or re.search(r'^\s*\{\s*"action"', t):
-            inner = re.search(r'"response"\s*:\s*"([^"]*)"', t)
-            if inner:
-                return _sanitize_user_response(inner.group(1))
-            return ""
+    if ("tool_calls" in t.lower() or '"action"' in t) and (
+        re.search(r'"tool_calls"\s*:', t) or re.search(r'^\s*\{\s*"action"', t)
+    ):
+        inner = re.search(r'"response"\s*:\s*"([^"]*)"', t)
+        if inner:
+            return _sanitize_user_response(inner.group(1))
+        return ""
 
     if t.startswith("{"):
         try:
@@ -442,51 +441,6 @@ Exemplos de Tom:
 - Usuário: "Passei na entrevista de emprego!"
   Correto: Caramba, que notícia maravilhosa! 🎉 Parabéns! Você batalhou muito por isso, conta como foi!"""
 
-# Ações que Luna pode executar
-ACTIONS = {
-    "conversar": "Apenas responder (sem ação no sistema)",
-    "open_app": "Abrir aplicativo — params: {app: nome}",
-    "open_url": "Abrir URL — params: {url: endereço}",
-    "search_web": "Pesquisar na web — params: {query: texto}",
-    "ui_click": "Clicar em elemento — params: {target: texto ou x,y}",
-    "ui_type": "Digitar texto — params: {text: conteúdo}",
-    "ui_key": "Pressionar tecla — params: {key: tecla}",
-    "ui_scroll": "Rolar tela — params: {direction: up/down}",
-    "see_screen": "Descrever a tela atual",
-    "write_code": "Escrever código pronto na pasta de programação — params: {filename: nome, content: codigo}",
-    "write_text": "Escrever texto criativo/dissertativo na pasta de trabalho com streaming — params: {filename: nome}",
-    "luna_words": "Consultar dicionário — params: {word: palavra}",
-    "controlar_luz": "Ligar ou desligar a luz da sala — params: {state: liga/desliga}",
-    "google_query": "Consulta Gmail ou Calendar — params: {service: calendar/gmail, max_results: 5}",
-    "google_send_email": "Enviar email via Gmail — params: {to: email, subject: assunto, body: corpo, attachments: arquivos_separados_por_virgula}",
-    "google_create_event": "Criar evento no Calendar — params: {summary: titulo, start_time: ISO8601, end_time: fim, description: desc, location: local, attendees: emails}",
-    "google_edit_event": "Editar evento existente — params: {event_id: id, summary: novo_titulo, start_time: novo_inicio, end_time: novo_fim, description: desc, location: local}",
-    "google_delete_event": "Deletar evento — params: {event_id: id}",
-    "google_events_by_date": "Ver eventos de uma data — params: {date: YYYY-MM-DD}",
-    "google_search_emails": "Buscar emails — params: {query: texto_busca, max_results: 5}",
-    "google_read_email": "Ler email completo — params: {message_id: id}",
-    "google_reply_email": "Responder email — params: {message_id: id, body: resposta}",
-    "google_forward_email": "Encaminhar email — params: {message_id: id, to: destinatario, extra_text: texto_adicional}",
-    "google_mark_read": "Marcar email como lido — params: {message_id: id}",
-    "google_delete_email": "Deletar email — params: {message_id: id}",
-    "google_list_files": "Listar arquivos do workspace Luna-programming — params: {pattern: *.py}",
-    "google_drive_upload": "Subir arquivo para o Google Drive — params: {filepath_or_name: arquivo, folder_id: pasta_id}",
-    "google_drive_list": "Listar arquivos do Google Drive — params: {max_results: 10}",
-    "google_drive_search": "Buscar arquivos no Google Drive — params: {query: termo}",
-    "google_drive_create_folder": "Criar pasta no Google Drive — params: {folder_name: nome, parent_id: pasta_pai_id}",
-    "google_drive_delete": "Deletar/Lixeira arquivo ou pasta no Google Drive — params: {file_id: id}",
-    "create_excel": "Criar planilha Excel — params: {data: lista_de_dados, filename: nome_do_arquivo}",
-    "create_pdf_drive": "Criar PDF via Google Drive — params: {content: texto, title: titulo}",
-    "read_file": "Ler arquivo local — params: {filepath_or_name: caminho_ou_nome}",
-    "save_file": "Salvar arquivo local — params: {content: texto, filepath_or_name: caminho_ou_nome}",
-    "get_system_status": "Verificar status de hardware do sistema — params: {}",
-    "get_running_processes": "Listar processos em execução — params: {limit: 10}",
-    "run_bash_command": "Executar comando síncrono no terminal — params: {command: comando}",
-    "save_home_info": "Salvar informação sobre a casa — params: {text: info, category: categoria}",
-    "search_home_info": "Buscar informação sobre a casa — params: {query: busca}",
-    "image_generate": "Gera imagens usando Google Gemini Imagen — params: {prompt: descricao, size: tamanho}",
-}
-
 
 class LunaCore:
     """
@@ -617,10 +571,10 @@ class LunaCore:
         label = data.get("label") or data.get("name") or event_type
         self.current_action = label
         if self._progress_callback:
-            try:
+            from contextlib import suppress
+
+            with suppress(Exception):
                 self._progress_callback({"type": event_type, "label": label, **data})
-            except Exception:
-                pass
 
     def process(self, text: str, progress_callback=None, mode: str = "", extra_context: str = "") -> str:
         """
@@ -644,10 +598,10 @@ class LunaCore:
             return safety_response
 
         # Registra atividade do usuário para aprendizado de padrões
-        try:
+        from contextlib import suppress
+
+        with suppress(Exception):
             self._activity_logger.log("user_input", text[:100])
-        except Exception:
-            pass
 
         if mode == "code":
             self._code_mode_result = None
@@ -690,6 +644,32 @@ class LunaCore:
                 self.processing = False
                 self.current_action = None
                 self._progress_callback = None
+
+    def process_stream(self, text: str):
+        """Processa com streaming — retorna a resposta completa (placeholder para streaming real)."""
+        if not text or not text.strip():
+            return
+        text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", text)
+        text = re.sub(r"[ \t]+", " ", text).strip()
+        if not text:
+            return
+
+        from brain.safety import check_safety
+
+        safety_response = check_safety(text)
+        if safety_response:
+            yield safety_response
+            return
+
+        with self._lock:
+            self.processing = True
+            try:
+                response = self._run_autonomous_loop(text)
+                yield response
+            except Exception as e:
+                yield f"Erro: {e}"
+            finally:
+                self.processing = False
 
     def _run_autonomous_loop(self, text: str, mode: str = "", extra_context: str = "") -> str:
         """
@@ -762,7 +742,8 @@ class LunaCore:
             "read_webpage, system_control, google_services, get_weather, control_spotify, manage_reminder, "
             "manage_notes, manage_shopping_list, set_timer, manage_focus, take_screenshot, see_screen, "
             "clipboard_action, control_media, kill_process, send_notification, control_window, "
-            "desktop_type, desktop_hotkey, whatsapp_action, image_generate, manage_goals, semantic_memory, recall_episodes.",
+            "desktop_type, desktop_hotkey, whatsapp_action, image_generate, manage_goals, semantic_memory, recall_episodes, "
+            "open_interpreter, crew_run.",
             "",
             "REGRAS ABSOLUTAS:",
             "- Se você precisa executar algo, USE A FERRAMENTA. NUNCA escreva *faz ação* no texto.",
@@ -958,7 +939,18 @@ class LunaCore:
                 final_response = _sanitize_user_response(cleaned)
 
                 # Auto-avaliação (Reflexão) se alguma ferramenta foi executada
-                if tools_executed_count > 0 and step < max_steps - 1:
+                # Pula reflexão para ferramentas simples que não precisam validação extra
+                _skip_reflection = False
+                if tools_executed_count > 0:
+                    _last_tool_name = ""
+                    for m in reversed(messages):
+                        if isinstance(m, dict) and m.get("role") == "tool":
+                            _last_tool_name = m.get("name", "")
+                            break
+                    if _last_tool_name in ("image_generate", "get_weather", "set_timer", "send_notification"):
+                        _skip_reflection = True
+
+                if tools_executed_count > 0 and step < max_steps - 1 and not _skip_reflection:
                     self._emit_progress("thinking", label="Auto-avaliando resultado...")
                     reflection = self._reflect(text, messages)
                     if reflection.get("action_required") or not reflection.get("goal_achieved"):
@@ -1253,120 +1245,8 @@ class LunaCore:
         except (EOFError, OSError):
             return False
 
-    def _classify_model_tier(self, text: str) -> dict:
-        """
-        Classifica qual tier/modelo usar baseado no conteúdo do texto.
-        Usa o query_complexity do OpenJarvis para classificação inteligente.
-        Retorna dict com: name, tails, flags (use_fast, use_heavy, use_basic).
-        """
-        from config import MODELS
-
-        qi = classify_query(text)
-        tier = qi.get("model_tier", "main")
-        model_name = MODELS.get(tier, MODELS["main"])
-
-        flags = {
-            "use_heavy": tier == "heavy",
-            "use_fast": tier == "fast",
-            "use_basic": tier == "basic",
-        }
-        tails_map = {"fast": 2, "basic": 1, "main": 3, "heavy": 4}
-        return {
-            "name": model_name,
-            "tails": tails_map.get(tier, 3),
-            "flags": flags,
-        }
-
     def _run_writer_stream(self, text: str) -> str:
-        """Modo Escritor Engine: Planejamento -> Stream -> Refinamento."""
-        import re
-        import threading
-
-        from config import MODELS
-
-        model_key = self._writing_model
-        model_name = MODELS[model_key]
-
-        print("\n[Writer] Iniciando Engine Literária...")
-        print("[Writer] Fase 1: Planejamento Arquitetural (Fast LLM)...")
-
-        # Etapa 1: Planning
-        plan_prompt = self._writer.build_planning_prompt(text)
-        plan_text = self._llm.generate(plan_prompt, task_type="planning", model=MODELS.get("fast", model_name))
-        print("[Writer] Estrutura montada.")
-
-        # Etapa 2: Streaming Draft
-        print(f"[Writer] Fase 2: Streaming Draft ({model_name})...")
-        draft_prompt = self._writer.build_draft_prompt(plan_text, text)
-        stream_gen = self._llm.generate(
-            draft_prompt,
-            task_type="creative",
-            model=model_name,
-            stream=True,
-        )
-
-        buffer = ""
-        first_line_done = False
-        filename = "texto_gerado.txt"
-        f_handle = None
-        filepath = None
-        full_draft = ""
-
-        for chunk in stream_gen:
-            if str(chunk).startswith("[Erro"):
-                return f"Falha na geração do texto: {chunk}"
-
-            print(chunk, end="", flush=True)
-            full_draft += chunk
-
-            if not first_line_done:
-                buffer += chunk
-                if "\n" in buffer:
-                    first_line, rest = buffer.split("\n", 1)
-                    m = re.search(r"\[FILE:\s*(.+)\]", first_line, re.IGNORECASE)
-                    if m:
-                        raw = m.group(1).strip()
-                        raw = re.sub(r'[\\/"\'\\[\\]{}]', "", raw).strip()
-                        if raw:
-                            filename = raw if raw.endswith(".txt") else raw + ".txt"
-
-                    try:
-                        f_handle, filepath = self._writer.open_file_for_stream(filename)
-                        if rest and f_handle:
-                            f_handle.write(self._writer.clean_chunk(rest))
-                            f_handle.flush()
-                    except Exception as e:
-                        print(f"\n[Writer] Erro ao abrir arquivo: {e}")
-
-                    first_line_done = True
-            else:
-                if f_handle:
-                    f_handle.write(self._writer.clean_chunk(chunk))
-                    f_handle.flush()
-
-        print("\n[Writer] Streaming de Rascunho concluído!")
-        if f_handle:
-            f_handle.close()
-
-        # Etapa 3: Refinamento Semântico em Background
-        def bg_refine():
-            print("\n[Writer] Fase 3: Refinamento Semântico Background inciado...")
-            refiner_prompt = self._writer.build_refiner_prompt(full_draft)
-            refined_text = self._llm.generate(refiner_prompt, task_type="creative", model=model_name)
-            if filepath and filepath.exists() and len(refined_text) > 50:
-                final_clean = self._writer.clean_chunk(refined_text)
-                with open(filepath, "w", encoding="utf-8") as f:
-                    f.write(final_clean)
-                print(f"[Writer] ✔ Refinamento concluído e salvo em {filename}.")
-
-        if filepath:
-            threading.Thread(target=bg_refine, daemon=True).start()
-
-        model_label = "Alto (7B)" if model_key == "heavy" else "Médio (3B)"
-        return (
-            f"✍️ Rascunho escrito na tela! Arquivo: '{filename}' salvo na pasta de projetos. "
-            f"\n💡 A inteligência de refinamento semântico está esculpindo a versão final do arquivo em background! [Modelo: {model_label}]"
-        )
+        return "Modo escritor desativado nesta versão."
 
     # ── Etapas do pipeline ────────────────────────────────────
 
@@ -1447,6 +1327,24 @@ class LunaCore:
                 f"Tempo médio: {avg_req:.0f}ms | Modelo: {avg_mdl:.0f}ms | Cache hits: {hits} | misses: {misses}"
             ), None
 
+        if tl in ("versao", "versão", "versões", "versoes"):
+            from brain.llm import get_llm
+            from version import __repo__, __version__
+
+            llm = get_llm()
+            provs = [p for p in llm.get_providers_status() if p["active"]]
+            prov_line = " | ".join(f"{p['name']}" for p in provs)
+            return f"Luna v{__version__} ({__repo__})\nProvedores ativos: {prov_line}", None
+
+        if tl in ("atualizar", "update", "atualiza"):
+            try:
+                from actions.updater import perform_update
+
+                result = perform_update()
+                return result, None
+            except Exception as e:
+                return f"Falha ao atualizar: {e}", None
+
         return None, None
 
     def _daily_briefing(self) -> str:
@@ -1520,11 +1418,10 @@ Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui
         # Se o LLM retornou JSON (não deveria, mas por segurança)
         if response and response.strip().startswith("{"):
             import json as _json
+            from contextlib import suppress
 
-            try:
+            with suppress(Exception):
                 response = _json.loads(response).get("response", response)
-            except Exception:
-                pass
 
         return response or "Não consegui gerar o briefing agora. Tente novamente."
 
@@ -1920,268 +1817,7 @@ Você deve responder APENAS com um JSON estruturado:
         conn.close()
         return result_text
 
-    def _filter_tools(self, prompt_text: str, context_text: str, all_tools: list) -> list:
-        """
-        Filtra dinamicamente a lista de ferramentas (LUNA_TOOLS) com base na intenção do usuário,
-        evitando desperdício de tokens nos modelos gratuitos (Gemini/OpenRouter) e contornando
-        o limite de TPM da Groq (6000 tokens).
-        """
-        if not all_tools:
-            return []
-
-        p_lower = prompt_text.lower()
-        c_lower = context_text.lower() if context_text else ""
-        full_text = f"{p_lower} {c_lower}"
-
-        # Lista de verbos/ações que indicam que o usuário quer uma interação
-        action_keywords = [
-            "abre",
-            "abrir",
-            "inicia",
-            "iniciar",
-            "pesquisa",
-            "pesquisar",
-            "busca",
-            "buscar",
-            "procura",
-            "procurar",
-            "clica",
-            "clicar",
-            "digita",
-            "digitar",
-            "roda",
-            "rodar",
-            "executa",
-            "executar",
-            "comando",
-            "terminal",
-            "mostra",
-            "mostrar",
-            "veja",
-            "ver",
-            "olha",
-            "olhar",
-            "clique",
-            "spotify",
-            "toca",
-            "tocar",
-            "musica",
-            "música",
-            "playlist",
-            "pausa",
-            "parar",
-            "luz",
-            "lâmpada",
-            "lampada",
-            "desliga",
-            "liga",
-            "temperatura",
-            "clima",
-            "tempo",
-            "chove",
-            "chuva",
-            "previsão",
-            "previsao",
-            "timer",
-            "cronometro",
-            "cronômetro",
-            "minutos",
-            "segundos",
-            "lembrete",
-            "lembrar",
-            "lembra",
-            "anota",
-            "anotar",
-            "bloco",
-            "nota",
-            "compras",
-            "compra",
-            "mercado",
-            "planilha",
-            "excel",
-            "pdf",
-            "briefing",
-            "resumo",
-            "hoje",
-            "print",
-            "screenshot",
-            "tela",
-            "copia",
-            "copiar",
-            "colar",
-            "email",
-            "gmail",
-            "agenda",
-            "compromisso",
-            "evento",
-            "drive",
-            "pasta",
-            "upload",
-            "baixar",
-            "download",
-            "arquivo",
-            "escreva",
-            "escrever",
-            "crie",
-            "criar",
-            "desenvolva",
-            "desenvolver",
-            "programe",
-            "programar",
-            "codigo",
-            "código",
-            "browser",
-            "navegador",
-            "site",
-            "url",
-            "http",
-            "www.",
-            "janela",
-            "maximize",
-            "minimize",
-            "fechar",
-            "clipboard",
-            "copie",
-            "foco",
-            "pomodoro",
-        ]
-
-        # Se não houver absolutamente nenhuma keyword de ação, assumimos conversa pura
-        has_action = any(kw in full_text for kw in action_keywords)
-        if not has_action:
-            # Se for curto e sem ação, retorna lista vazia (sem ferramentas)
-            # Poupa 7000 tokens por chat para Gemini/OpenRouter/Groq!
-            if len(p_lower.split()) < 10 or any(p_lower.startswith(w) for w in ["oi", "olá", "como", "tudo", "quem"]):
-                print(
-                    "[Core Router] 🧠 Intenção Conversacional Pura detectada. Omitindo todas as ferramentas (Economia de ~6500 tokens)."
-                )
-                return []
-
-        # Base de ferramentas essenciais para ações em desktop (sempre presentes se houver ação)
-        base_tool_names = {
-            "open_app",
-            "open_url",
-            "search_web",
-            "see_screen",
-            "click_on_screen",
-            "run_bash_command",
-            "run_terminal_command",
-        }
-
-        # Mapeamento de keywords para ferramentas especializadas
-        specialized_mappings = [
-            # Spotify
-            (["spotify", "toca", "tocar", "musica", "música", "playlist", "pausa", "parar"], ["control_spotify"]),
-            # Luzes
-            (["luz", "lâmpada", "lampada", "sala", "iluminação"], ["control_lights"]),
-            # Clima
-            (["tempo", "clima", "chuva", "temperatura", "chove", "previsão", "previsao"], ["get_weather"]),
-            # Timer e Alarmes
-            (["timer", "cronometro", "cronômetro", "segundos"], ["set_timer"]),
-            # Lembretes
-            (["lembra", "lembrete", "avisa", "avisar"], ["manage_reminder"]),
-            # Notas
-            (["nota", "anota", "bloco", "anotação", "anotacao"], ["manage_notes"]),
-            # Lista de Compras
-            (["compra", "mercado", "compras", "lista de compra"], ["manage_shopping_list"]),
-            # Foco / Pomodoro
-            (["foco", "pomodoro", "estudar", "concentrar"], ["manage_focus"]),
-            # Briefing
-            (["briefing", "resumo", "hoje", "dia"], ["get_daily_briefing"]),
-            # Planilhas e Documentos
-            (["excel", "planilha", "xls"], ["create_excel"]),
-            (["pdf"], ["create_pdf_drive"]),
-            # Gmail / Email
-            (
-                ["gmail", "email", "mande", "enviar", "envie", "assunto", "corpo", "destinatario", "destinatário"],
-                [
-                    "google_query",
-                    "google_send_email",
-                    "google_search_emails",
-                    "google_read_email",
-                    "google_reply_email",
-                    "google_forward_email",
-                    "google_mark_read",
-                    "google_delete_email",
-                    "google_list_files",
-                ],
-            ),
-            # Calendar / Agenda
-            (
-                ["agenda", "calendar", "compromisso", "evento", "data", "calendario", "calendário"],
-                [
-                    "google_query",
-                    "google_create_event",
-                    "google_edit_event",
-                    "google_delete_event",
-                    "google_events_by_date",
-                ],
-            ),
-            # Google Drive / Arquivos em nuvem
-            (
-                ["drive", "upload", "baixar", "pasta", "nuvem"],
-                [
-                    "google_drive_upload",
-                    "google_drive_list",
-                    "google_drive_search",
-                    "google_drive_create_folder",
-                    "google_drive_delete",
-                ],
-            ),
-            # Screenshots
-            (["print", "screenshot", "captura"], ["take_screenshot"]),
-            # Clipboard
-            (
-                ["copia", "copiar", "colar", "clipboard", "área de transferência", "area de transferencia"],
-                ["clipboard_action"],
-            ),
-            # Filesystem local
-            (
-                [
-                    "arquivo",
-                    "txt",
-                    "ler",
-                    "salvar",
-                    "escrever",
-                    "escreva",
-                    "crie um arquivo",
-                    "pasta",
-                    "pastas",
-                    "home",
-                    "diretório",
-                    "diretorio",
-                    "workspace",
-                ],
-                ["read_file", "save_file", "filesystem", "google_list_files"],
-            ),
-            # Window control
-            (["janela", "maximize", "minimize", "workspace", "fechar janela"], ["control_window"]),
-            # Browser task complexa
-            (
-                ["browser", "navegador", "site", "url", "automatize", "clique no link", "clique no resultado"],
-                ["run_browser_task", "click_web_result", "read_webpage"],
-            ),
-        ]
-
-        selected_tool_names = set(base_tool_names)
-
-        # Varre os mapeamentos e adiciona ferramentas extras se bater com a palavra-chave
-        for keywords, tools in specialized_mappings:
-            if any(kw in full_text for kw in keywords):
-                selected_tool_names.update(tools)
-
-        # Filtra a lista de ferramentas real com base nos nomes selecionados
-        filtered = [t for t in all_tools if t.get("function", {}).get("name", "") in selected_tool_names]
-
-        # Exibe métricas de otimização
-        import json
-
-        savings = len(all_tools) - len(filtered)
-        print(
-            f"[Core Router] 🔧 Otimização de Ferramentas: {len(filtered)} ativas (omitidas {savings}). Reduziu tokens de tools de ~6200 para ~{len(json.dumps(filtered)) // 4}!"
-        )
-
-        return filtered
+    # ── Etapas do pipeline ────────────────────────────────────
 
     def _auto_extract_facts(self, user_text: str, response: str) -> None:
         """Extrai fatos memoráveis via LLM em thread background."""
@@ -2435,7 +2071,7 @@ def run_tests():
     ]
 
     all_ok = True
-    for text, expected_action in tests:
+    for text, _expected_action in tests:
         print(f"\n[Teste] Input: '{text}'")
         resp = luna.process(text)
         print(f"[Teste] Resposta: '{resp[:80]}...' " if len(resp) > 80 else f"[Teste] Resposta: '{resp}'")
