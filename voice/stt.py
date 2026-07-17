@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-voice/stt.py — STT híbrido:
-  Wakeword: energy gate local (zero latência) + Groq Whisper para transcrição
+voice/stt.py — STT híbrido com openWakeWord (VAD Silero):
+  Wakeword: openWakeWord VAD (detecção de fala precisa) + Whisper tiny local para verificar "Luna"
   Comando:  Groq Whisper Large v3 (200ms latência, perfeito em PT-BR)
   Fallback: faster-whisper local (se sem API key)
 """
@@ -44,6 +44,27 @@ try:
     HAS_GROQ_LIB = True
 except ImportError:
     HAS_GROQ_LIB = False
+
+try:
+    from google.cloud import speech as google_speech
+
+    HAS_GOOGLE_STT = True
+except ImportError:
+    HAS_GOOGLE_STT = False
+
+try:
+    from google.oauth2 import service_account
+
+    HAS_GOOGLE_OAUTH = True
+except ImportError:
+    HAS_GOOGLE_OAUTH = False
+
+try:
+    import openwakeword
+
+    HAS_OWW = True
+except ImportError:
+    HAS_OWW = False
 
 # ── Constantes ─────────────────────────────────────────────────
 LANGUAGE = "pt"
@@ -110,6 +131,17 @@ def _play_activation_sound() -> None:
     print("\a", end="", flush=True)
 
 
+def _speak_activation_phrase() -> None:
+    """Fala 'Estou toda ouvidos' após o som usando TTS (não bloqueante)."""
+    try:
+        from voice.tts import get_tts
+
+        tts = get_tts()
+        tts.speak("Estou toda ouvidos", blocking=False)
+    except Exception:
+        pass
+
+
 def _pcm_to_wav(pcm: bytes, sample_rate: int = SAMPLE_RATE) -> str:
     """Salva PCM16 como WAV em /tmp e retorna o path."""
     path = f"/tmp/luna_stt_{uuid.uuid4().hex}.wav"
@@ -174,6 +206,42 @@ def _record_until_silence(
 # ══════════════════════════════════════════════════════════════
 
 
+def _transcribe_google(wav_path: str) -> str:
+    """Transcreve com Google Cloud Speech-to-Text (mais preciso em PT-BR)."""
+    try:
+        from config import GOOGLE_APPLICATION_CREDENTIALS
+
+        if GOOGLE_APPLICATION_CREDENTIALS and Path(GOOGLE_APPLICATION_CREDENTIALS).exists():
+            creds = service_account.Credentials.from_service_account_file(GOOGLE_APPLICATION_CREDENTIALS)
+            client = google_speech.SpeechClient(credentials=creds)
+        else:
+            client = google_speech.SpeechClient()
+
+        with open(wav_path, "rb") as f:
+            audio = google_speech.RecognitionAudio(content=f.read())
+
+        config = google_speech.RecognitionConfig(
+            encoding=google_speech.RecognitionConfig.AudioEncoding.LINEAR16,
+            sample_rate_hertz=16000,
+            language_code="pt-BR",
+            model="latest_short",
+            enable_automatic_punctuation=True,
+        )
+
+        response = client.recognize(config=config, audio=audio)
+        if response.results:
+            return " ".join(r.alternatives[0].transcript for r in response.results).strip()
+        return ""
+    except Exception as e:
+        print(err("STT_GOOGLE_FAILED", str(e)))
+        return ""
+    finally:
+        try:
+            os.unlink(wav_path)
+        except Exception:
+            pass
+
+
 def _transcribe_groq(wav_path: str) -> str:
     """Transcreve com Groq Whisper Large v3 (~200ms)."""
     try:
@@ -235,10 +303,21 @@ class STTEngine:
         self._stop_bg = threading.Event()
         self._lock = threading.Lock()
         self._bg_thread: threading.Thread | None = None
+        self._vad = None
 
+        if HAS_OWW:
+            try:
+                from openwakeword.vad import VAD
+                self._vad = VAD()
+                print("[STT] ✓ openWakeWord VAD (Silero) carregado")
+            except Exception as e:
+                print(err("STT_VAD_FAILED", str(e)))
+
+        if HAS_GOOGLE_STT:
+            print("[STT] ✓ Google Cloud Speech-to-Text ativo (primário).")
         if HAS_GROQ:
-            print("[STT] ✓ Groq Whisper Large v3 ativo (online).")
-        else:
+            print("[STT] ✓ Groq Whisper Large v3 ativo (fallback).")
+        if not HAS_GROQ and not HAS_GOOGLE_STT:
             if not HAS_GROQ_LIB:
                 print("[STT] ⚠ groq não instalado — usando Whisper local.")
             elif not GROQ_API_KEY:
@@ -256,28 +335,40 @@ class STTEngine:
             self._local_model = None
 
     def _transcribe(self, wav_path: str) -> str:
-        """Usa Groq se disponível, senão Whisper local."""
+        """Google STT (mais preciso) → Groq Whisper → Whisper local."""
+        if HAS_GOOGLE_STT:
+            text = _transcribe_google(wav_path)
+            if text:
+                return text
         if HAS_GROQ:
             return _transcribe_groq(wav_path)
         elif self._local_model:
             return _transcribe_local(self._local_model, wav_path)
         return ""
 
-    # ── Wakeword loop (energy gate + transcrição) ──────────────
+    # ── Wakeword loop (openWakeWord VAD + transcrição local) ────
+
+    def _vad_score(self, data: bytes) -> float:
+        """Retorna confiança VAD (0-1) usando openWakeWord/Silero."""
+        if not self._vad:
+            return 0.0
+        import numpy as np
+        chunks = struct.unpack(f"{len(data)//2}h", data)
+        audio = np.array(chunks, dtype=np.int16)
+        return float(self._vad.predict(audio))
 
     def _wakeword_loop(self) -> None:
-        """Detecta fala por energia e transcreve só quando necessário.
-        VAD adaptativo: cada novo burst de fala aumenta a tolerância a pausas."""
+        """Detecta fala via openWakeWord VAD (Silero), transcreve localmente para 'Luna'."""
         pa = _get_pa()
         if not pa:
             return
 
-        ENERGY_THRESHOLD = 300  # RMS mínimo para considerar fala
-        BASE_SILENCE = 15  # ~480ms base
-        EXTRA_PER_BURST = 6  # +~190ms por burst
-        MAX_SILENCE = 70  # ~2.2s máximo
-        PRE_FRAMES = 8  # frames de buffer pré-onset
-        MAX_CHUNKS = 480  # máx ~15s (480 × 512 / 16000)
+        VAD_THRESHOLD = 0.3
+        BASE_SILENCE = 15
+        EXTRA_PER_BURST = 6
+        MAX_SILENCE = 70
+        PRE_FRAMES = 8
+        MAX_CHUNKS = 480
         CHUNK_WAKE = 512
 
         consecutive_errors = 0
@@ -314,21 +405,20 @@ class STTEngine:
                 try:
                     while not self._stop_bg.is_set():
                         data = stream.read(CHUNK_WAKE, exception_on_overflow=False)
-                        shorts = struct.unpack(f"{CHUNK_WAKE}h", data)
-                        rms = math.sqrt(sum(s * s for s in shorts) / CHUNK_WAKE)
+                        vad = self._vad_score(data)
 
                         if not listening:
                             ring_buf.append(data)
                             if len(ring_buf) > PRE_FRAMES:
                                 ring_buf.pop(0)
-                            if rms > ENERGY_THRESHOLD:
+                            if vad > VAD_THRESHOLD:
                                 listening = True
                                 speech_frames = list(ring_buf)
                                 silent_count = 0
                                 speech_bursts = 1
                         else:
                             speech_frames.append(data)
-                            if rms > ENERGY_THRESHOLD:
+                            if vad > VAD_THRESHOLD:
                                 if silent_count > 0:
                                     speech_bursts += 1
                                 silent_count = 0
@@ -372,7 +462,7 @@ class STTEngine:
         self._stop_bg.clear()
         self._bg_thread = threading.Thread(target=self._wakeword_loop, daemon=True, name="wakeword-listener")
         self._bg_thread.start()
-        mode = "Groq" if HAS_GROQ else "Whisper local"
+        mode = "Google STT" if HAS_GOOGLE_STT else ("Groq" if HAS_GROQ else "Whisper local")
         print(f"[STT] ✓ Wakeword listener ativo ('Luna') — {mode}")
 
     def stop_wakeword_listener(self) -> None:
@@ -385,7 +475,8 @@ class STTEngine:
             return None
 
         _play_activation_sound()
-        time.sleep(0.15)
+        _speak_activation_phrase()
+        time.sleep(0.6)
 
         with self._lock:
             print("[STT] 🎤 Pode falar...")
@@ -414,7 +505,7 @@ class STTEngine:
         return self.enabled
 
     def is_available(self) -> bool:
-        if HAS_GROQ and HAS_PYAUDIO:
+        if HAS_PYAUDIO and (HAS_GOOGLE_STT or HAS_GROQ):
             return True
         return HAS_WHISPER and HAS_PYAUDIO and self._local_model is not None
 

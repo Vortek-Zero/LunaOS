@@ -698,7 +698,32 @@ async def models_status(_key: str = Depends(verify_api_key)):
     from brain.llm import get_llm
 
     llm = get_llm()
-    return {"providers": llm.get_providers_status(), "available": llm.available}
+    return {"providers": llm.get_providers_status(), "available": llm.available, "cascade": llm.get_cascade_order()}
+
+
+class CascadeRequest(BaseModel):
+    order: str
+
+
+@app.post("/api/cascade")
+async def set_cascade(req: CascadeRequest, _key: str = Depends(verify_api_key)):
+    """Altera a ordem do cascade de provedores LLM.
+    Ex: {"order": "puter,groq,gemini"}"""
+    luna = get_luna()
+    msg = luna.set_cascade(req.order)
+    return {"success": True, "message": msg}
+
+
+class CrewRequest(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/crew")
+async def set_crew(req: CrewRequest, _key: str = Depends(verify_api_key)):
+    """Ativa/desativa o Crew Mode (múltiplos LLMs especializados)."""
+    luna = get_luna()
+    msg = luna.set_crew_mode(req.enabled)
+    return {"success": True, "message": msg, "enabled": req.enabled}
 
 
 @app.get("/api/apps")

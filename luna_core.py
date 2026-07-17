@@ -564,6 +564,20 @@ class LunaCore:
         """Retorna o modo atual: 'medium' ou 'high'."""
         return "high" if self._writing_model == "heavy" else "medium"
 
+    def set_cascade(self, order: str) -> str:
+        """Altera a ordem dos provedores LLM dinamicamente.
+        Ex: 'puter,groq,gemini' ou 'groq,mistral'"""
+        before = self._llm.get_cascade_order()
+        self._llm.set_cascade_order(order)
+        after = self._llm.get_cascade_order()
+        return f"Cascade alterado: {', '.join(before)} → {', '.join(after)}"
+
+    def get_cascade(self) -> str:
+        return ", ".join(self._llm.get_cascade_order())
+
+    def set_crew_mode(self, enabled: bool) -> str:
+        return self._llm.set_crew_mode(enabled)
+
     # ── Processamento principal ───────────────────────────────
 
     def _emit_progress(self, event_type: str, **data) -> None:
