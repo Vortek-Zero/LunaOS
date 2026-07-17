@@ -108,7 +108,7 @@ VOICE_CONFIG = {
 
 # --- MOTOR DE TTS ---
 # Prioridade de motores de voz
-TTS_PRIORITY = os.getenv("LUNA_TTS_PRIORITY", "edge_tts,google_cloud,f5,elevenlabs,azure,pyttsx3").split(",")
+TTS_PRIORITY = os.getenv("LUNA_TTS_PRIORITY", "puter,edge_tts,google_cloud,f5,elevenlabs,azure,pyttsx3").split(",")
 
 # Credenciais e vozes de outros motores
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
@@ -116,6 +116,28 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "21m00Tcm4TlvDq8ikWAM")  
 AZURE_SPEECH_KEY = os.getenv("AZURE_SPEECH_KEY", "")
 AZURE_SPEECH_REGION = os.getenv("AZURE_SPEECH_REGION", "eastus")
 AZURE_SPEECH_VOICE = os.getenv("AZURE_SPEECH_VOICE", "pt-BR-ThalitaNeural")
+
+# Puter.ai — TTS + LLM + Image via Puter API
+PUTER_TOKEN = os.getenv("PUTER_TOKEN", "")
+PUTER_BASE_URL = "https://api.puter.com"
+
+# TTS
+PUTER_VOICE = os.getenv("PUTER_VOICE", "nova")
+PUTER_MODEL = os.getenv("PUTER_MODEL", "gpt-4o-mini-tts")  # TTS model
+PUTER_SPEED = float(os.getenv("PUTER_SPEED", "0.55"))
+
+# LLM — modelos Puter ativos: gpt-5.2, gpt-5, o3, grok-3, claude-sonnet-5, deepseek-r1-0528, llama-4-maverick
+# gpt-5.2 = melhor para dev (pesado, agente autônomo)
+# claude-sonnet-5 = agente autônomo (Anthropic)
+# gpt-4o-mini = econômico para usuários
+PUTER_LLM_MODELS = {
+    "heavy": os.getenv("PUTER_LLM_HEAVY", "gpt-5.2"),
+    "main": os.getenv("PUTER_LLM_MAIN", "o3"),
+    "fast": os.getenv("PUTER_LLM_FAST", "gpt-4o-mini"),
+    "reasoning": os.getenv("PUTER_LLM_REASONING", "deepseek-r1-0528"),
+    "agent": os.getenv("PUTER_LLM_AGENT", "claude-sonnet-5"),
+    "coding": os.getenv("PUTER_LLM_CODING", "gpt-5"),
+}
 
 # Se USE_LOCAL_F5 for True, usará o clonador de voz zero-shot (F5-TTS) com seu MP3
 USE_LOCAL_F5 = False
@@ -131,6 +153,39 @@ WAKEWORDS = ["ei luna", "luna", "hey luna"]
 # ── Cache ─────────────────────────────────────────────────────
 CACHE_TTL_HOURS = int(os.getenv("LUNA_CACHE_TTL", "24"))
 CACHE_MAX_ENTRIES = int(os.getenv("LUNA_CACHE_MAX", "500"))
+
+# ── Cascade LLM (ordem dos provedores) ─────────────────────────
+# Lista separada por vírgula. O primeiro disponível vence.
+# Nomes válidos: mistral, gemini, openrouter, completions, chutes,
+#                github, naga, bestai, groq, freetheai, puter
+CASCADE_ORDER = os.getenv(
+    "LUNA_CASCADE_ORDER",
+    "mistral,gemini,openrouter,completions,chutes,github,naga,bestai,groq,freetheai,puter",
+).split(",")
+CASCADE_ORDER = [p.strip() for p in CASCADE_ORDER if p.strip()]
+
+# ── Crew Mode (múltiplos LLMs especializados em simultâneo) ──
+# Quando CREW_ENABLED=true, cada task_type usa o melhor modelo:
+#   criatividade/chat → grok-3
+#   código           → gpt-5.2
+#   raciocínio       → o3
+#   escrita          → claude-sonnet-5
+#   segunda opinião  → deepseek-r1-0528
+#   compatibilidade  → gpt-4o
+#   velocidade       → gpt-4o-mini
+CREW_ENABLED = os.getenv("CREW_ENABLED", "true").lower() in ("true", "1", "yes")
+
+CREW_MODELS = {
+    "conversational": os.getenv("CREW_CHAT", "puter/grok-3"),
+    "creative":       os.getenv("CREW_CREATIVE", "puter/grok-3"),
+    "default":        os.getenv("CREW_DEFAULT", "puter/grok-3"),
+    "coding":         os.getenv("CREW_CODING", "puter/gpt-5.2"),
+    "planning":       os.getenv("CREW_REASONING", "puter/o3"),
+    "factual":        os.getenv("CREW_FACTUAL", "puter/deepseek-r1-0528"),
+    "command":        os.getenv("CREW_FAST", "puter/gpt-4o-mini"),
+    "writing":        os.getenv("CREW_WRITING", "puter/claude-sonnet-5"),
+    "compat":         os.getenv("CREW_COMPAT", "puter/gpt-4o"),
+}
 
 # ── Agent ──────────────────────────────────────────────────────
 MAX_STEPS = int(os.getenv("LUNA_MAX_STEPS", "15"))
@@ -226,6 +281,31 @@ BESTAI_MODELS = {
     "fallback": "qwen3.5-flash",
 }
 
+# ── Completions.me API (gratuito, ilimitado) ──────────────────
+# completions.me — Claude Opus 4.6, GPT-5.2, Gemini 3.1 Pro, Grok, etc.
+COMPLETIONS_API_KEY = os.getenv("COMPLETIONS_API_KEY", "")
+COMPLETIONS_BASE_URL = "https://completions.me/api/v1"
+
+COMPLETIONS_MODELS = {
+    "heavy": "claude-opus-4.6",
+    "main": "claude-sonnet-4.6",
+    "fast": "claude-haiku-4.5",
+    "fallback": "gemini-3.1-pro-preview",
+    "fallback2": "gpt-5.2",
+}
+
+# ── FreeTheAi API (gratuito, Discord check-in) ────────────────
+# freetheai.xyz — 60+ modelos free via Discord, GPT-5.5, GLM, Nemotron
+FREETHEAI_API_KEY = os.getenv("FREETHEAI_API_KEY", "")
+FREETHEAI_BASE_URL = "https://api.freetheai.xyz/v1"
+
+FREETHEAI_MODELS = {
+    "heavy": "bbl/gpt-5.5-mini",
+    "main": "glm/glm-5.1",
+    "fast": "opc/deepseek-v4-flash-free",
+    "fallback": "opc/nemotron-3-ultra-free",
+}
+
 # ── Groq LLM API ──────────────────────────────────────────────
 # console.groq.com — Whisper STT + LLM (qwen3, llama4, deepseek via Groq)
 GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
@@ -241,6 +321,11 @@ GROQ_MODELS = {
 # ── Tavily Search API ─────────────────────────────────────────
 # app.tavily.com — substitui Wikipedia + DuckDuckGo no fact-check
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "")
+
+# ── Google Cloud Speech-to-Text ──────────────────────────────
+# Caminho para o JSON de credenciais do service account do Google Cloud
+# (alternativa à autenticação ADC padrão)
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 
 # Groq Vision — modelo com suporte a imagem (403 = trocar ou deixar vazio para OCR-only)
 GROQ_VISION_MODEL = os.getenv("GROQ_VISION_MODEL", "meta-llama/llama-4-scout-17b-16e-instruct")

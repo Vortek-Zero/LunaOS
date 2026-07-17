@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-brain/llm.py — LLM híbrido: Mistral → Gemini → OpenRouter → Completions.me → Chutes.ai → GitHub → Naga → Best AI → Groq
+brain/llm.py — LLM híbrido + Crew Mode: Mistral → Gemini → OpenRouter → ... → Puter
 
 Prioridade:
   1. Mistral           → mistral-large/small (primário quando key disponível)
@@ -12,7 +12,8 @@ Prioridade:
   7. Naga AI           → Nemotron 3, Llama (gratuito)
   8. Best AI           → DeepSeek, Qwen, Gemini (gratuito)
   9. Groq              → qwen3-32b, llama-4-scout (free tier)
-  10. Ollama            → qwen2.5 local (fallback offline)
+  10. FreeTheAi         → GPT-5.5, GLM, Nemotron (grátis, Discord check-in)
+  11. Puter             → gpt-5.2, gpt-5, o3, grok-3, claude-sonnet-5, deepseek-r1-0528 (dev tier)
 """
 
 import json
@@ -57,12 +58,18 @@ try:
         BESTAI_API_KEY,
         BESTAI_BASE_URL,
         BESTAI_MODELS,
+        CASCADE_ORDER,
         CHUTES_API_KEY,
         CHUTES_BASE_URL,
         CHUTES_MODELS,
         COMPLETIONS_API_KEY,
         COMPLETIONS_BASE_URL,
         COMPLETIONS_MODELS,
+        CREW_ENABLED,
+        CREW_MODELS,
+        FREETHEAI_API_KEY,
+        FREETHEAI_BASE_URL,
+        FREETHEAI_MODELS,
         GEMINI_API_KEY,
         GEMINI_MODELS,
         GITHUB_BASE_URL,
@@ -80,6 +87,9 @@ try:
         OPENROUTER_API_KEY,
         OPENROUTER_BASE_URL,
         OPENROUTER_MODELS,
+        PUTER_LLM_BASE_URL,
+        PUTER_LLM_MODELS,
+        PUTER_TOKEN,
     )
 except ImportError:
     MODELS = {
@@ -148,6 +158,46 @@ except ImportError:
         "main": "deepseek-v3.1",
         "fast": "deepseek-v4-flash",
         "fallback": "qwen3.5-flash",
+    }
+    FREETHEAI_API_KEY = os.getenv("FREETHEAI_API_KEY", "")
+    FREETHEAI_BASE_URL = "https://api.freetheai.xyz/v1"
+    FREETHEAI_MODELS = {
+        "heavy": "bbl/gpt-5.5-mini",
+        "main": "glm/glm-5.1",
+        "fast": "opc/deepseek-v4-flash-free",
+        "fallback": "opc/nemotron-3-ultra-free",
+    }
+    PUTER_TOKEN = os.getenv("PUTER_TOKEN", "")
+    PUTER_LLM_BASE_URL = "https://api.puter.com"
+    PUTER_LLM_MODELS = {
+        "heavy": "gpt-5",
+        "main": "o3",
+        "fast": "gpt-4o-mini",
+    }
+    CASCADE_ORDER = [
+        "mistral",
+        "gemini",
+        "openrouter",
+        "completions",
+        "chutes",
+        "github",
+        "naga",
+        "bestai",
+        "groq",
+        "freetheai",
+        "puter",
+    ]
+    CREW_ENABLED = True
+    CREW_MODELS = {
+        "conversational": "puter/grok-3",
+        "creative": "puter/grok-3",
+        "default": "puter/grok-3",
+        "coding": "puter/gpt-5.2",
+        "planning": "puter/o3",
+        "factual": "puter/deepseek-r1-0528",
+        "command": "puter/gpt-4o-mini",
+        "writing": "puter/claude-sonnet-5",
+        "compat": "puter/gpt-4o",
     }
 
 
@@ -237,6 +287,7 @@ class LLMWrapper:
         self.model = model or MODELS["main"]
         self.available = False
         self._stop_flag = False
+        self._crew_enabled = CREW_ENABLED
 
         # ── Mistral (primário) ────────────────────────────────────────
         self._mistral_ok = HAS_MISTRAL and bool(MISTRAL_API_KEY)
@@ -330,6 +381,37 @@ class LLMWrapper:
             except Exception as e:
                 print(luna_err("GROQ_INIT_FAILED", str(e)))
                 self._groq_ok = False
+
+        # ── FreeTheAi (fallback 10) ──────────────────────────
+        self._freetheai_ok = HAS_REQUESTS and bool(FREETHEAI_API_KEY)
+        self._freetheai_rl_until = 0.0
+        if self._freetheai_ok:
+            print(f"[LLM] ✓ FreeTheAi ativo — {FREETHEAI_MODELS['main']}")
+            if not self.available:
+                self.available = True
+
+        # ── Puter LLM (fallback 11 — gpt-5, o3, gpt-4o via Puter API) ──
+        self._puter_ok = HAS_REQUESTS and bool(PUTER_TOKEN)
+        self._puter_rl_until = 0.0
+        if self._puter_ok:
+            print(f"[LLM] ✓ Puter LLM ativo — {PUTER_LLM_MODELS['main']} (dev: {PUTER_LLM_MODELS['heavy']})")
+            if not self.available:
+                self.available = True
+
+        # ── Cascade registry ────────────────────────────────────
+        self._cascade = {
+            "mistral": (self._mistral_available, self._mistral_model_for, self._generate_mistral),
+            "gemini": (self._gemini_available, self._gemini_model_for, self._generate_gemini),
+            "openrouter": (self._openrouter_available, self._openrouter_model_for, self._generate_openrouter),
+            "completions": (self._completions_available, self._completions_model_for, self._generate_completions),
+            "chutes": (self._chutes_available, self._chutes_model_for, self._generate_chutes),
+            "github": (self._github_available, self._github_model_for, self._generate_github),
+            "naga": (self._naga_available, self._naga_model_for, self._generate_naga),
+            "bestai": (self._bestai_available, self._bestai_model_for, self._generate_bestai),
+            "groq": (self._groq_available, self._groq_model_for, self._generate_groq),
+            "freetheai": (self._freetheai_available, self._freetheai_model_for, self._generate_freetheai),
+            "puter": (self._puter_available, self._puter_model_for, self._generate_puter),
+        }
 
         if HAS_REQUESTS:
             self._session = requests.Session()
@@ -445,6 +527,38 @@ class LLMWrapper:
             return GROQ_MODELS["fast"]
         return GROQ_MODELS["main"]
 
+    def _resolve_crew_model(self, task_type: str, used_model: str) -> str | None:
+        """Se crew ativo, retorna provider/model pro task_type."""
+        if not self._crew_enabled:
+            return None
+        if "/" in used_model:
+            return None  # já é um provider/model explícito
+        # Mapeia task_type para modelo do crew
+        mapped = CREW_MODELS.get(task_type) or CREW_MODELS.get("default")
+        if mapped:
+            print(f"[CREW] task={task_type} → {mapped}")
+            return mapped
+        return None
+
+    def set_crew_mode(self, enabled: bool) -> str:
+        self._crew_enabled = enabled
+        status = "ativado" if enabled else "desativado"
+        return f"Crew mode {status}"
+
+    def set_cascade_order(self, order: list[str] | str) -> None:
+        """Altera a ordem do cascade em tempo real.
+        Aceita lista ou string separada por vírgula."""
+        if isinstance(order, str):
+            order = [p.strip() for p in order.split(",") if p.strip()]
+        valid = {p for p in self._cascade}
+        order = [p for p in order if p in valid]
+        if order:
+            global CASCADE_ORDER
+            CASCADE_ORDER = order
+
+    def get_cascade_order(self) -> list[str]:
+        return list(CASCADE_ORDER)
+
     def generate(
         self,
         prompt: str = None,
@@ -459,77 +573,51 @@ class LLMWrapper:
             stream = False
 
         used_model = model or self.model
+
+        # Crew mode: roteia task_type para o melhor modelo
+        crew_model = self._resolve_crew_model(task_type, used_model)
+        if crew_model:
+            used_model = crew_model
+
+        # Suporte a sintaxe "provider/model" — ex: "puter/gpt-5.2" ou "groq"
+        if "/" in used_model:
+            provider_name, _, model_override = used_model.partition("/")
+            provider_name = provider_name.strip()
+            model_override = model_override.strip()
+            entry = self._cascade.get(provider_name)
+            if entry and entry[0]():
+                result = entry[2](prompt, task_type, model_override or entry[1](used_model), stream, messages, tools)
+                if result is not None:
+                    return result
+                if stream:
+                    return iter(["[LLM indisponível]"])
+                return "[LLM indisponível]"
+
         _start_time = _time.time()
         _global_timeout = 60
 
-        # 1. Mistral (primário)
-        if self._mistral_available() and _time.time() - _start_time < _global_timeout:
-            mistral_model = self._mistral_model_for(used_model)
-            result = self._generate_mistral(prompt, task_type, mistral_model, stream, messages, tools)
+        for provider_name in CASCADE_ORDER:
+            if _time.time() - _start_time >= _global_timeout:
+                break
+
+            entry = self._cascade.get(provider_name)
+            if not entry:
+                continue
+
+            available_fn, model_for_fn, generate_fn = entry
+
+            if not available_fn():
+                continue
+
+            resolved_model = model_for_fn(used_model)
+            if not resolved_model:
+                continue
+
+            result = generate_fn(prompt, task_type, resolved_model, stream, messages, tools)
             if result is not None:
                 return result
 
-        # 2. Gemini (fallback primário)
-        if self._gemini_available() and _time.time() - _start_time < _global_timeout:
-            gemini_model = self._gemini_model_for(used_model)
-            result = self._generate_gemini(prompt, task_type, gemini_model, stream, messages, tools)
-            if result is not None:
-                return result
-
-        # 3. OpenRouter (DeepSeek V3 / R1 — se tiver créditos)
-        if self._openrouter_available() and _time.time() - _start_time < _global_timeout:
-            or_model = self._openrouter_model_for(used_model)
-            if or_model:
-                result = self._generate_openrouter(prompt, task_type, or_model, stream, messages, tools)
-                if result is not None:
-                    return result
-
-        # 4. Completions.me (gratuito, ilimitado — Claude, GPT, Gemini, Grok)
-        if self._completions_available() and _time.time() - _start_time < _global_timeout:
-            comp_model = self._completions_model_for(used_model)
-            if comp_model:
-                result = self._generate_completions(prompt, task_type, comp_model, stream, messages, tools)
-                if result is not None:
-                    return result
-
-        # 5. Chutes.ai (DeepSeek-V3.2-TEE)
-        if self._chutes_available() and _time.time() - _start_time < _global_timeout:
-            chutes_model = self._chutes_model_for(used_model)
-            if chutes_model:
-                result = self._generate_chutes(prompt, task_type, chutes_model, stream, messages, tools)
-                if result is not None:
-                    return result
-
-        # 6. GitHub Models (fallback — DeepSeek via free tier)
-        if self._github_available() and _time.time() - _start_time < _global_timeout:
-            github_model = self._github_model_for(used_model)
-            if github_model:
-                result = self._generate_github(prompt, task_type, github_model, stream, messages, tools)
-                if result is not None:
-                    return result
-
-        # 7. Naga AI (fallback 7)
-        if self._naga_available() and _time.time() - _start_time < _global_timeout:
-            naga_model = self._naga_model_for(used_model)
-            result = self._generate_naga(prompt, task_type, naga_model, stream, messages, tools)
-            if result is not None:
-                return result
-
-        # 8. Best AI (fallback 8)
-        if self._bestai_available() and _time.time() - _start_time < _global_timeout:
-            bestai_model = self._bestai_model_for(used_model)
-            result = self._generate_bestai(prompt, task_type, bestai_model, stream, messages, tools)
-            if result is not None:
-                return result
-
-        # 9. Groq (fallback 9)
-        if self._groq_available() and _time.time() - _start_time < _global_timeout:
-            groq_model = self._groq_model_for(used_model)
-            result = self._generate_groq(prompt, task_type, groq_model, stream, messages, tools)
-            if result is not None:
-                return result
-
-        # Ollama local está desabilitado. Use Ollama Cloud ou provedores cloud com API key.
+        # Ollama local está desabilitado
         if stream:
             return iter(["[LLM indisponível]"])
         return "[LLM indisponível] - Nenhum provedor cloud configurado. Adicione uma API key no .env (GROQ, GEMINI, MISTRAL, etc.)."
@@ -1355,6 +1443,207 @@ class LLMWrapper:
                 None,
             )
 
+    # ── FreeTheAi ─────────────────────────────────────────────
+
+    def _freetheai_available(self) -> bool:
+        return self._freetheai_ok and time.time() >= self._freetheai_rl_until
+
+    def _freetheai_model_for(self, hint: str) -> str | None:
+        ordered = [
+            FREETHEAI_MODELS.get("main"),
+            FREETHEAI_MODELS.get("heavy"),
+            FREETHEAI_MODELS.get("fast"),
+            FREETHEAI_MODELS.get("fallback"),
+        ]
+        return next((m for m in ordered if m), None)
+
+    def _generate_freetheai(
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
+        params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
+        req_msgs = messages if messages else [{"role": "user", "content": prompt}]
+        headers = {
+            "Authorization": f"Bearer {FREETHEAI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": model,
+            "messages": req_msgs,
+            "temperature": params["temperature"],
+            "max_tokens": min(params["max_tokens"], 32000),
+            "top_p": params["top_p"],
+            "stream": stream,
+        }
+        if tools and not stream:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        try:
+            print(f"[LLM] Usando FreeTheAi: {model} (Task: {task_type})")
+            if stream:
+                return self._freetheai_stream(headers, payload, model, task_type, prompt)
+
+            resp = self._session.post(
+                f"{FREETHEAI_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            if resp.status_code == 429:
+                self._freetheai_rl_until = time.time() + 60
+                print("[LLM] ⚠ FreeTheAi 429 — rate limit por 60s")
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+            choice = data["choices"][0]
+            msg = choice.get("message", {})
+            raw_tcs = msg.get("tool_calls")
+            if raw_tcs:
+                return {"tool_calls": _normalize_tool_calls(raw_tcs), "message": msg}
+            return (msg.get("content") or "").strip() or None
+
+        except Exception as e:
+            err = str(e)
+            if "429" in err:
+                self._freetheai_rl_until = time.time() + 60
+                print("[LLM] ⚠ FreeTheAi 429 — fallback")
+            elif "401" in err or "403" in err:
+                print(luna_err("FREETHEAI_AUTH_FAILED", "FreeTheAi key inválida — desativando"))
+                self._freetheai_ok = False
+            else:
+                print(f"[LLM] ⚠ FreeTheAi erro: {e} — fallback")
+            return None
+
+    def _freetheai_stream(self, headers: dict, payload: dict, model: str, task_type: str, prompt: str) -> Generator:
+        try:
+            with self._session.post(
+                f"{FREETHEAI_BASE_URL}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
+            ) as resp:
+                if resp.status_code == 429:
+                    self._freetheai_rl_until = time.time() + 60
+                    raise Exception("429")
+                resp.raise_for_status()
+                yield from _parse_sse_stream(resp)
+            return
+        except Exception as e:
+            print(f"[LLM] ⚠ FreeTheAi stream erro: {e} — fallback")
+            yield from []
+
+    # ── Puter LLM (gpt-5, o3, gpt-4o, gpt-4o-mini) ──────────
+
+    def _puter_available(self) -> bool:
+        return self._puter_ok and time.time() >= self._puter_rl_until
+
+    def _puter_model_for(self, hint: str) -> str:
+        ordered = [
+            PUTER_LLM_MODELS.get("heavy"),
+            PUTER_LLM_MODELS.get("main"),
+            PUTER_LLM_MODELS.get("fast"),
+        ]
+        return next((m for m in ordered if m), "gpt-4o-mini")
+
+    def _generate_puter(
+        self, prompt: str, task_type: str, model: str, stream: bool, messages: list = None, tools: list = None
+    ) -> str | Generator | dict | None:
+        params = TASK_PARAMS.get(task_type, TASK_PARAMS["default"])
+        req_msgs = messages if messages else [{"role": "user", "content": prompt}]
+        headers = {
+            "Authorization": f"Bearer {PUTER_TOKEN}",
+            "Content-Type": "application/json",
+        }
+        args = {
+            "messages": req_msgs,
+            "model": model,
+            "temperature": params["temperature"],
+            "max_tokens": min(params["max_tokens"], 16000),
+            "top_p": params["top_p"],
+            "stream": stream,
+        }
+        if tools and not stream:
+            args["tools"] = tools
+            args["tool_choice"] = "auto"
+
+        payload = {
+            "interface": "puter-chat-completion",
+            "provider": "openai-completion",
+            "method": "complete",
+            "args": args,
+        }
+
+        try:
+            print(f"[LLM] Usando Puter: {model} (Task: {task_type})")
+            if stream:
+                return self._puter_stream(headers, payload, model, task_type, prompt)
+
+            resp = self._session.post(
+                f"{PUTER_LLM_BASE_URL}/drivers/call",
+                headers=headers,
+                json=payload,
+                timeout=120,
+            )
+            if resp.status_code == 429:
+                self._puter_rl_until = time.time() + 60
+                print("[LLM] ⚠ Puter 429 — rate limit por 60s")
+                return None
+            resp.raise_for_status()
+            data = resp.json()
+            result = data.get("result", {})
+            msg = result.get("message", {})
+            raw_tcs = msg.get("tool_calls")
+            if raw_tcs:
+                return {"tool_calls": _normalize_tool_calls(raw_tcs), "message": msg}
+            raw = msg.get("content") or ""
+            if isinstance(raw, list):
+                texts = [b.get("text", "") for b in raw if isinstance(b, dict) and b.get("type") == "text"]
+                raw = " ".join(texts)
+            return str(raw).strip() or None
+
+        except Exception as e:
+            err = str(e)
+            if "429" in err:
+                self._puter_rl_until = time.time() + 60
+                print("[LLM] ⚠ Puter 429 — fallback")
+            elif "401" in err or "403" in err:
+                print(luna_err("PUTER_AUTH_FAILED", "Puter token inválido — desativando"))
+                self._puter_ok = False
+            else:
+                print(f"[LLM] ⚠ Puter erro: {e} — fallback")
+            return None
+
+    def _puter_stream(self, headers: dict, payload: dict, model: str, task_type: str, prompt: str) -> Generator:
+        try:
+            with self._session.post(
+                f"{PUTER_LLM_BASE_URL}/drivers/call",
+                headers=headers,
+                json=payload,
+                timeout=120,
+                stream=True,
+            ) as resp:
+                if resp.status_code == 429:
+                    self._puter_rl_until = time.time() + 60
+                    raise Exception("429")
+                resp.raise_for_status()
+                for line in resp.iter_lines():
+                    if not line:
+                        continue
+                    line = line.decode("utf-8") if isinstance(line, bytes) else line
+                    try:
+                        chunk = json.loads(line)
+                        if chunk.get("type") == "text":
+                            yield chunk.get("text", "")
+                        elif chunk.get("type") == "usage":
+                            pass
+                    except Exception:
+                        continue
+            return
+        except Exception as e:
+            print(f"[LLM] ⚠ Puter stream erro: {e} — fallback")
+            yield from []
+
     # ── Groq ──────────────────────────────────────────────────
 
     def _generate_groq(
@@ -1608,6 +1897,15 @@ class LLMWrapper:
                 "rate_limited_for": rl(self._groq_rl_until),
                 "model": model_for(globals().get("GROQ_MODELS")),
             },
+            {
+                "name": "FreeTheAi",
+                "active": self._freetheai_ok,
+                "available": self._freetheai_available(),
+                "rate_limited_for": rl(self._freetheai_rl_until),
+                "models": {
+                    k: {"name": v, "rate_limited_for": 0} for k, v in (globals().get("FREETHEAI_MODELS") or {}).items()
+                },
+            },
         ]
 
     def is_ready(self) -> bool:
@@ -1622,6 +1920,7 @@ class LLMWrapper:
             or self._github_available()
             or self._naga_available()
             or self._bestai_available()
+            or self._freetheai_available()
             or self._groq_available()
         )
 
@@ -1686,6 +1985,14 @@ class LLMWrapper:
                 if BESTAI_API_KEY:
                     return ChatOpenAI(
                         api_key=BESTAI_API_KEY, model=model, base_url=BESTAI_BASE_URL, temperature=temperature
+                    )
+            elif provider == "freetheai":
+                from langchain_openai import ChatOpenAI
+
+                model = FREETHEAI_MODELS.get("main", "glm/glm-5.1")
+                if FREETHEAI_API_KEY:
+                    return ChatOpenAI(
+                        api_key=FREETHEAI_API_KEY, model=model, base_url=FREETHEAI_BASE_URL, temperature=temperature
                     )
         except ImportError as e:
             print(f"[LLM] ⚠ langchain lib não disponível para {provider}: {e}")
