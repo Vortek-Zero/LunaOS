@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Luna CLI — instalável em qualquer terminal
+set -e
+
+LUNA_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+
+if ! command -v uv &>/dev/null; then
+    echo "Erro: uv não encontrado (instale com: pip install uv)" >&2
+    exit 1
+fi
+
+case "$1" in
+    --api|-a)
+        shift
+        cd "$LUNA_DIR"
+        exec uv run python api.py "$@"
+        ;;
+    --help|-h)
+        echo "Uso: luna [pergunta]"
+        echo ""
+        echo "  luna <texto>     -> processa direto pelo LLM"
+        echo "  luna             -> guia de comandos interativo"
+        echo "  luna --api       -> servidor FastAPI"
+        echo "  luna --help      -> esta ajuda"
+        exit 0
+        ;;
+    *)
+        if [ $# -eq 0 ]; then
+            cd "$LUNA_DIR"
+            exec uv run python luna_terminal.py
+        else
+            cd "$LUNA_DIR"
+            exec uv run python luna_cli.py "$@"
+        fi
+        ;;
+esac

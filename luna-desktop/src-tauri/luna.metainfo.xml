@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.milogol2822.Luna</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Luna AI</name>
+  <summary>Assistente pessoal autônoma com IA</summary>
+  <description>
+    <p>Luna é uma assistente pessoal que roda localmente, controla seu sistema operacional, gerencia agenda e e-mail, acende a luz da sua sala, pesquisa na web e escreve código — tudo em português, tudo via conversa natural.</p>
+    <p>Não é um wrapper de ChatGPT. É um agente autônomo com loop ReAct, memória persistente, 60+ ferramentas reais e personalidade configurável.</p>
+  </description>
+  <url type="homepage">https://github.com/milogol2822/LunaOS</url>
+  <url type="bugtracker">https://github.com/milogol2822/LunaOS/issues</url>
+  <url type="donation">https://github.com/sponsors/milogol2822</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Tela principal da Luna</caption>
+      <image>https://raw.githubusercontent.com/milogol2822/LunaOS/main/.github/screenshots/main.png</image>
+    </screenshot>
+  </screenshots>
+  <categories>
+    <category>Utility</category>
+  </categories>
+  <keywords>
+    <keyword>assistente</keyword>
+    <keyword>IA</keyword>
+    <keyword>automação</keyword>
+    <keyword>produtividade</keyword>
+  </keywords>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="1.5.1" date="2025-07-13"/>
+  </releases>
+  <developer_name>Pera</developer_name>
+  <launchable type="desktop-id">io.github.milogol2822.Luna.desktop</launchable>
+  <provides>
+    <binary>luna-desktop</binary>
+  </provides>
+</component>

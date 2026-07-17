@@ -14,6 +14,19 @@
   let providers = $state<Array<{ name: string; active: boolean; available: boolean; rate_limited_for: number; model?: string; models?: Record<string, { name: string; rate_limited_for: number }> }>>([]);
   let upd = $state({ current: '', latest: '', commits_ahead: 0, update_available: false, commits: [] as string[], checking: false, applying: false, result: '' });
 
+  // Settings state
+  let cascadeOrder = $state('');
+  let cascadeMsg = $state('');
+  let crewEnabled = $state(false);
+  let crewMsg = $state('');
+  let writingModel = $state('medium');
+  let modelMsg = $state('');
+  let ttsProviders = $state<string[]>([]);
+  let ttsCurrent = $state('edge_tts');
+  let ttsVoices = $state<Record<string, string[]>>({});
+  let ttsVoice = $state('');
+  let ttsMsg = $state('');
+
   async function loadMetrics() {
     const res = await luna.fetchSystemMetrics();
     if (res && !res.error) {
@@ -72,7 +85,47 @@
     const res = await luna.fetchModelsStatus();
     if (res && res.providers) {
       providers = res.providers;
+      if (res.cascade) cascadeOrder = Array.isArray(res.cascade) ? res.cascade.join(',') : res.cascade;
     }
+  }
+
+  async function loadTts() {
+    const res = await luna.fetchTtsProviders();
+    if (res) {
+      ttsProviders = res.providers || [];
+      ttsCurrent = res.current || 'edge_tts';
+      ttsVoices = res.voices || {};
+      ttsVoice = res.voice || '';
+    }
+  }
+
+  async function saveCascade() {
+    cascadeMsg = 'Salvando...';
+    const res = await luna.setCascade(cascadeOrder);
+    cascadeMsg = res?.message || 'Erro ao salvar';
+    setTimeout(() => cascadeMsg = '', 3000);
+  }
+
+  async function saveCrew() {
+    crewMsg = 'Alterando...';
+    const res = await luna.setCrewMode(crewEnabled);
+    crewMsg = res?.message || 'Erro';
+    setTimeout(() => crewMsg = '', 3000);
+  }
+
+  async function saveModel() {
+    modelMsg = 'Alterando...';
+    const res = await luna.setWritingModel(writingModel);
+    modelMsg = res?.message || 'Erro';
+    setTimeout(() => modelMsg = '', 3000);
+  }
+
+  async function saveTtsProvider(provider: string) {
+    ttsMsg = 'Alterando...';
+    ttsCurrent = provider;
+    const res = await luna.setTtsProvider(provider);
+    ttsMsg = res?.success ? `TTS: ${provider}` : 'Erro';
+    setTimeout(() => ttsMsg = '', 3000);
   }
 
   async function checkUpdate() {
@@ -107,6 +160,7 @@
     loadFacts();
     loadPerf();
     loadModels();
+    loadTts();
 
     const metricsInterval = setInterval(loadMetrics, 3000);
     const perfInterval = setInterval(loadPerf, 10000);
@@ -283,6 +337,77 @@
       </div>
     </div>
 
+    <!-- Bloco 5.5: Configurações -->
+    <div class="panel-section">
+      <div class="section-title">
+        <Icon name="settings" size="14" />
+        <span>Configurações</span>
+      </div>
+      <div class="card settings-card">
+        <!-- Cascade Order -->
+        <div class="setting-row">
+          <span class="setting-label">Ordem dos provedores (cascade)</span>
+          <div class="input-row">
+            <input class="field" bind:value={cascadeOrder} placeholder="ex: puter,groq,gemini" />
+            <button class="btn sm primary" onclick={saveCascade}>Salvar</button>
+          </div>
+          {#if cascadeMsg}<div class="setting-msg">{cascadeMsg}</div>{/if}
+        </div>
+
+        <!-- Crew Mode -->
+        <div class="setting-row">
+          <span class="setting-label">Crew Mode (múltiplos LLMs)</span>
+          <div class="input-row">
+            <label class="toggle">
+              <input type="checkbox" bind:checked={crewEnabled} onchange={saveCrew} />
+              <span class="toggle-slider"></span>
+            </label>
+            <span class="toggle-label">{crewEnabled ? 'Ativado' : 'Desativado'}</span>
+          </div>
+          {#if crewMsg}<div class="setting-msg">{crewMsg}</div>{/if}
+        </div>
+
+        <!-- Writing Model -->
+        <div class="setting-row">
+          <span class="setting-label">Modelo de escrita</span>
+          <div class="input-row">
+            <select class="field select" bind:value={writingModel} onchange={saveModel}>
+              <option value="medium">Médio (rápido)</option>
+              <option value="high">Alto (profundo)</option>
+            </select>
+          </div>
+          {#if modelMsg}<div class="setting-msg">{modelMsg}</div>{/if}
+        </div>
+
+        <!-- TTS Provider -->
+        <div class="setting-row">
+          <span class="setting-label">Provedor de voz (TTS)</span>
+          <div class="input-row tts-buttons">
+            {#each ttsProviders as p}
+              <button class="btn sm" class:primary={ttsCurrent === p} onclick={() => saveTtsProvider(p)}>
+                {p}
+                {#if ttsCurrent === p}<span class="check-mark">✓</span>{/if}
+              </button>
+            {/each}
+          </div>
+          {#if ttsMsg}<div class="setting-msg">{ttsMsg}</div>{/if}
+        </div>
+
+        <!-- TTS Voice -->
+        {#if ttsVoices[ttsCurrent] && ttsVoices[ttsCurrent].length > 0}
+          <div class="setting-row">
+            <span class="setting-label">Voz TTS atual</span>
+            <div class="setting-voice">{ttsVoice || ttsVoices[ttsCurrent][0]}</div>
+            <div class="voice-list">
+              {#each ttsVoices[ttsCurrent] as v}
+                <span class="voice-tag" class:active={ttsVoice === v}>{v}</span>
+              {/each}
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+
     <!-- Bloco 6: Atualizações -->
     <div class="panel-section">
       <div class="section-title">
@@ -410,4 +535,25 @@
   .commits-list { max-height: 120px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; background: rgba(0,0,0,0.1); border-radius: 8px; padding: 6px; }
   .commit-item { font-size: 10px; color: rgba(255,255,255,0.5); font-family: 'JetBrains Mono', monospace; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Settings */
+  .settings-card { gap: 16px; }
+  .setting-row { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .setting-row:last-of-type { border-bottom: none; padding-bottom: 0; }
+  .setting-label { font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.5); }
+  .setting-msg { font-size: 10px; color: #22c55e; margin-top: -4px; }
+  .setting-voice { font-size: 12px; color: rgba(255,255,255,0.7); font-family: 'JetBrains Mono', monospace; }
+  .select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 32px; cursor: pointer; }
+  .tts-buttons { flex-wrap: wrap; gap: 6px; }
+  .check-mark { margin-left: 4px; font-size: 10px; }
+  .voice-list { display: flex; flex-wrap: wrap; gap: 4px; }
+  .voice-tag { font-size: 10px; padding: 3px 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; color: rgba(255,255,255,0.4); }
+  .voice-tag.active { background: rgba(59,158,255,0.1); border-color: rgba(59,158,255,0.2); color: #3b9eff; }
+  .toggle { position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; }
+  .toggle input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider { position: absolute; inset: 0; background: rgba(255,255,255,0.1); border-radius: 20px; transition: all 0.3s; }
+  .toggle-slider::before { content: ''; position: absolute; height: 14px; width: 14px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: all 0.3s; }
+  .toggle input:checked + .toggle-slider { background: #3b9eff; }
+  .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
+  .toggle-label { font-size: 11px; color: rgba(255,255,255,0.5); }
 </style>

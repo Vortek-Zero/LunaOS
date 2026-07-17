@@ -55,6 +55,7 @@ app.add_middleware(
 )
 
 # ── Rate Limiting ─────────────────────────────────────────────
+import contextlib
 import time as _rate_time
 
 _rate_limit_data: dict[str, list[float]] = defaultdict(list)
@@ -402,7 +403,7 @@ async def list_processes(_key: str = Depends(verify_api_key)):
 
         procs = []
         for p in psutil.process_iter(["pid", "name", "cpu_percent", "memory_percent", "status"]):
-            try:
+            with contextlib.suppress(Exception):
                 procs.append(
                     {
                         "pid": p.info["pid"],
@@ -412,8 +413,6 @@ async def list_processes(_key: str = Depends(verify_api_key)):
                         "status": p.info["status"],
                     }
                 )
-            except Exception:
-                pass
         procs.sort(key=lambda x: x["mem"], reverse=True)
         return {"processes": procs[:40]}
     except ImportError:
@@ -558,10 +557,8 @@ async def chat(request: Request, req: ChatRequest, _key: str = Depends(verify_ap
 
     elapsed_ms = (time.time() - start) * 1000
 
-    try:
+    with contextlib.suppress(Exception):
         _auto_name_session(getattr(luna._memory, "current_session_id", "default"))
-    except Exception:
-        pass
 
     return ChatResponse(
         response=response,
@@ -922,6 +919,47 @@ async def speak_text(req: ChatRequest, _key: str = Depends(verify_api_key)):
     return {"success": True}
 
 
+class TtsProviderRequest(BaseModel):
+    provider: str
+
+
+@app.get("/api/voice/providers")
+async def list_tts_providers(_key: str = Depends(verify_api_key)):
+    """Lista provedores de TTS disponíveis."""
+    from config import TTS_PRIORITY, VOICE_CONFIG
+
+    return {
+        "providers": TTS_PRIORITY,
+        "current": TTS_PRIORITY[0] if TTS_PRIORITY else "edge_tts",
+        "voice": VOICE_CONFIG.get("voice", "pt-BR-ThalitaMultilingualNeural"),
+        "voices": {
+            "edge_tts": ["pt-BR-ThalitaMultilingualNeural", "pt-BR-AntonioNeural", "pt-BR-FranciscaNeural"],
+            "puter": ["nova", "alloy", "echo", "fable", "onyx", "shimmer"],
+            "elevenlabs": ["Rachel", "Clyde", "Domi", "Bella"],
+            "azure": ["pt-BR-ThalitaNeural", "pt-BR-AntonioNeural"],
+        },
+    }
+
+
+@app.post("/api/voice/provider")
+async def set_tts_provider(req: TtsProviderRequest, _key: str = Depends(verify_api_key)):
+    """Altera o provedor de TTS ativo."""
+    from config import TTS_PRIORITY
+
+    if req.provider not in TTS_PRIORITY:
+        raise HTTPException(status_code=400, detail=f"Provedor inválido. Opções: {', '.join(TTS_PRIORITY)}")
+    import os
+
+    os.environ["LUNA_TTS_PRIORITY"] = req.provider
+    # Recarrega a prioridade do TTS
+    from importlib import reload
+
+    import config
+
+    reload(config)
+    return {"success": True, "provider": req.provider}
+
+
 # ── Controles de Mídia ────────────────────────────────────────
 
 
@@ -1114,16 +1152,14 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
     luna = get_luna()
 
     async def event_gen():
-        loop = asyncio.get_event_loop()
+        asyncio.get_event_loop()
         import queue as _queue
 
         q = _queue.Queue(maxsize=100)
 
         def progress_cb(event: dict):
-            try:
+            with contextlib.suppress(_queue.Full):
                 q.put(("progress", event), block=False)
-            except _queue.Full:
-                pass
 
         def run():
             try:
@@ -1131,10 +1167,8 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
                 result = luna.process(message, mode=mode, progress_callback=progress_cb)
                 q.put(("done", result))
             except Exception as e:
-                try:
+                with contextlib.suppress(_queue.Full):
                     q.put(("error", str(e)))
-                except _queue.Full:
-                    pass
 
         import threading
 
@@ -1152,10 +1186,8 @@ async def chat_stream(request: Request, req: ChatRequest, _key: str = Depends(ve
                     continue
                 if kind == "done":
                     yield f"data: {_json.dumps({'type': 'done', 'text': data}, ensure_ascii=False)}\n\n"
-                    try:
+                    with contextlib.suppress(Exception):
                         _auto_name_session(getattr(luna._memory, "current_session_id", "default"))
-                    except Exception:
-                        pass
                 else:
                     yield f"data: {_json.dumps({'type': 'error', 'content': data}, ensure_ascii=False)}\n\n"
                 break
@@ -1264,10 +1296,8 @@ async def stt_transcribe(request: Request, _key: str = Depends(verify_api_key)):
         return {"text": "", "error": str(e)}
     finally:
         for f in [tmp_in.name, tmp_wav]:
-            try:
+            with contextlib.suppress(BaseException):
                 _os.unlink(f)
-            except:
-                pass
 
 
 # ── Sistema ───────────────────────────────────────────────────
@@ -1752,23 +1782,48 @@ from pathlib import Path as _P
 GIT_DIR = str(_P(__file__).parent / ".git")
 
 
+def _get_tracking_branch() -> tuple[str, str] | None:
+    """Detecta o remote e branch de tracking do HEAD atual."""
+    try:
+        r = _subprocess.run(
+            ["git", "--git-dir", GIT_DIR, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if r.returncode != 0:
+            return None
+        parts = r.stdout.strip().split("/", 1)
+        if len(parts) == 2:
+            return (parts[0], parts[1])
+        return None
+    except Exception:
+        return None
+
+
 @app.get("/api/update/check")
 async def check_update():
     """Verifica se há novos commits no repositório."""
     try:
-        _subprocess.run(["git", "--git-dir", GIT_DIR, "fetch", "origin"], capture_output=True, timeout=30)
+        upstream = _get_tracking_branch()
+        if upstream:
+            remote, branch = upstream
+        else:
+            remote, branch = "vortek", "main"
+
+        _subprocess.run(["git", "--git-dir", GIT_DIR, "fetch", remote], capture_output=True, timeout=30)
 
         current = _subprocess.run(
             ["git", "--git-dir", GIT_DIR, "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=10
         )
         latest = _subprocess.run(
-            ["git", "--git-dir", GIT_DIR, "rev-parse", "--short", "origin/main"],
+            ["git", "--git-dir", GIT_DIR, "rev-parse", "--short", f"{remote}/{branch}"],
             capture_output=True,
             text=True,
             timeout=10,
         )
         log = _subprocess.run(
-            ["git", "--git-dir", GIT_DIR, "log", "HEAD..origin/main", "--oneline"],
+            ["git", "--git-dir", GIT_DIR, "log", f"HEAD..{remote}/{branch}", "--oneline"],
             capture_output=True,
             text=True,
             timeout=10,
@@ -1785,6 +1840,8 @@ async def check_update():
             "commits_ahead": ahead,
             "update_available": ahead > 0,
             "commits": commits[:20],
+            "remote": remote,
+            "branch": branch,
         }
     except Exception as e:
         return {"error": str(e), "update_available": False}
@@ -1794,8 +1851,13 @@ async def check_update():
 async def apply_update():
     """Faz git pull para atualizar o repositório."""
     try:
+        upstream = _get_tracking_branch()
+        if upstream:
+            remote, branch = upstream
+        else:
+            remote, branch = "vortek", "main"
         result = _subprocess.run(
-            ["git", "--git-dir", GIT_DIR, "pull", "origin", "main"], capture_output=True, text=True, timeout=60
+            ["git", "--git-dir", GIT_DIR, "pull", remote, branch], capture_output=True, text=True, timeout=60
         )
         if result.returncode == 0:
             return {"success": True, "message": result.stdout.strip()}

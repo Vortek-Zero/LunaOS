@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Luna AI
+Comment=Assistente pessoal autônoma com IA — feita para viver no seu computador, não na nuvem
+Exec=luna-desktop
+Icon=io.github.milogol2822.Luna
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true

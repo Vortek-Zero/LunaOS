@@ -54,5 +54,428 @@
     ],
     "action_type": "conversa",
     "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1783999906136",
+    "ts": "2026-07-14T00:31:46.136255",
+    "date": "2026-07-14",
+    "hour": 0,
+    "weekday": "Tuesday",
+    "text": "quanto é 10+10",
+    "summary": "10 + 10 é igual a **20**.\n\nPrecisa de mais alguma ajuda ou tem outra pergunta? 😊",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784000211961",
+    "ts": "2026-07-14T00:36:51.961767",
+    "date": "2026-07-14",
+    "hour": 0,
+    "weekday": "Tuesday",
+    "text": "quanto é 10+10",
+    "summary": "10 + 10 é **20**, Pera!\n\nTem mais alguma coisa que você gostaria de saber ou que eu possa te ajudar? 😊",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784000257167",
+    "ts": "2026-07-14T00:37:37.167800",
+    "date": "2026-07-14",
+    "hour": 0,
+    "weekday": "Tuesday",
+    "text": "oi, o que temos pra hoje?",
+    "summary": "Olá! Bom dia!\n\nHoje é **terça-feira**.\n\nPrecisa de ajuda com mais alguma coisa ou quer saber algo específico para o dia? 😊",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784000295840",
+    "ts": "2026-07-14T00:38:15.840234",
+    "date": "2026-07-14",
+    "hour": 0,
+    "weekday": "Tuesday",
+    "text": "me ajuda a organizar uma viajem",
+    "summary": "Claro, Pera! Para te ajudar a organizar sua viagem, preciso de algumas informações. Me conta:\n\n1.  **Para onde** você quer ir?\n2.  **Quando** seria a viagem (datas aproximadas)?\n3.  Qual o **orçamento",
+    "topics": [
+      "luna"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784000412890",
+    "ts": "2026-07-14T00:40:12.890931",
+    "date": "2026-07-14",
+    "hour": 0,
+    "weekday": "Tuesday",
+    "text": "vou viajar para as maldivas daqui 5 dias temos um orçamento ilimitado já que é uma experiencia de aventura e serão 8 amigos no total contando eu todos em casais",
+    "summary": "Que demais! Maldivas é um destino incrível para aventura e romance. Com orçamento ilimitado e 8 amigos em casais, podemos planejar algo espetacular!\n\nEm 5 dias, vocês já embarcam? Se sim, precisamos a",
+    "topics": [
+      "luna",
+      "casa"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784074765756",
+    "ts": "2026-07-14T21:19:25.756037",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "Lula.",
+    "summary": "Olha, Pera, \"Lula\" é um nome bem conhecido. Para te ajudar melhor, você gostaria que eu **pesquisasse sobre \"Lula\" na web**? Ou talvez você queria dizer outra coisa?\n\nMe diz o que você precisa!",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "voice",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784075154548",
+    "ts": "2026-07-14T21:25:54.548415",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "procure o video mais recente do Jazzghost",
+    "summary": "Pesquisei por \"Jazzghost videos mais recentes\" e abri os resultados no seu navegador. Você pode conferir os vídeos por lá!\n\nQuer que eu faça mais alguma busca ou abra algum link específico?",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784075209698",
+    "ts": "2026-07-14T21:26:49.698225",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "abre o video que encontrar no youtube",
+    "summary": "Ah, que pena! Parece que não consegui abrir o primeiro vídeo diretamente. A ferramenta não encontrou o resultado esperado para \"Jazzghost videos mais recentes\".\n\nVocê pode tentar **clicar no vídeo man",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784075256043",
+    "ts": "2026-07-14T21:27:36.043983",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "procure um video do 1155 do ET e selecione ele e me diga seu nome",
+    "summary": "Pesquisei por \"1155 do ET youtube\" e abri os resultados no seu navegador. Agora você pode dar uma olhada nos vídeos por lá!\n\nQuer que eu abra algum link específico ou faça outra busca?",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784075351702",
+    "ts": "2026-07-14T21:29:11.702575",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "/pensar abre o link no youtube pra abrir o canal dele",
+    "summary": "Pesquisei por \"pensar canal youtube\" e abri os resultados no seu navegador. Agora você pode dar uma olhada nos vídeos por lá!\n\nQuer que eu abra algum link específico ou faça outra busca?",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784075382666",
+    "ts": "2026-07-14T21:29:42.666433",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "auto diagnostico das ferramentas",
+    "summary": "A ferramenta `document_services` não possui uma ação chamada \"pdf\". Por isso, a tentativa de usá-la resultou em falha.\n\nPara que eu possa te ajudar com documentos, por favor, me diga qual ação você go",
+    "topics": [
+      "luna"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784075435293",
+    "ts": "2026-07-14T21:30:35.293764",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "quais processos estão ativos no sistema?",
+    "summary": "Para verificar os processos ativos no sistema, posso usar a ferramenta `system_control`. Você gostaria de listar todos os processos ou tem algum em mente que gostaria de verificar?",
+    "topics": [
+      "luna"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784075444182",
+    "ts": "2026-07-14T21:30:44.182494",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "sim",
+    "summary": "Ok, Pera! O que você gostaria de fazer agora? 😊",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784076336124",
+    "ts": "2026-07-14T21:45:36.124555",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "crie uma imagem de uma batata assacina",
+    "summary": "[LLM indisponível] - Nenhum provedor cloud configurado. Adicione uma API key no .env (GROQ, GEMINI, MISTRAL, etc.).",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784076446165",
+    "ts": "2026-07-14T21:47:26.165797",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "crie uma imagem de um gato preto na luq",
+    "summary": "Claro, Pera! 🐾 Vou criar uma imagem de um gato preto para você.\n\nSó um detalhe: \"luq\" não é um termo que eu reconheça. Você quis dizer \"lua\" ou talvez outra coisa? Me diga como você quer que o gatinho",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784076809924",
+    "ts": "2026-07-14T21:53:29.924951",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "quis dizer Lua crie um gato preto na lua",
+    "summary": "[LLM indisponível] - Nenhum provedor cloud configurado. Adicione uma API key no .env (GROQ, GEMINI, MISTRAL, etc.).",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784076855382",
+    "ts": "2026-07-14T21:54:15.382275",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "cria um projetinho curto em html que desenha um gato ao abrir o site",
+    "summary": "[LLM indisponível] - Nenhum provedor cloud configurado. Adicione uma API key no .env (GROQ, GEMINI, MISTRAL, etc.).",
+    "topics": [
+      "programação",
+      "luna"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784076860112",
+    "ts": "2026-07-14T21:54:20.112282",
+    "date": "2026-07-14",
+    "hour": 21,
+    "weekday": "Tuesday",
+    "text": "oii",
+    "summary": "[LLM indisponível] - Nenhum provedor cloud configurado. Adicione uma API key no .env (GROQ, GEMINI, MISTRAL, etc.).",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784084050538",
+    "ts": "2026-07-14T23:54:10.538006",
+    "date": "2026-07-14",
+    "hour": 23,
+    "weekday": "Tuesday",
+    "text": "abre o whatsapp pra min e manda oi pra Kelly",
+    "summary": "<think>\nOkay, the user asked me to open WhatsApp and send a message to Kelly. I need to make sure I use the correct tools here. Let me check the available functions. There's a tool called whatsapp_act",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784098386740",
+    "ts": "2026-07-15T03:53:06.740806",
+    "date": "2026-07-15",
+    "hour": 3,
+    "weekday": "Wednesday",
+    "text": "/analisar",
+    "summary": "Obrigada por compartilhar todas essas informações, Pera! Recebi e analisei seu perfil, habilidades, hobbies, hábitos, preferências, seus objetivos ativos e também suas interações recentes.\n\nÉ ótimo sa",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784098428208",
+    "ts": "2026-07-15T03:53:48.208379",
+    "date": "2026-07-15",
+    "hour": 3,
+    "weekday": "Wednesday",
+    "text": "cria uma imagem tesde de um gato preto dormindo",
+    "summary": "**Imagem criada!**  \nGerada uma imagem de **gato preto dormindo** com estilo realista.  \n\n**Próximos passos:**  \n- Quer ajustar a resolução ou estilo da imagem?  \n- Quer usá-la em algum projeto ou red",
+    "topics": [
+      "luna",
+      "saúde"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784098484492",
+    "ts": "2026-07-15T03:54:44.492751",
+    "date": "2026-07-15",
+    "hour": 3,
+    "weekday": "Wednesday",
+    "text": "quero ver a imagem abra ela",
+    "summary": "**Imagem localizada!**  \nA imagem do gato preto dormindo está salva em sua pasta de imagens.  \n\n**Próximos passos:**  \n1. \n2. 🖼️ Quer que eu **abrir a imagem automaticamente** no seu visualizador padr",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784098526964",
+    "ts": "2026-07-15T03:55:26.964474",
+    "date": "2026-07-15",
+    "hour": 3,
+    "weekday": "Wednesday",
+    "text": "quero visualizá-la agora",
+    "summary": "**Visualização iniciada!**  \nA imagem do gato preto dormindo foi aberta no seu visualizador padrão.  \n\n**Próximos passos:**  \n1. 🖼️ A imagem está em **alta definição**. Quer redimensionar ou aplicar e",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784098561964",
+    "ts": "2026-07-15T03:56:01.964222",
+    "date": "2026-07-15",
+    "hour": 3,
+    "weekday": "Wednesday",
+    "text": "abra o antigravity",
+    "summary": "**Antigravity ativado!**  \nO módulo `antigravity` do Python foi executado. Ele abre automaticamente o **XKCD #353** (o clássico \"Python\" vs \"Semicolons\") no seu navegador.  \n\n**Próximos passos:**  \n1.",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784099364180",
+    "ts": "2026-07-15T04:09:24.180950",
+    "date": "2026-07-15",
+    "hour": 4,
+    "weekday": "Wednesday",
+    "text": "poxa eu não sei o que fazer... tô cansado",
+    "summary": "Poxa, sinto muito que esteja cansado, Pera! É super normal se sentir assim. Que tal a gente fazer algo mais relaxante ou divertido agora?\n\nTenho algumas ideias:\n\n1.  **Música para relaxar:** Posso col",
+    "topics": [
+      "saúde"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784099420483",
+    "ts": "2026-07-15T04:10:20.483266",
+    "date": "2026-07-15",
+    "hour": 4,
+    "weekday": "Wednesday",
+    "text": "vamos só conversar não to afim de codar",
+    "summary": "Entendi, Pera. Sem problemas! A gente pode só bater um papo, relaxar um pouco e esquecer o código por agora. 😊\n\nVocê me disse que está cansado, e eu dei algumas ideias para te ajudar a descontrair. Qu",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784254338803",
+    "ts": "2026-07-16T23:12:18.803041",
+    "date": "2026-07-16",
+    "hour": 23,
+    "weekday": "Thursday",
+    "text": "oii",
+    "summary": "Oii, Pera! Tudo bem por aí?\n\nSe precisar de algo ou quiser só conversar, me fala! 😊",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784255440236",
+    "ts": "2026-07-16T23:30:40.236657",
+    "date": "2026-07-16",
+    "hour": 23,
+    "weekday": "Thursday",
+    "text": "olá você está usando qual modelo?",
+    "summary": "Oi! Eu sou a Luna e estou usando o modelo **Gemini 1.5 Pro**. Ele é um modelo de linguagem grande, desenvolvido pelo Google.\n\nÉ bom te ver de novo, Pera! Como você está?",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784255476849",
+    "ts": "2026-07-16T23:31:16.849214",
+    "date": "2026-07-16",
+    "hour": 23,
+    "weekday": "Thursday",
+    "text": "crie uma imagem de uma gatinha no espaço",
+    "summary": "Pera, parece que a **cota diária para gerar imagens foi excedida**. Não consigo criar a imagem da gatinha no espaço agora.\n\nVocê pode tentar novamente **amanhã** ou, se quiser, podemos fazer outras co",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784255724171",
+    "ts": "2026-07-16T23:35:24.171410",
+    "date": "2026-07-16",
+    "hour": 23,
+    "weekday": "Thursday",
+    "text": "e agora qual modelo tá usando?",
+    "summary": "Ainda estou usando o **Gemini 1.5 Pro**, Pera! Ele é um modelo de linguagem grande, desenvolvido pelo Google.\n\nPosso te ajudar com mais alguma coisa? Que tal pensarmos em um novo projeto de programaçã",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
   }
 ]

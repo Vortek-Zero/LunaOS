@@ -1906,6 +1906,15 @@ class LLMWrapper:
                     k: {"name": v, "rate_limited_for": 0} for k, v in (globals().get("FREETHEAI_MODELS") or {}).items()
                 },
             },
+            {
+                "name": "Puter",
+                "active": self._puter_ok,
+                "available": self._puter_available(),
+                "rate_limited_for": rl(self._puter_rl_until),
+                "models": {
+                    k: {"name": v, "rate_limited_for": 0} for k, v in (globals().get("PUTER_LLM_MODELS") or {}).items()
+                },
+            },
         ]
 
     def is_ready(self) -> bool:

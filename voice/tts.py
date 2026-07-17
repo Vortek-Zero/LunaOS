@@ -5,8 +5,10 @@ Fix: asyncio em thread, fila de fala, fallback silencioso
 """
 
 import asyncio
+import math
 import os
 import re
+import struct
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -314,7 +316,9 @@ class TTSEngine:
             engine_name = engine_name.strip().lower()
             success = False
 
-            if engine_name == "google_cloud":
+            if engine_name == "puter":
+                success = await self._play_puter(text, output_path)
+            elif engine_name == "google_cloud":
                 success = await self._play_google_cloud(text, output_path)
             elif engine_name == "f5":
                 success = await self._play_f5(text, output_path)
@@ -333,6 +337,52 @@ class TTSEngine:
 
         print(err("TTS_ALL_ENGINES_FAILED", "Nenhum motor de voz conseguiu gerar o áudio."))
 
+    async def _play_puter(self, text: str, output_path: str = None) -> bool:
+        if output_path is None:
+            output_path = TTS_TEMP_FILE
+        try:
+            import json
+            from urllib.request import Request, urlopen
+
+            from config import PUTER_BASE_URL, PUTER_MODEL, PUTER_SPEED, PUTER_TOKEN, PUTER_VOICE
+
+            if not PUTER_TOKEN:
+                return False
+            payload = json.dumps(
+                {
+                    "interface": "puter-tts",
+                    "method": "generate",
+                    "args": {
+                        "text": text,
+                        "model": PUTER_MODEL,
+                        "voice": PUTER_VOICE,
+                        "speed": PUTER_SPEED,
+                    },
+                }
+            ).encode()
+            req = Request(
+                f"{PUTER_BASE_URL}/drivers/call",
+                data=payload,
+                headers={
+                    "Authorization": f"Bearer {PUTER_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+            )
+            with urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode())
+                audio_b64 = data.get("result", {}).get("audio", "") or data.get("audio", "")
+                if not audio_b64:
+                    return False
+                import base64
+
+                audio_data = base64.b64decode(audio_b64)
+                with open(output_path, "wb") as f:
+                    f.write(audio_data)
+                return True
+        except Exception as e:
+            print(f"[TTS] Puter falhou: {e}")
+            return False
+
     async def _play_google_cloud(self, text: str, output_path: str = None) -> bool:
         if output_path is None:
             output_path = TTS_TEMP_FILE
@@ -349,10 +399,7 @@ class TTSEngine:
             except Exception:
                 pass
 
-            if creds:
-                client = texttospeech.TextToSpeechClient(credentials=creds)
-            else:
-                client = texttospeech.TextToSpeechClient()
+            client = texttospeech.TextToSpeechClient(credentials=creds) if creds else texttospeech.TextToSpeechClient()
 
             input_text = texttospeech.SynthesisInput(text=text)
             voice_name = getattr(config, "GOOGLE_CLOUD_TTS_VOICE", "pt-BR-Neural2-A")

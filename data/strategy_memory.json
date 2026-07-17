@@ -1,0 +1,37 @@
+{
+  "executar comando ls -la": {
+    "attempts": 3,
+    "successes": 3,
+    "best_tool": "bash",
+    "best_time": null,
+    "times": []
+  },
+  "pesquisar por inteligência artificial": {
+    "attempts": 2,
+    "successes": 2,
+    "best_tool": "dom",
+    "best_time": null,
+    "times": []
+  },
+  "abrir youtube": {
+    "attempts": 2,
+    "successes": 2,
+    "best_tool": "dom",
+    "best_time": null,
+    "times": []
+  },
+  "abrir google": {
+    "attempts": 1,
+    "successes": 1,
+    "best_tool": "dom",
+    "best_time": null,
+    "times": []
+  },
+  "executar comando echo ok": {
+    "attempts": 2,
+    "successes": 2,
+    "best_tool": "bash",
+    "best_time": null,
+    "times": []
+  }
+}
