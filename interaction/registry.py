@@ -68,4 +68,28 @@ def get_registry() -> ToolRegistry:
     global _registry
     if _registry is None:
         _registry = ToolRegistry()
+        _auto_register()
     return _registry
+
+
+def _auto_register() -> None:
+    tools = [
+        ("interaction.tools.dom_tool", "DOMTool", "browser"),
+        ("interaction.tools.mcp_tool", "MCPTool", "browser"),
+        ("interaction.tools.vision_tool", "VisionTool", "browser"),
+        ("interaction.tools.bash_tool", "BashTool", "system"),
+        ("interaction.tools.python_tool", "PythonTool", "system"),
+        ("interaction.tools.api_tool", "APITool", "api"),
+    ]
+    for mod_path, cls_name, category in tools:
+        try:
+            import importlib
+
+            mod = importlib.import_module(mod_path)
+            cls = getattr(mod, cls_name, None)
+            if cls:
+                instance = cls()
+                if instance.available():
+                    _registry.register(category, instance)
+        except Exception:
+            pass

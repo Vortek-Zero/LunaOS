@@ -33,6 +33,9 @@ from brain.memory import get_memory
 from brain.query_complexity import classify_query
 from brain.reflection import OutputValidator, VerificationSystem
 from brain.trace_logger import get_trace_logger
+from interaction.registry import get_registry
+from interaction.router import Router
+from interaction.verifier import Verifier
 from output_parser import OutputParser
 from performance_cache import PerformanceMonitor, SmartCache
 from vision.screen import get_vision
@@ -487,6 +490,11 @@ class LunaCore:
         # Seletor de modelo: "main" (médio 3B) ou "heavy" (alto 7B)
         self._writing_model: str = "main"  # default: médio
 
+        # Interaction Engine (Router + Registry + Verifier)
+        self._interaction_router = Router(llm=self._llm)
+        self._interaction_verifier = Verifier()
+        print(f"[Luna] ✓ Interaction Engine: {len(get_registry().all_tools())} ferramentas registradas")
+
         # Estado
         self.processing = False
         self.current_action: str | None = None
@@ -687,8 +695,9 @@ class LunaCore:
 
     def _run_autonomous_loop(self, text: str, mode: str = "", extra_context: str = "") -> str:
         """
-        Loop ReAct direto: ferramentas nativas do LLM, sem Planner/Scheduler intermediários.
-        O LLM recebe as tools e decide quando usá-las, igual Claw Code/Claude Code.
+        Loop ReAct direto + Interaction Engine (Router).
+        Para tarefas de sistema/navegador/API, usa o Router com conselho de IAs.
+        Para conversa/código/escrita, usa o loop ReAct com tools nativas.
         """
         timer_start = self._perf.start_timer()
         max_steps = getattr(self, "_max_steps", 15)
@@ -735,6 +744,65 @@ class LunaCore:
                     print(f"[Planner] Novo plano gerado:\n{plan_str}")
             except Exception as e:
                 print(f"[Planner] Erro ao gerar plano: {e}")
+
+        # ══ INTERACTION ENGINE (Router) ══
+        interaction_result = None
+        is_interaction_task = (
+            mode == ""
+            and not is_complex
+            and any(
+                kw in text.lower()
+                for kw in [
+                    "abre",
+                    "abrir",
+                    "navegar",
+                    "youtube",
+                    "site",
+                    "http",
+                    "www",
+                    "browser",
+                    "terminal",
+                    "bash",
+                    "comando",
+                    "executar",
+                    "rodar",
+                    "instalar",
+                    "pesquisar",
+                    "pesquisa",
+                    "busca",
+                    "buscar",
+                    "arquivo",
+                    "criar",
+                    "escrever",
+                    "ler",
+                    "salvar",
+                    "editar",
+                    "api",
+                    "requisição",
+                    "curl",
+                ]
+            )
+        )
+        if is_interaction_task:
+            try:
+                self._emit_progress("thinking", label="Roteando para Interaction Engine...")
+                print(f"[Interaction] Router.process(goal='{text}')")
+                result = self._interaction_router.resolve(text, {"context": context})
+                if result and result.get("status") == "success":
+                    tool_name = result.get("tool", "")
+                    data = result.get("data", {})
+                    approach = result.get("approach", {})
+                    interaction_result = {
+                        "status": "success",
+                        "tool": tool_name,
+                        "data": data,
+                        "approach": approach,
+                    }
+                    print(f"[Interaction] ✓ Sucesso via {tool_name}")
+                elif result and result.get("status") == "failed":
+                    print(f"[Interaction] ⚠ Falhou: {result.get('error', 'desconhecido')}")
+            except Exception as e:
+                print(f"[Interaction] Erro: {e}")
 
         # ── Sistema: prompt + ferramentas nativas ──
         from brain.agent_tools import LUNA_TOOLS, execute_tool_call, is_tool_success
@@ -1111,6 +1179,19 @@ class LunaCore:
             if step == max_steps - 1 and not final_response:
                 final_response = "⚠️ Limite de passos atingido. Pode haver ações incompletas."
 
+        # ══ INTERACTION ENGINE: gera resposta final ══
+        if interaction_result and interaction_result["status"] == "success":
+            tool_name = interaction_result["tool"]
+            data = interaction_result["data"]
+            if data and isinstance(data, dict):
+                stdout = data.get("stdout", "") or data.get("result", "") or ""
+                if stdout:
+                    final_response = self._generate_interaction_response(text, tool_name, stdout)
+                else:
+                    final_response = f"Feito via {tool_name}."
+            else:
+                final_response = f"Feito via {tool_name}."
+
         # Fallback: se nunca teve resposta do LLM (só ferramentas), gera sumário
         if not final_response:
             tool_obs = (
@@ -1217,6 +1298,32 @@ class LunaCore:
             self._auto_extract_facts(text, final_text)
 
         return final_text
+
+    def _generate_interaction_response(self, text: str, tool_name: str, output: str) -> str:
+        """Gera resposta final natural após execução bem-sucedida do Interaction Engine."""
+        prompt = (
+            f"Você é Luna, assistente pessoal brasileira. Responda de forma natural em português.\n\n"
+            f'O usuário disse: "{text}"\n\n'
+            f"Você usou a ferramenta '{tool_name}' e obteve:\n{output[:800]}\n\n"
+            f"Dê uma resposta curta e natural resumindo o que aconteceu."
+        )
+        try:
+            raw = self._llm.generate(
+                messages=[
+                    {"role": "system", "content": "Você é Luna, assistente pessoal brasileira."},
+                    {"role": "user", "content": prompt},
+                ],
+                task_type="command",
+                model="main",
+                max_retries=1,
+            )
+            if isinstance(raw, dict):
+                raw = raw.get("message", {}).get("content", "")
+            if raw and "[LLM indisponível]" not in str(raw):
+                return _sanitize_user_response(str(raw))
+        except Exception:
+            pass
+        return f"Feito! Usei {tool_name} para atender seu pedido."
 
     def _request_edit_permission(self, path: str, new_content: str) -> bool:
         """Solicita permissão do usuário antes de editar um arquivo."""

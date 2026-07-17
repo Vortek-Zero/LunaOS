@@ -2,10 +2,12 @@
 """
 verifier.py — Verificador de sucesso multi-sinal.
 Não checa apenas "deu erro". Analisa sinais concretos:
-  - Janela foi aberta?
-  - Arquivo foi criado?
-  - Tela mudou?
+  - Janela foi aberta/mudou?
+  - Arquivo foi criado/modificado?
+  - Tela mudou (screenshot diferente)?
+  - URL mudou?
   - Saída contém resultado esperado?
+  - Processo está rodando?
 """
 
 import re
@@ -16,7 +18,7 @@ from interaction.tools.base_tool import ToolResult
 
 class Verifier:
     def __init__(self):
-        self._snapshot_before = {}
+        self._previous_state = {}
 
     def check(self, result: ToolResult, goal: str = "") -> bool:
         if result.status == "success":
@@ -24,13 +26,34 @@ class Verifier:
 
         signals = result.signals or {}
 
-        if signals.get("returncode") == 0:
+        if signals.get("window_changed"):
             return True
 
-        if signals.get("window_opened"):
+        if signals.get("element_clicked"):
+            return True
+
+        if signals.get("url_changed"):
+            return True
+
+        if signals.get("page_loaded"):
             return True
 
         if signals.get("file_created"):
+            return True
+
+        if signals.get("search_done"):
+            return True
+
+        if signals.get("screenshot_taken"):
+            return True
+
+        if signals.get("text_typed"):
+            return True
+
+        if signals.get("returncode") == 0:
+            return True
+
+        if signals.get("http_ok"):
             return True
 
         stdout = ""
@@ -44,6 +67,18 @@ class Verifier:
                     return True
 
         return False
+
+    def check_window_opened(self, window_name: str = None) -> bool:
+        try:
+            from vision.screen import get_vision
+
+            vision = get_vision()
+            current = vision.get_active_window()
+            if window_name:
+                return window_name.lower() in current.lower()
+            return bool(current)
+        except Exception:
+            return False
 
     def check_file_created(self, path: str) -> bool:
         return Path(path).exists()
@@ -62,8 +97,24 @@ class Verifier:
         except Exception:
             return False
 
+    def check_screen_changed(self, prev_screenshot: str = None) -> bool:
+        try:
+            from vision.screen import get_vision
+
+            vision = get_vision()
+            now = vision.capture()
+            if now and prev_screenshot and Path(prev_screenshot).exists():
+                import hashlib
+
+                old_hash = hashlib.md5(Path(prev_screenshot).read_bytes()).hexdigest()
+                new_hash = hashlib.md5(Path(vision.last_screenshot).read_bytes()).hexdigest()
+                return old_hash != new_hash
+            return False
+        except Exception:
+            return False
+
     def _extract_keywords(self, goal: str) -> list[str]:
-        words = re.findall(r"\b[a-zA-Z]{3,}\b", goal)
+        words = re.findall(r"\b[a-zA-ZÀ-ÿ]{3,}\b", goal)
         stopwords = {
             "para",
             "com",
@@ -80,5 +131,18 @@ class Verifier:
             "sem",
             "sob",
             "era",
+            "tem",
+            "vai",
+            "pode",
+            "nos",
+            "nas",
+            "aos",
+            "ela",
+            "ele",
+            "você",
+            "isso",
+            "aquele",
+            "esta",
+            "este",
         }
         return [w for w in words if w.lower() not in stopwords]

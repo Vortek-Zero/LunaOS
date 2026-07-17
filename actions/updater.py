@@ -1,7 +1,9 @@
+import contextlib
 import json
 import shutil
 import subprocess
 import threading
+from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -56,10 +58,8 @@ def notify_update(new_version: str) -> None:
     title = "LunaOS — Atualização Disponível"
     message = f"Versão {new_version} disponível (atual: {__version__}).\nGostaria de atualizar?"
     if shutil.which("notify-send"):
-        try:
+        with contextlib.suppress(subprocess.SubprocessError):
             subprocess.run(["notify-send", "-u", "normal", "-t", "10000", title, message], check=True, timeout=5)
-        except subprocess.SubprocessError:
-            pass
     print(f"\n[Updater] {title}")
     print(f"[Updater] {message}\n")
 
@@ -73,6 +73,61 @@ def check_and_notify() -> None:
 def run_update_check() -> None:
     thread = threading.Thread(target=check_and_notify, daemon=True)
     thread.start()
+
+
+def _get_repo_root() -> str:
+    return str(Path(__file__).resolve().parent.parent)
+
+
+def _get_tracking_remote() -> str | None:
+    """Descobre a remote associada ao branch atual."""
+    try:
+        branch = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        if not branch:
+            return None
+        remote = subprocess.run(
+            ["git", "config", f"branch.{branch}.remote"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        return remote if remote and remote != "." else None
+    except Exception:
+        return None
+
+
+def perform_update() -> str:
+    """Executa git pull para atualizar o repositório."""
+    repo_root = _get_repo_root()
+    git_dir = str(Path(repo_root) / ".git")
+    remote = _get_tracking_remote()
+    if not remote:
+        remote = "origin"
+    try:
+        subprocess.run(
+            ["git", "--git-dir", git_dir, "--work-tree", repo_root, "fetch", remote],
+            capture_output=True,
+            timeout=30,
+        )
+        result = subprocess.run(
+            ["git", "--git-dir", git_dir, "--work-tree", repo_root, "pull", remote, "main"],
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        if result.returncode == 0:
+            output = result.stdout.strip()
+            if "Already up to date" in output:
+                return f"Luna já está atualizada (v{__version__})."
+            return f"Luna atualizada com sucesso!\n{output}"
+        return f"Falha ao atualizar: {result.stderr.strip()}"
+    except Exception as e:
+        return f"Erro ao atualizar: {e}"
 
 
 def test_notification() -> str:
