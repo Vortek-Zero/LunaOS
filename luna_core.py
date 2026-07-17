@@ -558,15 +558,15 @@ class LunaCore:
     def select_model(self, mode: str) -> str:
         """
         Seleciona o modelo de escrita criativa/texto.
-        mode: 'medium' (3B, rápido) ou 'high' (7B, mais profundo)
+        mode: 'medium' (rápido) ou 'high' (profundo)
         Retorna mensagem de confirmação.
         """
         if mode == "high":
             self._writing_model = "heavy"
-            return "★ Modelo ALTO (7B) selecionado — respostas mais profundas e detalhadas."
+            return "★ Modelo ALTO (profundo) selecionado — gpt-5.2, o3, claude-sonnet-5."
         else:
             self._writing_model = "main"
-            return "● Modelo MÉDIO (3B) selecionado — respostas rápidas e equilibradas."
+            return "● ModelO MÉDIO (rápido) selecionado — o3, grok-3, gpt-4o-mini."
 
     def get_model_mode(self) -> str:
         """Retorna o modo atual: 'medium' ou 'high'."""

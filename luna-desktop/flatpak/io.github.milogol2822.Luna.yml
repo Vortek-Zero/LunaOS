@@ -1,0 +1,60 @@
+---
+id: io.github.milogol2822.Luna
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.node20
+
+command: luna-desktop
+rename-icon: luna
+
+finish-args:
+  # Network (required for API calls to LLM providers, Spotify, Google, etc.)
+  - --share=network
+  # IPC for X11
+  - --share=ipc
+  # X11 + Wayland display server
+  - --socket=x11
+  - --socket=wayland
+  # GPU acceleration for WebKit rendering
+  - --device=dri
+  # User files (required for screenshots, file access, automation)
+  - --filesystem=home
+  # DBus for system notifications
+  - --talk-name=org.freedesktop.Notifications
+  # DBus for system tray / status notifier
+  - --talk-name=org.kde.StatusNotifierWatcher
+  # Audio playback (TTS)
+  - --socket=pulseaudio
+  # WebCamera (future STT use)
+  - --device=all
+
+modules:
+  - name: luna-desktop
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/rust-stable/bin:/usr/lib/sdk/node20/bin
+      env:
+        RUST_LOG: info
+    build-commands:
+      # Install npm dependencies
+      - npm ci --prefix luna-desktop
+      # Build Svelte frontend
+      - npm run build --prefix luna-desktop
+      # Build Tauri app binary (only binary, not installers)
+      - cargo build --release --manifest-path luna-desktop/src-tauri/Cargo.toml
+      # Install binary
+      - install -Dm755 luna-desktop/src-tauri/target/release/luna-desktop /app/bin/luna-desktop
+      # Install icons in all required sizes
+      - install -Dm644 luna-desktop/src-tauri/icons/32x32.png /app/share/icons/hicolor/32x32/apps/io.github.milogol2822.Luna.png
+      - install -Dm644 luna-desktop/src-tauri/icons/128x128.png /app/share/icons/hicolor/128x128/apps/io.github.milogol2822.Luna.png
+      - install -Dm644 luna-desktop/src-tauri/icons/icon.png /app/share/icons/hicolor/512x512/apps/io.github.milogol2822.Luna.png
+      # Install desktop file
+      - install -Dm644 luna-desktop/flatpak/io.github.milogol2822.Luna.desktop /app/share/applications/io.github.milogol2822.Luna.desktop
+      # Install AppStream metainfo
+      - install -Dm644 luna-desktop/src-tauri/luna.metainfo.xml /app/share/metainfo/io.github.milogol2822.Luna.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..

@@ -268,7 +268,27 @@ async function sendWriteChat(message: string, contextText: string) {
 }
 
 async function fetchModelsStatus() {
-  try { return await api('/api/models/status'); } catch { return { providers: [] }; }
+  try { return await api('/api/models/status'); } catch { return { providers: [], cascade: [] }; }
+}
+
+async function setCascade(order: string) {
+  try { return await api('/api/cascade', { method: 'POST', body: JSON.stringify({ order }) }); } catch { return null; }
+}
+
+async function setCrewMode(enabled: boolean) {
+  try { return await api('/api/crew', { method: 'POST', body: JSON.stringify({ enabled }) }); } catch { return null; }
+}
+
+async function setWritingModel(mode: string) {
+  try { return await api('/api/model', { method: 'POST', body: JSON.stringify({ mode }) }); } catch { return null; }
+}
+
+async function fetchTtsProviders() {
+  try { return await api('/api/voice/providers'); } catch { return { providers: [], current: 'edge_tts', voices: {} }; }
+}
+
+async function setTtsProvider(provider: string) {
+  try { return await api('/api/voice/provider', { method: 'POST', body: JSON.stringify({ provider }) }); } catch { return null; }
 }
 
 // ── Control Center ──────────────────────────────────────
@@ -522,8 +542,9 @@ export function useLuna() {
     fetchSystemApps, openSystemApp, sendWriteChat, fetchModelsStatus, fetchLightsStatus, setLightsState,
     fetchSchedules, addSchedule, deleteSchedule, toggleSchedule,
     fetchControlSummary, fetchProcesses, killProcess, sendCodeChat,
-    clearCodeSession,     fetchWriteProjects, createWriteProject, getWriteProject,
+    clearCodeSession, fetchWriteProjects, createWriteProject, getWriteProject,
     updateWriteProjectText, addWriteChapter, addWriteCharacter, deleteWriteProject,
     streamWrite, shutdownBackend, checkUpdate, applyUpdate,
+    setCascade, setCrewMode, setWritingModel, fetchTtsProviders, setTtsProvider,
   };
 }

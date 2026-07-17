@@ -1,37 +1,95 @@
-"""Geração de imagens via Google Gemini.
-Tenta modelos com suporte nativo a imagem: gemini-2.5-flash-image (grátis, rate-limited)
-e Imagen 4.0 (requer plano pago).
-"""
+"""Geração de imagens via Puter (dev tier, gratuito) + Google Gemini."""
 
+import json
 import uuid
 from pathlib import Path
+from urllib.request import Request, urlopen
 
-from config import GEMINI_API_KEY
+from config import GEMINI_API_KEY, PUTER_BASE_URL, PUTER_TOKEN
 
 PICTURES_DIR = Path.home() / "Pictures" / "Luna"
 
+PUTER_IMAGE_MODEL = "dall-e-3"
+
 
 def generate_image(prompt: str, size: str = "1024x1024") -> str:
-    if not GEMINI_API_KEY:
-        return "FALHOU: GEMINI_API_KEY não configurada."
+    PICTURES_DIR.mkdir(parents=True, exist_ok=True)
 
+    if PUTER_TOKEN:
+        result = _try_puter(prompt, size)
+        if result:
+            return result
+
+    if GEMINI_API_KEY:
+        result = _try_gemini(prompt)
+        if result:
+            return result
+
+    if PUTER_TOKEN:
+        return "FALHOU: Puter e Gemini não conseguiram gerar a imagem. Tente novamente."
+    elif GEMINI_API_KEY:
+        return "FALHOU: Gemini não conseguiu gerar a imagem. Verifique a cota ou tente outro prompt."
+    else:
+        return "FALHOU: Nenhuma chave de API configurada. Defina PUTER_TOKEN ou GEMINI_API_KEY no .env."
+
+
+def _try_puter(prompt: str, size: str) -> str | None:
+    try:
+        payload = json.dumps(
+            {
+                "interface": "puter-image",
+                "method": "generate",
+                "args": {
+                    "prompt": prompt,
+                    "model": PUTER_IMAGE_MODEL,
+                    "size": size,
+                    "n": 1,
+                },
+            }
+        ).encode()
+        req = Request(
+            f"{PUTER_BASE_URL}/drivers/call",
+            data=payload,
+            headers={
+                "Authorization": f"Bearer {PUTER_TOKEN}",
+                "Content-Type": "application/json",
+            },
+        )
+        with urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+            result = data.get("result", {})
+            image_url = result.get("url") or result.get("data", [{}])[0].get("url", "")
+            if image_url:
+                from urllib.request import urlopen as dl
+
+                image_data = dl(image_url, timeout=60).read()
+                return _save_image(image_data, prompt)
+            alt = result.get("alt") or result.get("data", [{}])[0].get("b64_json", "")
+            if alt:
+                import base64
+
+                image_data = base64.b64decode(alt)
+                return _save_image(image_data, prompt)
+        return None
+    except Exception as e:
+        print(f"[ImageGen] Puter falhou: {e}")
+        return None
+
+
+def _try_gemini(prompt: str) -> str | None:
     try:
         from google import genai
         from google.genai import types
     except ImportError:
-        return "FALHOU: google-genai não instalado (pip install google-genai)."
+        return None
 
-    PICTURES_DIR.mkdir(parents=True, exist_ok=True)
     client = genai.Client(api_key=GEMINI_API_KEY)
-
-    # Tenta modelos em ordem: flash-image (grátis) → Imagen 4.0 (pago)
     models_to_try = [
         ("gemini-2.5-flash-image", "generate_content"),
         ("gemini-2.0-flash-exp-image-generation", "generate_content"),
         ("imagen-4.0-generate-001", "imagen"),
     ]
 
-    last_error = ""
     for model_name, mode in models_to_try:
         try:
             if mode == "generate_content":
@@ -46,33 +104,24 @@ def generate_image(prompt: str, size: str = "1024x1024") -> str:
                         and part.inline_data.mime_type
                         and part.inline_data.mime_type.startswith("image/")
                     ):
-                        image_data = part.inline_data.data
-                        return _save_image(image_data, prompt)
-                last_error = f"{model_name}: não retornou imagem"
+                        return _save_image(part.inline_data.data, prompt)
             elif mode == "imagen":
                 response = client.models.generate_images(
                     model=model_name,
                     prompt=prompt,
-                    config=types.GenerateImagesConfig(
-                        number_of_images=1,
-                        aspect_ratio="1:1",
-                    ),
+                    config=types.GenerateImagesConfig(number_of_images=1, aspect_ratio="1:1"),
                 )
                 if response.generated_images and response.generated_images[0].image:
-                    image_data = response.generated_images[0].image.image_bytes
-                    return _save_image(image_data, prompt)
-                last_error = f"{model_name}: não retornou imagem"
+                    return _save_image(response.generated_images[0].image.image_bytes, prompt)
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                return "FALHOU: Cota diária de geração de imagens excedida (Gemini Free Tier). Tente novamente amanhã ou faça upgrade em https://ai.dev/projects."
+                return None  # Let Puter take over
             if "paid plans" in err_str or "payment" in err_str.lower():
-                last_error = f"{model_name}: requer plano pago"
-            else:
-                last_error = f"{model_name}: {e}"
+                continue
+            print(f"[ImageGen] Gemini {model_name} falhou: {e}")
             continue
-
-    return f"FALHOU: Nenhum modelo de geração de imagem disponível. {last_error}"
+    return None
 
 
 def _save_image(image_data: bytes, prompt: str) -> str:
