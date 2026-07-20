@@ -348,6 +348,7 @@
     .voice-block{font-size:.72em;padding:5px 10px;border-radius:8px;
       background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
       color:var(--t2);cursor:pointer;transition:all .2s;font-family:'JetBrains Mono',monospace}
+    .voice-block{cursor:pointer}
     .voice-block:hover{background:rgba(139,92,246,.1);border-color:rgba(139,92,246,.25);color:var(--t)}
     .voice-block.active{background:rgba(139,92,246,.15);border-color:rgba(139,92,246,.4);color:var(--a3)}
     .field{width:100%;padding:10px 14px;border:1px solid rgba(255,255,255,.1);border-radius:12px;
@@ -2089,6 +2090,7 @@ async function saveImageCascade() {
 }
 
 // ── TTS Config ────────────────────────────────────────────────
+let _ttsProvidersList = [];
 let _ttsCurrentProvider = 'edge_tts';
 let _ttsVoices = {};
 let _ttsCurrentVoice = '';
@@ -2097,6 +2099,7 @@ async function loadTtsConfig() {
   try {
     const d = await api('GET', '/api/voice/providers');
     if (d) {
+      _ttsProvidersList = d.providers || [];
       _ttsCurrentProvider = d.current || 'edge_tts';
       _ttsVoices = d.voices || {};
       _ttsCurrentVoice = d.voice || '';
@@ -2108,8 +2111,7 @@ async function loadTtsConfig() {
 function renderTtsConfig() {
   const provEl = document.getElementById('ttsProviderList');
   if (provEl) {
-    const providers = Object.keys(_ttsVoices).length ? Object.keys(_ttsVoices) : ['edge_tts', 'puter', 'elevenlabs', 'azure'];
-    provEl.innerHTML = providers.map(p =>
+    provEl.innerHTML = _ttsProvidersList.map(p =>
       `<button class="btn sm ${_ttsCurrentProvider === p ? 'primary' : ''}" onclick="setTtsProvider('${p}')">
         ${p}${_ttsCurrentProvider === p ? ' ✓' : ''}
       </button>`
@@ -2117,7 +2119,7 @@ function renderTtsConfig() {
   }
 
   const voiceEl = document.getElementById('ttsVoiceList');
-  if (voiceEl && _ttsVoices[_ttsCurrentProvider]) {
+  if (voiceEl && _ttsVoices[_ttsCurrentProvider] && _ttsVoices[_ttsCurrentProvider].length) {
     voiceEl.innerHTML = _ttsVoices[_ttsCurrentProvider].map(v =>
       `<button class="voice-block ${_ttsCurrentVoice === v ? 'active' : ''}" onclick="setTtsVoice('${v}')">${v}</button>`
     ).join('');
@@ -2134,7 +2136,6 @@ async function setTtsProvider(provider) {
     const d = await api('POST', '/api/voice/provider', { provider });
     if (d.success) {
       el.textContent = `TTS: ${provider}`;
-      // Reload to get voices for this provider
       await loadTtsConfig();
     }
   } catch {
@@ -2145,6 +2146,7 @@ async function setTtsProvider(provider) {
 
 async function setTtsVoice(voice) {
   _ttsCurrentVoice = voice;
+  renderTtsConfig();
   const el = document.getElementById('ttsConfigMsg');
   el.textContent = 'Alterando voz...';
   try {
@@ -2153,6 +2155,7 @@ async function setTtsVoice(voice) {
     renderTtsConfig();
   } catch {
     el.textContent = 'Erro';
+    renderTtsConfig();
   }
   setTimeout(() => el.textContent = '', 3000);
 }

@@ -650,7 +650,7 @@
   .tts-buttons { flex-wrap: wrap; gap: 6px; }
   .check-mark { margin-left: 4px; font-size: 10px; }
   .voice-list { display: flex; flex-wrap: wrap; gap: 4px; }
-  .voice-tag { font-size: 10px; padding: 3px 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; color: rgba(255,255,255,0.4); }
+  .voice-tag { font-size: 10px; padding: 3px 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); border-radius: 6px; color: rgba(255,255,255,0.4); cursor: pointer; }
   .voice-tag.active { background: rgba(59,158,255,0.1); border-color: rgba(59,158,255,0.2); color: #3b9eff; }
   .toggle { position: relative; display: inline-block; width: 36px; height: 20px; cursor: pointer; }
   .toggle input { opacity: 0; width: 0; height: 0; }
