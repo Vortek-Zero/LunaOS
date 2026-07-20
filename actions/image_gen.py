@@ -14,23 +14,28 @@ PUTER_IMAGE_MODEL = "dall-e-3"
 
 def generate_image(prompt: str, size: str = "1024x1024") -> str:
     PICTURES_DIR.mkdir(parents=True, exist_ok=True)
+    import config
 
+    for provider in config.IMAGE_CASCADE_ORDER:
+        provider = provider.strip().lower()
+        if provider == "puter" and PUTER_TOKEN:
+            result = _try_puter(prompt, size)
+            if result:
+                return result
+        elif provider == "gemini" and GEMINI_API_KEY:
+            result = _try_gemini(prompt)
+            if result:
+                return result
+
+    configured = []
     if PUTER_TOKEN:
-        result = _try_puter(prompt, size)
-        if result:
-            return result
-
+        configured.append("Puter")
     if GEMINI_API_KEY:
-        result = _try_gemini(prompt)
-        if result:
-            return result
+        configured.append("Gemini")
 
-    if PUTER_TOKEN:
-        return "FALHOU: Puter e Gemini não conseguiram gerar a imagem. Tente novamente."
-    elif GEMINI_API_KEY:
-        return "FALHOU: Gemini não conseguiu gerar a imagem. Verifique a cota ou tente outro prompt."
-    else:
+    if not configured:
         return "FALHOU: Nenhuma chave de API configurada. Defina PUTER_TOKEN ou GEMINI_API_KEY no .env."
+    return f"FALHOU: Os provedores testados ({', '.join(configured)}) falharam ou estão sem cota. Verifique a cota ou alterne o cascade."
 
 
 def _try_puter(prompt: str, size: str) -> str | None:

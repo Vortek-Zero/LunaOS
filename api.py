@@ -6,10 +6,12 @@ Preparado para separação: frontend web pode rodar em outro servidor.
 """
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import logging as _logging
 import secrets as _secrets
+import subprocess as _subprocess
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
@@ -55,16 +57,13 @@ app.add_middleware(
 )
 
 # ── Rate Limiting ─────────────────────────────────────────────
-import contextlib
-import time as _rate_time
-
 _rate_limit_data: dict[str, list[float]] = defaultdict(list)
 RATE_LIMIT = 30  # requests per minute per IP
 
 
 def _check_rate_limit(request: Request) -> None:
     client_ip = request.client.host if request.client else "unknown"
-    now = _rate_time.time()
+    now = time.time()
     window = 60.0
     timestamps = _rate_limit_data[client_ip]
     # Remove old entries
@@ -923,6 +922,10 @@ class TtsProviderRequest(BaseModel):
     provider: str
 
 
+class TtsVoiceRequest(BaseModel):
+    voice: str
+
+
 @app.get("/api/voice/providers")
 async def list_tts_providers(_key: str = Depends(verify_api_key)):
     """Lista provedores de TTS disponíveis."""
@@ -958,6 +961,19 @@ async def set_tts_provider(req: TtsProviderRequest, _key: str = Depends(verify_a
 
     reload(config)
     return {"success": True, "provider": req.provider}
+
+
+@app.post("/api/voice/voice")
+async def set_tts_voice(req: TtsVoiceRequest, _key: str = Depends(verify_api_key)):
+    """Altera a voz do TTS ativo."""
+    from config import VOICE_CONFIG
+
+    VOICE_CONFIG["voice"] = req.voice
+    # Atualiza no motor de voz
+    from voice.tts import get_tts
+
+    get_tts().set_voice(req.voice)
+    return {"success": True, "voice": req.voice}
 
 
 # ── Controles de Mídia ────────────────────────────────────────
@@ -1698,6 +1714,39 @@ async def serve_image(filename: str, _key: str = Depends(verify_api_key)):
     return FileResponse(str(filepath), media_type="image/png")
 
 
+class ImageCascadeRequest(BaseModel):
+    order: str
+
+
+@app.get("/api/images/status")
+async def images_status(_key: str = Depends(verify_api_key)):
+    """Retorna os provedores de imagem e o cascade atual."""
+    import config
+
+    puter_active = bool(config.PUTER_TOKEN)
+    gemini_active = bool(config.GEMINI_API_KEY)
+
+    providers = [
+        {"name": "Puter", "active": puter_active, "available": puter_active},
+        {"name": "Gemini", "active": gemini_active, "available": gemini_active},
+    ]
+    return {"providers": providers, "cascade": config.IMAGE_CASCADE_ORDER}
+
+
+@app.post("/api/images/cascade")
+async def set_images_cascade(req: ImageCascadeRequest, _key: str = Depends(verify_api_key)):
+    """Altera a ordem do cascade de geração de imagem."""
+    import config
+
+    order = [p.strip() for p in req.order.split(",") if p.strip()]
+    valid = {"gemini", "puter"}
+    order = [p for p in order if p.lower() in valid]
+    if order:
+        config.IMAGE_CASCADE_ORDER = order
+        return {"success": True, "message": f"Cascade de imagem alterado para: {', '.join(order)}", "cascade": order}
+    raise HTTPException(status_code=400, detail="Ordem de cascade inválida.")
+
+
 @app.post("/api/image/generate")
 async def api_generate_image(req: Request, _key: str = Depends(verify_api_key)):
     try:
@@ -1776,10 +1825,7 @@ async def shutdown(request: Request, _key: str = Depends(verify_api_key)):
 
 
 # ── Update Check ──────────────────────────────────────────────
-import subprocess as _subprocess
-from pathlib import Path as _P
-
-GIT_DIR = str(_P(__file__).parent / ".git")
+GIT_DIR = str(Path(__file__).parent / ".git")
 
 
 def _get_tracking_branch() -> tuple[str, str] | None:
@@ -1831,7 +1877,7 @@ async def check_update():
 
         current_hash = current.stdout.strip()
         latest_hash = latest.stdout.strip()
-        commits = [l for l in log.stdout.strip().split("\n") if l.strip()]
+        commits = [c for c in log.stdout.strip().split("\n") if c.strip()]
         ahead = len(commits)
 
         return {

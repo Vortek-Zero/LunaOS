@@ -291,6 +291,19 @@ async function setTtsProvider(provider: string) {
   try { return await api('/api/voice/provider', { method: 'POST', body: JSON.stringify({ provider }) }); } catch { return null; }
 }
 
+async function setTtsVoice(voice: string) {
+  try { return await api('/api/voice/voice', { method: 'POST', body: JSON.stringify({ voice }) }); } catch { return null; }
+}
+
+async function fetchImageStatus() {
+  try { return await api('/api/images/status'); } catch { return { providers: [], cascade: [] }; }
+}
+
+async function setImageCascade(order: string) {
+  try { return await api('/api/images/cascade', { method: 'POST', body: JSON.stringify({ order }) }); } catch { return null; }
+}
+
+
 // ── Control Center ──────────────────────────────────────
 async function fetchLightsStatus() {
   try { return await api('/api/control/lights/status'); } catch { return null; }
@@ -546,5 +559,6 @@ export function useLuna() {
     updateWriteProjectText, addWriteChapter, addWriteCharacter, deleteWriteProject,
     streamWrite, shutdownBackend, checkUpdate, applyUpdate,
     setCascade, setCrewMode, setWritingModel, fetchTtsProviders, setTtsProvider,
+    setTtsVoice, fetchImageStatus, setImageCascade,
   };
 }

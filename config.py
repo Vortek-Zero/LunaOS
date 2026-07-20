@@ -164,6 +164,13 @@ CASCADE_ORDER = os.getenv(
 ).split(",")
 CASCADE_ORDER = [p.strip() for p in CASCADE_ORDER if p.strip()]
 
+# ── Cascade de Geração de Imagem ──────────────────────────────
+IMAGE_CASCADE_ORDER = os.getenv(
+    "LUNA_IMAGE_CASCADE_ORDER",
+    "puter,gemini",
+).split(",")
+IMAGE_CASCADE_ORDER = [p.strip() for p in IMAGE_CASCADE_ORDER if p.strip()]
+
 # ── Crew Mode (múltiplos LLMs especializados em simultâneo) ──
 # Quando CREW_ENABLED=true, cada task_type usa o melhor modelo:
 #   criatividade/chat → grok-3
@@ -177,14 +184,14 @@ CREW_ENABLED = os.getenv("CREW_ENABLED", "true").lower() in ("true", "1", "yes")
 
 CREW_MODELS = {
     "conversational": os.getenv("CREW_CHAT", "puter/grok-3"),
-    "creative":       os.getenv("CREW_CREATIVE", "puter/grok-3"),
-    "default":        os.getenv("CREW_DEFAULT", "puter/grok-3"),
-    "coding":         os.getenv("CREW_CODING", "puter/gpt-5.2"),
-    "planning":       os.getenv("CREW_REASONING", "puter/o3"),
-    "factual":        os.getenv("CREW_FACTUAL", "puter/deepseek-r1-0528"),
-    "command":        os.getenv("CREW_FAST", "puter/gpt-4o-mini"),
-    "writing":        os.getenv("CREW_WRITING", "puter/claude-sonnet-5"),
-    "compat":         os.getenv("CREW_COMPAT", "puter/gpt-4o"),
+    "creative": os.getenv("CREW_CREATIVE", "puter/grok-3"),
+    "default": os.getenv("CREW_DEFAULT", "puter/grok-3"),
+    "coding": os.getenv("CREW_CODING", "puter/gpt-5.2"),
+    "planning": os.getenv("CREW_REASONING", "puter/o3"),
+    "factual": os.getenv("CREW_FACTUAL", "puter/deepseek-r1-0528"),
+    "command": os.getenv("CREW_FAST", "puter/gpt-4o-mini"),
+    "writing": os.getenv("CREW_WRITING", "puter/claude-sonnet-5"),
+    "compat": os.getenv("CREW_COMPAT", "puter/gpt-4o"),
 }
 
 # ── Agent ──────────────────────────────────────────────────────
