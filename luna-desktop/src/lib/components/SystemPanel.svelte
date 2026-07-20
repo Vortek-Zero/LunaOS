@@ -418,9 +418,11 @@
                 ondrop={(e) => handleDrop(e, i, 'llm')}
                 ondragend={handleDragEnd}
                 class:dragging={dragItem === item && dragTarget === 'llm'}
+                class:active-provider={i === 0}
               >
                 <span class="block-order">{i + 1}</span>
                 <span class="block-name">{item}</span>
+                {#if i === 0}<span class="block-badge">em uso</span>{/if}
                 <span class="block-grip">⠿</span>
               </div>
             {/each}
@@ -468,9 +470,11 @@
                 ondrop={(e) => handleDrop(e, i, 'image')}
                 ondragend={handleDragEnd}
                 class:dragging={dragItem === item && dragTarget === 'image'}
+                class:active-provider={i === 0}
               >
                 <span class="block-order">{i + 1}</span>
                 <span class="block-name">{item}</span>
+                {#if i === 0}<span class="block-badge">em uso</span>{/if}
                 <span class="block-grip">⠿</span>
               </div>
             {/each}
@@ -684,4 +688,6 @@
   }
   .block-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); flex: 1; text-transform: capitalize; }
   .block-grip { font-size: 16px; color: rgba(255,255,255,0.2); letter-spacing: 2px; }
+  .active-provider { border-color: rgba(59,255,100,0.3) !important; background: linear-gradient(135deg, rgba(59,255,100,0.08), rgba(59,158,255,0.04)) !important; }
+  .block-badge { font-size: 10px; padding: 2px 8px; border-radius: 6px; background: rgba(59,255,100,0.15); color: #3bff64; font-weight: 600; letter-spacing: 0.3px; }
 </style>
