@@ -346,6 +346,10 @@
     .block-grip{font-size:16px;color:rgba(255,255,255,.2);letter-spacing:2px}
     .active-provider{border-color:rgba(59,255,100,.3);background:linear-gradient(135deg,rgba(59,255,100,.08),rgba(59,158,255,.04))}
     .block-badge{font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(59,255,100,.15);color:#3bff64;font-weight:600;letter-spacing:.3px}
+    .cascade-arrows{display:flex;flex-direction:column;gap:2px}
+    .arrow-btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.6);cursor:pointer;font-size:10px;line-height:1;padding:2px 6px;transition:all .15s}
+    .arrow-btn:hover:not(:disabled){background:rgba(139,92,246,.2);border-color:rgba(139,92,246,.4);color:#fff}
+    .arrow-btn:disabled{opacity:.25;cursor:default}
     .voice-blocks{display:flex;flex-wrap:wrap;gap:4px}
     .voice-block{font-size:.72em;padding:5px 10px;border-radius:8px;
       background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
@@ -1992,63 +1996,33 @@ async function clearCache(){
   try{await api('POST','/api/cache/clear');loadPerf()}catch{}
 }
 
-// ── Cascade Config (arrastável) ──────────────────────────────
-let _dragItem = null;
-let _dragTarget = '';
+// ── Cascade Config ───────────────────────────────────────────
+let _llmCascadeItems = [];
+let _imageCascadeItems = [];
+
+function cascadeMove(containerId, items, target, index, direction) {
+  const swap = index + direction;
+  if (swap < 0 || swap >= items.length) return;
+  [items[index], items[swap]] = [items[swap], items[index]];
+  renderCascadeBlocks(containerId, items, target);
+}
 
 function renderCascadeBlocks(containerId, items, target) {
   const el = document.getElementById(containerId);
   if (!el) return;
+  const isImage = target === 'image';
+  const stateKey = isImage ? '_imageCascadeItems' : '_llmCascadeItems';
   el.innerHTML = items.map((item, i) =>
-    `<div class="cascade-block${i === 0 ? ' active-provider' : ''}" draggable="true"
-         data-item="${item}" data-target="${target}" data-index="${i}"
-         ondragstart="cascadeDragStart(event)"
-         ondragover="cascadeDragOver(event)"
-         ondrop="cascadeDrop(event, '${target}')"
-         ondragend="cascadeDragEnd()">
+    `<div class="cascade-block${i === 0 ? ' active-provider' : ''}">
        <span class="block-order">${i + 1}</span>
        <span class="block-name">${item}</span>
        ${i === 0 ? '<span class="block-badge">em uso</span>' : ''}
-       <span class="block-grip">⠿</span>
+       <span class="cascade-arrows">
+         <button class="arrow-btn" onclick="cascadeMove('${containerId}', ${stateKey}, '${target}', ${i}, -1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+         <button class="arrow-btn" onclick="cascadeMove('${containerId}', ${stateKey}, '${target}', ${i}, 1)" ${i === items.length - 1 ? 'disabled' : ''}>▼</button>
+       </span>
      </div>`
   ).join('');
-}
-
-let _llmCascadeItems = [];
-let _imageCascadeItems = [];
-
-function cascadeDragStart(e) {
-  const el = e.currentTarget;
-  _dragItem = el.dataset.item;
-  _dragTarget = el.dataset.target;
-  el.classList.add('dragging');
-  e.dataTransfer.effectAllowed = 'move';
-}
-
-function cascadeDragOver(e) {
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-}
-
-function cascadeDrop(e, target) {
-  e.preventDefault();
-  if (!_dragItem) return;
-  const dropTarget = e.currentTarget;
-  let targetIdx = parseInt(dropTarget.dataset.index);
-  let items = target === 'llm' ? _llmCascadeItems : _imageCascadeItems;
-  const fromIdx = items.indexOf(_dragItem);
-  if (fromIdx === -1) return;
-  if (fromIdx < targetIdx) targetIdx--;
-  items.splice(fromIdx, 1);
-  items.splice(targetIdx, 0, _dragItem);
-  const containerId = target === 'llm' ? 'llmCascadeBlocks' : 'imageCascadeBlocks';
-  renderCascadeBlocks(containerId, items, target);
-  _dragItem = null;
-}
-
-function cascadeDragEnd() {
-  document.querySelectorAll('.cascade-block.dragging').forEach(el => el.classList.remove('dragging'));
-  _dragItem = null;
 }
 
 async function loadCascadeConfig() {

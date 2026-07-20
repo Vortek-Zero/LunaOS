@@ -32,9 +32,7 @@
   let imageCascadeMsg = $state('');
   let imageProviders = $state<Array<{ name: string; active: boolean; available: boolean }>>([]);
 
-  // Drag state
-  let dragItem: string | null = $state(null);
-  let dragTarget: 'llm' | 'image' = $state('llm');
+
 
   async function loadMetrics() {
     const res = await luna.fetchSystemMetrics();
@@ -152,41 +150,19 @@
     setTimeout(() => imageCascadeMsg = '', 3000);
   }
 
-  function handleDragStart(e: DragEvent, item: string, target: 'llm' | 'image') {
-    dragItem = item;
-    dragTarget = target;
-    if (e.dataTransfer) {
-      e.dataTransfer.effectAllowed = 'move';
-    }
+  function moveLlmItem(index: number, direction: number) {
+    const arr = cascadeOrder.split(',').filter(Boolean);
+    const swap = index + direction;
+    if (swap < 0 || swap >= arr.length) return;
+    [arr[index], arr[swap]] = [arr[swap], arr[index]];
+    cascadeOrder = arr.join(',');
   }
 
-  function handleDragOver(e: DragEvent) {
-    e.preventDefault();
-    if (e.dataTransfer) {
-      e.dataTransfer.dropEffect = 'move';
-    }
-  }
-
-  function handleDrop(e: DragEvent, targetIdx: number, target: 'llm' | 'image') {
-    e.preventDefault();
-    if (!dragItem) return;
-    const list = target === 'llm' ? cascadeOrder : imageCascadeOrder;
-    const arr = list.split(',').filter(Boolean);
-    const fromIdx = arr.indexOf(dragItem);
-    if (fromIdx === -1) return;
-    arr.splice(fromIdx, 1);
-    arr.splice(targetIdx, 0, dragItem);
-    const result = arr.join(',');
-    if (target === 'llm') {
-      cascadeOrder = result;
-    } else {
-      imageCascadeOrder = arr;
-    }
-    dragItem = null;
-  }
-
-  function handleDragEnd() {
-    dragItem = null;
+  function moveImageItem(index: number, direction: number) {
+    const swap = index + direction;
+    if (swap < 0 || swap >= imageCascadeOrder.length) return;
+    [imageCascadeOrder[index], imageCascadeOrder[swap]] = [imageCascadeOrder[swap], imageCascadeOrder[index]];
+    imageCascadeOrder = [...imageCascadeOrder];
   }
 
   async function checkUpdate() {
@@ -411,19 +387,14 @@
           <span class="setting-label">Ordem dos provedores LLM (arraste para reordenar)</span>
           <div class="cascade-blocks">
             {#each cascadeOrder.split(',').filter(Boolean) as item, i}
-              <div class="cascade-block"
-                draggable="true"
-                ondragstart={(e) => handleDragStart(e, item, 'llm')}
-                ondragover={handleDragOver}
-                ondrop={(e) => handleDrop(e, i, 'llm')}
-                ondragend={handleDragEnd}
-                class:dragging={dragItem === item && dragTarget === 'llm'}
-                class:active-provider={i === 0}
-              >
+              <div class="cascade-block" class:active-provider={i === 0}>
                 <span class="block-order">{i + 1}</span>
                 <span class="block-name">{item}</span>
                 {#if i === 0}<span class="block-badge">em uso</span>{/if}
-                <span class="block-grip">⠿</span>
+                <span class="cascade-arrows">
+                  <button class="arrow-btn" onclick={() => moveLlmItem(i, -1)} disabled={i === 0}>▲</button>
+                  <button class="arrow-btn" onclick={() => moveLlmItem(i, 1)} disabled={i === cascadeOrder.split(',').filter(Boolean).length - 1}>▼</button>
+                </span>
               </div>
             {/each}
           </div>
@@ -463,19 +434,14 @@
           <span class="setting-label">Ordem dos provedores de imagem (arraste para reordenar)</span>
           <div class="cascade-blocks">
             {#each imageCascadeOrder as item, i}
-              <div class="cascade-block"
-                draggable="true"
-                ondragstart={(e) => handleDragStart(e, item, 'image')}
-                ondragover={handleDragOver}
-                ondrop={(e) => handleDrop(e, i, 'image')}
-                ondragend={handleDragEnd}
-                class:dragging={dragItem === item && dragTarget === 'image'}
-                class:active-provider={i === 0}
-              >
+              <div class="cascade-block" class:active-provider={i === 0}>
                 <span class="block-order">{i + 1}</span>
                 <span class="block-name">{item}</span>
                 {#if i === 0}<span class="block-badge">em uso</span>{/if}
-                <span class="block-grip">⠿</span>
+                <span class="cascade-arrows">
+                  <button class="arrow-btn" onclick={() => moveImageItem(i, -1)} disabled={i === 0}>▲</button>
+                  <button class="arrow-btn" onclick={() => moveImageItem(i, 1)} disabled={i === imageCascadeOrder.length - 1}>▼</button>
+                </span>
               </div>
             {/each}
           </div>
@@ -690,4 +656,8 @@
   .block-grip { font-size: 16px; color: rgba(255,255,255,0.2); letter-spacing: 2px; }
   .active-provider { border-color: rgba(59,255,100,0.3) !important; background: linear-gradient(135deg, rgba(59,255,100,0.08), rgba(59,158,255,0.04)) !important; }
   .block-badge { font-size: 10px; padding: 2px 8px; border-radius: 6px; background: rgba(59,255,100,0.15); color: #3bff64; font-weight: 600; letter-spacing: 0.3px; }
+  .cascade-arrows { display: flex; flex-direction: column; gap: 2px; }
+  .arrow-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 10px; line-height: 1; padding: 2px 6px; transition: all 0.15s; }
+  .arrow-btn:hover:not(:disabled) { background: rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.4); color: #fff; }
+  .arrow-btn:disabled { opacity: 0.25; cursor: default; }
 </style>
