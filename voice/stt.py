@@ -6,6 +6,7 @@ voice/stt.py — STT híbrido com openWakeWord (VAD Silero):
   Fallback: faster-whisper local (se sem API key)
 """
 
+import contextlib
 import math
 import os
 import struct
@@ -60,10 +61,11 @@ except ImportError:
     HAS_GOOGLE_OAUTH = False
 
 try:
-    import openwakeword
+    os.environ["ORT_LOG_LEVEL"] = "3"  # FATAL only — suprime spam ONNX
+    import importlib as _il
 
-    HAS_OWW = True
-except ImportError:
+    HAS_OWW = _il.util.find_spec("openwakeword") is not None
+except Exception:
     HAS_OWW = False
 
 # ── Constantes ─────────────────────────────────────────────────
@@ -236,10 +238,8 @@ def _transcribe_google(wav_path: str) -> str:
         print(err("STT_GOOGLE_FAILED", str(e)))
         return ""
     finally:
-        try:
+        with contextlib.suppress(Exception):
             os.unlink(wav_path)
-        except Exception:
-            pass
 
 
 def _transcribe_groq(wav_path: str) -> str:
@@ -258,10 +258,8 @@ def _transcribe_groq(wav_path: str) -> str:
         print(err("STT_GROQ_FAILED", str(e)))
         return ""
     finally:
-        try:
+        with contextlib.suppress(Exception):
             os.unlink(wav_path)
-        except Exception:
-            pass
 
 
 def _transcribe_local(model, wav_path: str) -> str:
@@ -278,10 +276,8 @@ def _transcribe_local(model, wav_path: str) -> str:
         print(err("STT_WHISPER_FAILED", str(e)))
         return ""
     finally:
-        try:
+        with contextlib.suppress(Exception):
             os.unlink(wav_path)
-        except Exception:
-            pass
 
 
 # ══════════════════════════════════════════════════════════════
@@ -308,6 +304,7 @@ class STTEngine:
         if HAS_OWW:
             try:
                 from openwakeword.vad import VAD
+
                 self._vad = VAD()
                 print("[STT] ✓ openWakeWord VAD (Silero) carregado")
             except Exception as e:
@@ -353,7 +350,8 @@ class STTEngine:
         if not self._vad:
             return 0.0
         import numpy as np
-        chunks = struct.unpack(f"{len(data)//2}h", data)
+
+        chunks = struct.unpack(f"{len(data) // 2}h", data)
         audio = np.array(chunks, dtype=np.int16)
         return float(self._vad.predict(audio))
 

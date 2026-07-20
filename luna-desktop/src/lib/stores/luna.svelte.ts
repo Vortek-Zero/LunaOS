@@ -221,13 +221,18 @@ async function sendWithMode(mode: string, text: string) {
 
 // ── System Status ───────────────────────────────────────
 async function checkConnection() {
-  try {
-    const data = await api('/api/status');
-    connected = true;
-    systemInfo = data;
-  } catch {
-    connected = false;
+  for (let i = 0; i < 30; i++) {
+    try {
+      const data = await fetch(`${API}/api/status`, { signal: AbortSignal.timeout(2000) });
+      if (data.ok) {
+        connected = true;
+        systemInfo = await data.json();
+        return;
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 1000));
   }
+  connected = false;
 }
 
 async function resetSystem() {
