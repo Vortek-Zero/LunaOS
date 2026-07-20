@@ -2015,9 +2015,10 @@ let _llmCascadeItems = [];
 let _imageCascadeItems = [];
 
 function cascadeDragStart(e) {
-  _dragItem = e.target.dataset.item;
-  _dragTarget = e.target.dataset.target;
-  e.target.classList.add('dragging');
+  const el = e.currentTarget;
+  _dragItem = el.dataset.item;
+  _dragTarget = el.dataset.target;
+  el.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
 }
 
