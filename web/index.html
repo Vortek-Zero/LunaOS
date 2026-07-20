@@ -344,6 +344,8 @@
       display:flex;align-items:center;justify-content:center;flex-shrink:0}
     .block-name{font-size:13px;font-weight:600;color:rgba(255,255,255,.8);flex:1;text-transform:capitalize}
     .block-grip{font-size:16px;color:rgba(255,255,255,.2);letter-spacing:2px}
+    .active-provider{border-color:rgba(59,255,100,.3);background:linear-gradient(135deg,rgba(59,255,100,.08),rgba(59,158,255,.04))}
+    .block-badge{font-size:10px;padding:2px 8px;border-radius:6px;background:rgba(59,255,100,.15);color:#3bff64;font-weight:600;letter-spacing:.3px}
     .voice-blocks{display:flex;flex-wrap:wrap;gap:4px}
     .voice-block{font-size:.72em;padding:5px 10px;border-radius:8px;
       background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
@@ -1998,7 +2000,7 @@ function renderCascadeBlocks(containerId, items, target) {
   const el = document.getElementById(containerId);
   if (!el) return;
   el.innerHTML = items.map((item, i) =>
-    `<div class="cascade-block" draggable="true"
+    `<div class="cascade-block${i === 0 ? ' active-provider' : ''}" draggable="true"
          data-item="${item}" data-target="${target}" data-index="${i}"
          ondragstart="cascadeDragStart(event)"
          ondragover="cascadeDragOver(event)"
@@ -2006,6 +2008,7 @@ function renderCascadeBlocks(containerId, items, target) {
          ondragend="cascadeDragEnd()">
        <span class="block-order">${i + 1}</span>
        <span class="block-name">${item}</span>
+       ${i === 0 ? '<span class="block-badge">em uso</span>' : ''}
        <span class="block-grip">⠿</span>
      </div>`
   ).join('');
@@ -2031,10 +2034,11 @@ function cascadeDrop(e, target) {
   e.preventDefault();
   if (!_dragItem) return;
   const dropTarget = e.currentTarget;
-  const targetIdx = parseInt(dropTarget.dataset.index);
+  let targetIdx = parseInt(dropTarget.dataset.index);
   let items = target === 'llm' ? _llmCascadeItems : _imageCascadeItems;
   const fromIdx = items.indexOf(_dragItem);
   if (fromIdx === -1) return;
+  if (fromIdx < targetIdx) targetIdx--;
   items.splice(fromIdx, 1);
   items.splice(targetIdx, 0, _dragItem);
   const containerId = target === 'llm' ? 'llmCascadeBlocks' : 'imageCascadeBlocks';
@@ -2059,9 +2063,10 @@ async function loadCascadeConfig() {
     const is = await api('GET', '/api/images/status');
     if (is && is.cascade) {
       _imageCascadeItems = Array.isArray(is.cascade) ? [...is.cascade] : is.cascade.split(',').filter(Boolean);
-      renderCascadeBlocks('imageCascadeBlocks', _imageCascadeItems, 'image');
     }
   } catch {}
+  if (!_imageCascadeItems.length) _imageCascadeItems = ['puter', 'gemini'];
+  renderCascadeBlocks('imageCascadeBlocks', _imageCascadeItems, 'image');
 }
 
 async function saveLlmCascade() {
