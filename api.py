@@ -26,6 +26,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import config
+from settings import apply_all as _apply_settings
+from settings import get as _load_settings
+from settings import set as _save_setting
+
+_apply_settings()
 
 _llm_executor = _ThreadPoolExecutor(max_workers=2, thread_name_prefix="llm")
 _whisper_model = None
@@ -137,7 +142,21 @@ def get_luna():
         from luna_core import get_luna as _get_luna
 
         _luna = _get_luna()
+        _apply_saved_settings(_luna)
     return _luna
+
+
+def _apply_saved_settings(luna) -> None:
+    """Aplica settings salvas na instância da Luna (writing model, crew etc.)."""
+    data = _load_settings()
+    if not data:
+        return
+    wm = data.get("writing_model")
+    if wm:
+        luna.select_model(wm)
+    crew = data.get("crew_enabled")
+    if crew is not None:
+        luna.set_crew_mode(crew)
 
 
 # ── Modelos Pydantic ──────────────────────────────────────────
@@ -685,6 +704,7 @@ async def set_writing_model(req: ModelRequest, _key: str = Depends(verify_api_ke
         raise HTTPException(status_code=400, detail="Modo deve ser 'medium' ou 'high'.")
     luna = get_luna()
     msg = luna.select_model(req.mode)
+    _save_setting("writing_model", req.mode)
     return {"success": True, "message": msg, "mode": req.mode}
 
 
@@ -707,6 +727,7 @@ async def set_cascade(req: CascadeRequest, _key: str = Depends(verify_api_key)):
     Ex: {"order": "puter,groq,gemini"}"""
     luna = get_luna()
     msg = luna.set_cascade(req.order)
+    _save_setting("llm_cascade", [p.strip() for p in req.order.split(",") if p.strip()])
     return {"success": True, "message": msg}
 
 
@@ -719,6 +740,7 @@ async def set_crew(req: CrewRequest, _key: str = Depends(verify_api_key)):
     """Ativa/desativa o Crew Mode (múltiplos LLMs especializados)."""
     luna = get_luna()
     msg = luna.set_crew_mode(req.enabled)
+    _save_setting("crew_enabled", req.enabled)
     return {"success": True, "message": msg, "enabled": req.enabled}
 
 
@@ -951,15 +973,15 @@ async def set_tts_provider(req: TtsProviderRequest, _key: str = Depends(verify_a
 
     if req.provider not in TTS_PRIORITY:
         raise HTTPException(status_code=400, detail=f"Provedor inválido. Opções: {', '.join(TTS_PRIORITY)}")
-    import os
+    import os as _os
 
-    os.environ["LUNA_TTS_PRIORITY"] = req.provider
-    # Recarrega a prioridade do TTS
+    _os.environ["LUNA_TTS_PRIORITY"] = req.provider
     from importlib import reload
 
     import config
 
     reload(config)
+    _save_setting("tts_provider", req.provider)
     return {"success": True, "provider": req.provider}
 
 
@@ -969,10 +991,10 @@ async def set_tts_voice(req: TtsVoiceRequest, _key: str = Depends(verify_api_key
     from config import VOICE_CONFIG
 
     VOICE_CONFIG["voice"] = req.voice
-    # Atualiza no motor de voz
     from voice.tts import get_tts
 
     get_tts().set_voice(req.voice)
+    _save_setting("tts_voice", req.voice)
     return {"success": True, "voice": req.voice}
 
 
@@ -1743,6 +1765,7 @@ async def set_images_cascade(req: ImageCascadeRequest, _key: str = Depends(verif
     order = [p for p in order if p.lower() in valid]
     if order:
         config.IMAGE_CASCADE_ORDER = order
+        _save_setting("image_cascade", order)
         return {"success": True, "message": f"Cascade de imagem alterado para: {', '.join(order)}", "cascade": order}
     raise HTTPException(status_code=400, detail="Ordem de cascade inválida.")
 
