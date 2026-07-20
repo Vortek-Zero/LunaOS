@@ -477,5 +477,47 @@
     ],
     "action_type": "conversa",
     "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784579367940",
+    "ts": "2026-07-20T17:29:27.940927",
+    "date": "2026-07-20",
+    "hour": 17,
+    "weekday": "Monday",
+    "text": "oi",
+    "summary": "Oii, Pera! Tudo bem por aí? 😊\n\nComo posso te ajudar hoje? Tem algo em mente, ou só quer bater um papo?",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784579394551",
+    "ts": "2026-07-20T17:29:54.551009",
+    "date": "2026-07-20",
+    "hour": 17,
+    "weekday": "Monday",
+    "text": "qual modelo está em uso?",
+    "summary": "Oi! Eu sou um modelo de linguagem grande, treinado pelo Google.",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
+  },
+  {
+    "id": "ep_1784579688690",
+    "ts": "2026-07-20T17:34:48.690071",
+    "date": "2026-07-20",
+    "hour": 17,
+    "weekday": "Monday",
+    "text": "oi qual modelo tá em uso?",
+    "summary": "Oi! Eu estou usando o **Gemini 1.5 Flash** no momento. É um modelo bem rápido e eficiente.\n\nTem mais alguma dúvida ou quer que eu faça algo?",
+    "topics": [
+      "geral"
+    ],
+    "action_type": "conversa",
+    "outcome": "sucesso"
   }
 ]

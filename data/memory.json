@@ -1,50 +1,7 @@
 {
-  "facts": [
-    {
-      "fact": "O usuário costuma usar o sistema à noite (após 22h)",
-      "category": "habitos",
-      "importance": 0.5,
-      "ts": "2026-06-29T22:01:45.392708"
-    },
-    {
-      "fact": "O usuário costuma usar o sistema pela manhã",
-      "category": "habitos",
-      "importance": 0.5,
-      "ts": "2026-06-30T06:02:26.034472"
-    }
-  ],
+  "facts": [],
   "sessions": {
     "default": [
-      {
-        "role": "user",
-        "text": "cria uma imagem tesde de um gato preto dormindo",
-        "ts": "2026-07-15T03:53:48.207083"
-      },
-      {
-        "role": "assistant",
-        "text": "**Imagem criada!**  \nGerada uma imagem de **gato preto dormindo** com estilo realista.  \n\n**Próximos passos:**  \n- Quer ajustar a resolução ou estilo da imagem?  \n- Quer usá-la em algum projeto ou rede social?  \n\nVou mantê-la salva na sua pasta de imagens. Deseja ver uma prévia? 🐾",
-        "ts": "2026-07-15T03:53:48.207120"
-      },
-      {
-        "role": "user",
-        "text": "quero ver a imagem abra ela",
-        "ts": "2026-07-15T03:54:44.443685"
-      },
-      {
-        "role": "assistant",
-        "text": "**Imagem localizada!**  \nA imagem do gato preto dormindo está salva em sua pasta de imagens.  \n\n**Próximos passos:**  \n1. \n2. 🖼️ Quer que eu **abrir a imagem automaticamente** no seu visualizador padrão?  \n3. 🔄 Deseja ajustar estilo, resolução ou adicionar efeitos à imagem?  \n\nVou mantê-la pronta para uso. Deseja visualizá-la agora? 🐾",
-        "ts": "2026-07-15T03:54:44.443698"
-      },
-      {
-        "role": "user",
-        "text": "quero visualizá-la agora",
-        "ts": "2026-07-15T03:55:26.963018"
-      },
-      {
-        "role": "assistant",
-        "text": "**Visualização iniciada!**  \nA imagem do gato preto dormindo foi aberta no seu visualizador padrão.  \n\n**Próximos passos:**  \n1. 🖼️ A imagem está em **alta definição**. Quer redimensionar ou aplicar efeitos?  \n2. 🌐 Deseja compartilhá-la no WhatsApp ou em redes sociais?  \n3. 🧠 Quer integrá-la em um projeto de HTML/CSS ou Rust?  \n\nVou aguardar seu feedback para ajustar ou usar em algo criativo. 😊",
-        "ts": "2026-07-15T03:55:26.963067"
-      },
       {
         "role": "user",
         "text": "abra o antigravity",
@@ -114,6 +71,36 @@
         "role": "assistant",
         "text": "Ainda estou usando o **Gemini 1.5 Pro**, Pera! Ele é um modelo de linguagem grande, desenvolvido pelo Google.\n\nPosso te ajudar com mais alguma coisa? Que tal pensarmos em um novo projeto de programação ou explorarmos algum tópico de ficção científica? 😊",
         "ts": "2026-07-16T23:35:24.169243"
+      },
+      {
+        "role": "user",
+        "text": "oi",
+        "ts": "2026-07-20T17:29:27.847164"
+      },
+      {
+        "role": "assistant",
+        "text": "Oii, Pera! Tudo bem por aí? 😊\n\nComo posso te ajudar hoje? Tem algo em mente, ou só quer bater um papo?",
+        "ts": "2026-07-20T17:29:27.847180"
+      },
+      {
+        "role": "user",
+        "text": "qual modelo está em uso?",
+        "ts": "2026-07-20T17:29:54.502528"
+      },
+      {
+        "role": "assistant",
+        "text": "Oi! Eu sou um modelo de linguagem grande, treinado pelo Google.",
+        "ts": "2026-07-20T17:29:54.502561"
+      },
+      {
+        "role": "user",
+        "text": "oi qual modelo tá em uso?",
+        "ts": "2026-07-20T17:34:48.335376"
+      },
+      {
+        "role": "assistant",
+        "text": "Oi! Eu estou usando o **Gemini 1.5 Flash** no momento. É um modelo bem rápido e eficiente.\n\nTem mais alguma dúvida ou quer que eu faça algo?",
+        "ts": "2026-07-20T17:34:48.335392"
       }
     ]
   },

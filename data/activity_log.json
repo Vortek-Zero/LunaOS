@@ -998,5 +998,20 @@
     "ts": "2026-07-16T23:35:23.133136",
     "action": "user_input",
     "details": "e agora qual modelo tá usando?"
+  },
+  {
+    "ts": "2026-07-20T17:28:57.544313",
+    "action": "user_input",
+    "details": "oi"
+  },
+  {
+    "ts": "2026-07-20T17:29:53.149847",
+    "action": "user_input",
+    "details": "qual modelo está em uso?"
+  },
+  {
+    "ts": "2026-07-20T17:34:45.309109",
+    "action": "user_input",
+    "details": "oi qual modelo tá em uso?"
   }
 ]
