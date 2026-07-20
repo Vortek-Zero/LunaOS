@@ -589,9 +589,11 @@ class LLMWrapper:
                 result = entry[2](prompt, task_type, model_override or entry[1](used_model), stream, messages, tools)
                 if result is not None:
                     return result
-                if stream:
-                    return iter(["[LLM indisponível]"])
-                return "[LLM indisponível]"
+                print(f"[LLM] Provedor {provider_name} falhou (retornou None). Fazendo fallback para o cascade normal.")
+            else:
+                print(
+                    f"[LLM] Provedor {provider_name} inativo ou indisponível. Fazendo fallback para o cascade normal."
+                )
 
         _start_time = _time.time()
         _global_timeout = 60
@@ -1606,10 +1608,15 @@ class LLMWrapper:
             err = str(e)
             if "429" in err:
                 self._puter_rl_until = time.time() + 60
-                print("[LLM] ⚠ Puter 429 — fallback")
+                print("[LLM] ⚠ Puter 429 — rate limit por 60s")
+            elif "402" in err:
+                print("[LLM] ⚠ Puter 402 (sem cota) — fallback silencioso")
+                self._puter_rl_until = time.time() + 120
             elif "401" in err or "403" in err:
                 print(luna_err("PUTER_AUTH_FAILED", "Puter token inválido — desativando"))
                 self._puter_ok = False
+            elif "500" in err or "503" in err:
+                print(f"[LLM] ⚠ Puter erro servidor: {e} — fallback")
             else:
                 print(f"[LLM] ⚠ Puter erro: {e} — fallback")
             return None

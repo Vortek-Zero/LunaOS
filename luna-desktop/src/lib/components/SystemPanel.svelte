@@ -27,6 +27,15 @@
   let ttsVoice = $state('');
   let ttsMsg = $state('');
 
+  // Image cascade state
+  let imageCascadeOrder = $state<string[]>([]);
+  let imageCascadeMsg = $state('');
+  let imageProviders = $state<Array<{ name: string; active: boolean; available: boolean }>>([]);
+
+  // Drag state
+  let dragItem: string | null = $state(null);
+  let dragTarget: 'llm' | 'image' = $state('llm');
+
   async function loadMetrics() {
     const res = await luna.fetchSystemMetrics();
     if (res && !res.error) {
@@ -128,6 +137,58 @@
     setTimeout(() => ttsMsg = '', 3000);
   }
 
+  async function loadImageStatus() {
+    const res = await luna.fetchImageStatus();
+    if (res) {
+      imageProviders = res.providers || [];
+      imageCascadeOrder = Array.isArray(res.cascade) ? res.cascade : (res.cascade ? res.cascade.split(',') : []);
+    }
+  }
+
+  async function saveImageCascade() {
+    imageCascadeMsg = 'Salvando...';
+    const res = await luna.setImageCascade(imageCascadeOrder.join(','));
+    imageCascadeMsg = res?.message || 'Erro ao salvar';
+    setTimeout(() => imageCascadeMsg = '', 3000);
+  }
+
+  function handleDragStart(e: DragEvent, item: string, target: 'llm' | 'image') {
+    dragItem = item;
+    dragTarget = target;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = 'move';
+    }
+  }
+
+  function handleDragOver(e: DragEvent) {
+    e.preventDefault();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'move';
+    }
+  }
+
+  function handleDrop(e: DragEvent, targetIdx: number, target: 'llm' | 'image') {
+    e.preventDefault();
+    if (!dragItem) return;
+    const list = target === 'llm' ? cascadeOrder : imageCascadeOrder;
+    const arr = list.split(',').filter(Boolean);
+    const fromIdx = arr.indexOf(dragItem);
+    if (fromIdx === -1) return;
+    arr.splice(fromIdx, 1);
+    arr.splice(targetIdx, 0, dragItem);
+    const result = arr.join(',');
+    if (target === 'llm') {
+      cascadeOrder = result;
+    } else {
+      imageCascadeOrder = arr;
+    }
+    dragItem = null;
+  }
+
+  function handleDragEnd() {
+    dragItem = null;
+  }
+
   async function checkUpdate() {
     upd.checking = true;
     upd.result = '';
@@ -161,6 +222,7 @@
     loadPerf();
     loadModels();
     loadTts();
+    loadImageStatus();
 
     const metricsInterval = setInterval(loadMetrics, 3000);
     const perfInterval = setInterval(loadPerf, 10000);
@@ -344,12 +406,27 @@
         <span>Configurações</span>
       </div>
       <div class="card settings-card">
-        <!-- Cascade Order -->
+        <!-- Cascade Order (arrastável) -->
         <div class="setting-row">
-          <span class="setting-label">Ordem dos provedores (cascade)</span>
-          <div class="input-row">
-            <input class="field" bind:value={cascadeOrder} placeholder="ex: puter,groq,gemini" />
-            <button class="btn sm primary" onclick={saveCascade}>Salvar</button>
+          <span class="setting-label">Ordem dos provedores LLM (arraste para reordenar)</span>
+          <div class="cascade-blocks">
+            {#each cascadeOrder.split(',').filter(Boolean) as item, i}
+              <div class="cascade-block"
+                draggable="true"
+                ondragstart={(e) => handleDragStart(e, item, 'llm')}
+                ondragover={handleDragOver}
+                ondrop={(e) => handleDrop(e, i, 'llm')}
+                ondragend={handleDragEnd}
+                class:dragging={dragItem === item && dragTarget === 'llm'}
+              >
+                <span class="block-order">{i + 1}</span>
+                <span class="block-name">{item}</span>
+                <span class="block-grip">⠿</span>
+              </div>
+            {/each}
+          </div>
+          <div class="btn-row">
+            <button class="btn sm primary" onclick={saveCascade}>Salvar ordem</button>
           </div>
           {#if cascadeMsg}<div class="setting-msg">{cascadeMsg}</div>{/if}
         </div>
@@ -379,6 +456,31 @@
           {#if modelMsg}<div class="setting-msg">{modelMsg}</div>{/if}
         </div>
 
+        <!-- Cascade de Imagem (arrastável) -->
+        <div class="setting-row">
+          <span class="setting-label">Ordem dos provedores de imagem (arraste para reordenar)</span>
+          <div class="cascade-blocks">
+            {#each imageCascadeOrder as item, i}
+              <div class="cascade-block"
+                draggable="true"
+                ondragstart={(e) => handleDragStart(e, item, 'image')}
+                ondragover={handleDragOver}
+                ondrop={(e) => handleDrop(e, i, 'image')}
+                ondragend={handleDragEnd}
+                class:dragging={dragItem === item && dragTarget === 'image'}
+              >
+                <span class="block-order">{i + 1}</span>
+                <span class="block-name">{item}</span>
+                <span class="block-grip">⠿</span>
+              </div>
+            {/each}
+          </div>
+          <div class="btn-row">
+            <button class="btn sm primary" onclick={saveImageCascade}>Salvar ordem</button>
+          </div>
+          {#if imageCascadeMsg}<div class="setting-msg">{imageCascadeMsg}</div>{/if}
+        </div>
+
         <!-- TTS Provider -->
         <div class="setting-row">
           <span class="setting-label">Provedor de voz (TTS)</span>
@@ -396,11 +498,12 @@
         <!-- TTS Voice -->
         {#if ttsVoices[ttsCurrent] && ttsVoices[ttsCurrent].length > 0}
           <div class="setting-row">
-            <span class="setting-label">Voz TTS atual</span>
-            <div class="setting-voice">{ttsVoice || ttsVoices[ttsCurrent][0]}</div>
+            <span class="setting-label">Voz TTS</span>
             <div class="voice-list">
               {#each ttsVoices[ttsCurrent] as v}
-                <span class="voice-tag" class:active={ttsVoice === v}>{v}</span>
+                <button class="voice-tag" class:active={ttsVoice === v} onclick={async () => { ttsVoice = v; await luna.setTtsVoice(v); }}>
+                  {v}
+                </button>
               {/each}
             </div>
           </div>
@@ -556,4 +659,29 @@
   .toggle input:checked + .toggle-slider { background: #3b9eff; }
   .toggle input:checked + .toggle-slider::before { transform: translateX(16px); }
   .toggle-label { font-size: 11px; color: rgba(255,255,255,0.5); }
+
+  /* Cascade Blocks */
+  .cascade-blocks { display: flex; flex-direction: column; gap: 6px; }
+  .cascade-block {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: linear-gradient(135deg, rgba(59,158,255,0.08), rgba(139,92,246,0.05));
+    border: 1px solid rgba(139,92,246,0.15);
+    border-radius: 12px;
+    cursor: grab;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    user-select: none;
+  }
+  .cascade-block:hover { border-color: rgba(139,92,246,0.35); background: linear-gradient(135deg, rgba(59,158,255,0.12), rgba(139,92,246,0.08)); transform: translateX(4px); }
+  .cascade-block:active { cursor: grabbing; transform: scale(0.97); }
+  .cascade-block.dragging { opacity: 0.5; border-style: dashed; }
+  .block-order {
+    width: 24px; height: 24px; border-radius: 8px;
+    background: linear-gradient(135deg, #3b9eff, #8b5cf6);
+    color: white; font-size: 11px; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .block-name { font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.8); flex: 1; text-transform: capitalize; }
+  .block-grip { font-size: 16px; color: rgba(255,255,255,0.2); letter-spacing: 2px; }
 </style>
