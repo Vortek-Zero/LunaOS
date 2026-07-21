@@ -325,7 +325,7 @@ class Xadrez:
                         b2 = [row[:] for row in self.board]
                         # Apply move on copy
                         _, _, tr, tc = mv
-                        captured = b2[tr][tc]
+                        b2[tr][tc]
                         b2[tr][tc] = b2[r][c]
                         b2[r][c] = None
                         if p == "wK":

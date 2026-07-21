@@ -1107,10 +1107,7 @@ class ActionExecutor:
         ]
         if any(w in cmd_norm for w in browser_kw):
             url_m = re.search(r"https?://\S+", cmd_clean)
-            if url_m:
-                result = self.browser_agent.navigate(url_m.group())
-            else:
-                result = self.browser_agent.run(cmd_clean)
+            result = self.browser_agent.navigate(url_m.group()) if url_m else self.browser_agent.run(cmd_clean)
             return {"success": True, "message": result}
 
         return {"success": False, "message": f"Comando não reconhecido: '{cmd}'"}

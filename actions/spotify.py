@@ -17,6 +17,7 @@ Comportamento:
     (o app é aberto se necessário).
 """
 
+import contextlib
 import json
 import os
 import re
@@ -403,10 +404,8 @@ class SpotifyManager:
             encoded = query.replace(" ", "%20")
             uri = f"spotify:search:{encoded}"
             print(f"[Spotify] Modo Free → buscando via URI: {uri}")
-            try:
+            with contextlib.suppress(Exception):
                 subprocess.Popen(["xdg-open", uri], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except Exception:
-                pass
             return None, f"🎵 Abrindo busca no Spotify por: {query}"
 
         # Busca por faixa (conta Premium)

@@ -1,3 +1,4 @@
+import contextlib
 import json
 import shutil
 import subprocess
@@ -23,10 +24,8 @@ class AppManager:
         return {}
 
     def _save_apps(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             APPS_FILE.write_text(json.dumps(self.apps, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
 
     def _discover_apps(self) -> None:
         binaries = [
@@ -80,7 +79,8 @@ class AppManager:
             self._save_apps()
 
     def open_app(self, name: str) -> dict:
-        name = name.lower().strip()
+        from actions.intent_translator import translate_app
+        name = translate_app(name.lower().strip())
         app = self.apps.get(name)
         if not app:
             for key, val in self.apps.items():

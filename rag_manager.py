@@ -210,7 +210,7 @@ class RAGManager:
 
         context_parts = []
         total_tokens = 0
-        max_chars = max_tokens * 3  # Aproximação
+        max_tokens * 3  # Aproximação
 
         for chunk in chunks:
             tokens = chunk["tokens"]
@@ -262,10 +262,10 @@ if __name__ == "__main__":
     test_doc = """
     A Inteligência Artificial (IA) é a capacidade de máquinas executarem tarefas que normalmente requerem inteligência humana.
     Essas tarefas incluem aprendizado visual, reconhecimento de fala, tomada de decisão e tradução de idiomas.
-    
+
     Existem dois tipos principais de IA: IA Fraca (limitada a tarefas específicas) e IA Forte (geral, como a mente humana).
     A maioria dos sistemas atuais são considerados IA Fraca, como chatbots e assistentes de voz.
-    
+
     O Machine Learning é um subcampo da IA que permite que sistemas aprendam com dados sem serem explicitamente programados.
     Redes neurais artificiais são estruturas inspiradas no cérebro humano usadas em muitos sistemas modernos de IA.
     """

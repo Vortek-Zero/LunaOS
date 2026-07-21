@@ -3,6 +3,7 @@
 actions/reminders.py — Lembretes com data/hora, TTS e notificação desktop.
 """
 
+import contextlib
 import json
 import re
 import shutil
@@ -237,10 +238,8 @@ class ReminderManager:
             subprocess.Popen(
                 ["notify-send", "🔔 Lembrete", message], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
             )
-        try:
+        with contextlib.suppress(Exception):
             self._get_tts().speak(f"Lembrete: {message}", blocking=False)
-        except Exception:
-            pass
 
     def _load(self) -> None:
         try:

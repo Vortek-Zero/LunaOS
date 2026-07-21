@@ -3,6 +3,7 @@
 actions/focus.py — Modo Foco / Pomodoro com TTS e log de sessões.
 """
 
+import contextlib
 import json
 import re
 import shutil
@@ -36,10 +37,8 @@ class FocusManager:
     def _speak(self, msg: str) -> None:
         if shutil.which("notify-send"):
             subprocess.Popen(["notify-send", "🎯 Foco", msg], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        try:
+        with contextlib.suppress(Exception):
             self._get_tts().speak(msg, blocking=False)
-        except Exception:
-            pass
 
     # ── Sessões ────────────────────────────────────────────────
 

@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from config import PERSONALITY_FILE, USER_PROFILE_FILE
+    from config import USER_PROFILE_FILE
 except ImportError:
     USER_PROFILE_FILE = Path(__file__).parent.parent / "config" / "user_profile.json"
 

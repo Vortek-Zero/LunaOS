@@ -27,7 +27,7 @@ from pydantic import BaseModel
 
 import config
 from settings import apply_all as _apply_settings
-from settings import get as _load_settings
+from settings import load_all as _load_settings
 from settings import set as _save_setting
 
 _apply_settings()
@@ -727,7 +727,7 @@ async def set_cascade(req: CascadeRequest, _key: str = Depends(verify_api_key)):
     Ex: {"order": "puter,groq,gemini"}"""
     luna = get_luna()
     msg = luna.set_cascade(req.order)
-    _save_setting("llm_cascade", [p.strip() for p in req.order.split(",") if p.strip()])
+    _save_setting("llm_cascade", luna._llm.get_cascade_order())
     return {"success": True, "message": msg}
 
 
@@ -953,9 +953,12 @@ async def list_tts_providers(_key: str = Depends(verify_api_key)):
     """Lista provedores de TTS disponíveis."""
     from config import TTS_PRIORITY, VOICE_CONFIG
 
+    all_providers = ["edge_tts", "puter", "elevenlabs", "azure", "google_cloud", "pyttsx3", "f5"]
+    current = TTS_PRIORITY[0] if TTS_PRIORITY else "edge_tts"
+
     return {
-        "providers": TTS_PRIORITY,
-        "current": TTS_PRIORITY[0] if TTS_PRIORITY else "edge_tts",
+        "providers": all_providers,
+        "current": current,
         "voice": VOICE_CONFIG.get("voice", "pt-BR-ThalitaMultilingualNeural"),
         "voices": {
             "edge_tts": ["pt-BR-ThalitaMultilingualNeural", "pt-BR-AntonioNeural", "pt-BR-FranciscaNeural"],
@@ -969,18 +972,16 @@ async def list_tts_providers(_key: str = Depends(verify_api_key)):
 @app.post("/api/voice/provider")
 async def set_tts_provider(req: TtsProviderRequest, _key: str = Depends(verify_api_key)):
     """Altera o provedor de TTS ativo."""
-    from config import TTS_PRIORITY
-
-    if req.provider not in TTS_PRIORITY:
-        raise HTTPException(status_code=400, detail=f"Provedor inválido. Opções: {', '.join(TTS_PRIORITY)}")
+    valid_providers = ["edge_tts", "puter", "elevenlabs", "azure", "google_cloud", "pyttsx3", "f5"]
+    if req.provider not in valid_providers:
+        raise HTTPException(status_code=400, detail=f"Provedor inválido. Opções: {', '.join(valid_providers)}")
     import os as _os
 
+    import config as _cfg
+
     _os.environ["LUNA_TTS_PRIORITY"] = req.provider
-    from importlib import reload
-
-    import config
-
-    reload(config)
+    fallback = ["edge_tts"] if req.provider != "edge_tts" else []
+    _cfg.TTS_PRIORITY = [req.provider] + fallback
     _save_setting("tts_provider", req.provider)
     return {"success": True, "provider": req.provider}
 
@@ -1728,14 +1729,6 @@ async def list_images(_key: str = Depends(verify_api_key)):
     return {"images": images}
 
 
-@app.get("/api/images/{filename}")
-async def serve_image(filename: str, _key: str = Depends(verify_api_key)):
-    filepath = PICTURES_DIR / filename
-    if not filepath.exists() or filepath.parent.resolve() != PICTURES_DIR.resolve():
-        raise HTTPException(status_code=404, detail="Imagem não encontrada.")
-    return FileResponse(str(filepath), media_type="image/png")
-
-
 class ImageCascadeRequest(BaseModel):
     order: str
 
@@ -1753,6 +1746,14 @@ async def images_status(_key: str = Depends(verify_api_key)):
         {"name": "Gemini", "active": gemini_active, "available": gemini_active},
     ]
     return {"providers": providers, "cascade": config.IMAGE_CASCADE_ORDER}
+
+
+@app.get("/api/images/{filename}")
+async def serve_image(filename: str, _key: str = Depends(verify_api_key)):
+    filepath = PICTURES_DIR / filename
+    if not filepath.exists() or filepath.parent.resolve() != PICTURES_DIR.resolve():
+        raise HTTPException(status_code=404, detail="Imagem não encontrada.")
+    return FileResponse(str(filepath), media_type="image/png")
 
 
 @app.post("/api/images/cascade")

@@ -143,10 +143,7 @@ if __name__ == "__main__":
     all_passed = True
     for text, expected in test_cases:
         res = check_safety(text)
-        if expected is None:
-            passed = res is None
-        else:
-            passed = res is not None and expected in res
+        passed = res is None if expected is None else res is not None and expected in res
         print(f"Input: '{text}'\n  -> Resposta: '{res}'\n  -> Passou: {passed}")
         if not passed:
             all_passed = False

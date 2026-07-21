@@ -32,7 +32,28 @@
   let imageCascadeMsg = $state('');
   let imageProviders = $state<Array<{ name: string; active: boolean; available: boolean }>>([]);
 
+  let llmProviderStatus = $state<Array<{ name: string; active: boolean; available: boolean; rate_limited_for: number }>>([]);
 
+  function getProviderStatus(item: string, list: Array<any>): any | null {
+    const norm = item.toLowerCase().replace(/[\s._-]/g, '');
+    return list.find(p => (p.name || '').toLowerCase().replace(/[\s._-]/g, '') === norm) || null;
+  }
+
+  function statusBadge(item: string, list: Array<any>): { label: string; cls: string } {
+    const s = getProviderStatus(item, list);
+    if (!s) return { label: 'desconhecido', cls: 'inactive' };
+    if (s.rate_limited_for > 0) return { label: `limitado ${s.rate_limited_for}s`, cls: 'rate-limited' };
+    if (!s.active) return { label: 'sem chave', cls: 'inactive' };
+    if (s.available === false) return { label: 'indisponível', cls: 'unavailable' };
+    return { label: 'ativo', cls: 'active-badge' };
+  }
+
+  function firstAvailableIndex(items: string[], list: Array<any>): number {
+    return items.findIndex(item => {
+      const s = getProviderStatus(item, list);
+      return s && s.active && s.available !== false;
+    });
+  }
 
   async function loadMetrics() {
     const res = await luna.fetchSystemMetrics();
@@ -92,7 +113,15 @@
     const res = await luna.fetchModelsStatus();
     if (res && res.providers) {
       providers = res.providers;
-      if (res.cascade) cascadeOrder = Array.isArray(res.cascade) ? res.cascade.join(',') : res.cascade;
+      llmProviderStatus = res.providers;
+      if (res.cascade) {
+        const savedOrder = Array.isArray(res.cascade) ? [...res.cascade] : (res.cascade as string).split(',').filter(Boolean);
+        const allKeys = ['mistral','gemini','openrouter','completions','chutes','github','naga','bestai','groq','freetheai','puter'];
+        for (const p of allKeys) {
+          if (!savedOrder.includes(p)) savedOrder.push(p);
+        }
+        cascadeOrder = savedOrder.join(',');
+      }
     }
   }
 
@@ -387,10 +416,14 @@
           <span class="setting-label">Ordem dos provedores LLM (arraste para reordenar)</span>
           <div class="cascade-blocks">
             {#each cascadeOrder.split(',').filter(Boolean) as item, i}
-              <div class="cascade-block" class:active-provider={i === 0}>
+              {@const s = getProviderStatus(item, llmProviderStatus)}
+              {@const badge = statusBadge(item, llmProviderStatus)}
+              {@const firstAvail = firstAvailableIndex(cascadeOrder.split(',').filter(Boolean), llmProviderStatus)}
+              <div class="cascade-block" class:active-provider={i === firstAvail} class:cascade-block-off={badge.cls !== 'active-badge'}>
                 <span class="block-order">{i + 1}</span>
                 <span class="block-name">{item}</span>
-                {#if i === 0}<span class="block-badge">em uso</span>{/if}
+                <span class="cascade-status" class:active-badge={badge.cls === 'active-badge'} class:rate-limited={badge.cls === 'rate-limited'} class:inactive={badge.cls === 'inactive'} class:unavailable={badge.cls === 'unavailable'}>{badge.label}</span>
+                {#if i === firstAvail}<span class="block-badge">em uso</span>{/if}
                 <span class="cascade-arrows">
                   <button class="arrow-btn" onclick={() => moveLlmItem(i, -1)} disabled={i === 0}>▲</button>
                   <button class="arrow-btn" onclick={() => moveLlmItem(i, 1)} disabled={i === cascadeOrder.split(',').filter(Boolean).length - 1}>▼</button>
@@ -434,10 +467,14 @@
           <span class="setting-label">Ordem dos provedores de imagem (arraste para reordenar)</span>
           <div class="cascade-blocks">
             {#each imageCascadeOrder as item, i}
-              <div class="cascade-block" class:active-provider={i === 0}>
+              {@const s = getProviderStatus(item, imageProviders)}
+              {@const badge = statusBadge(item, imageProviders)}
+              {@const firstAvail = firstAvailableIndex(imageCascadeOrder, imageProviders)}
+              <div class="cascade-block" class:active-provider={i === firstAvail} class:cascade-block-off={badge.cls !== 'active-badge'}>
                 <span class="block-order">{i + 1}</span>
                 <span class="block-name">{item}</span>
-                {#if i === 0}<span class="block-badge">em uso</span>{/if}
+                <span class="cascade-status" class:active-badge={badge.cls === 'active-badge'} class:rate-limited={badge.cls === 'rate-limited'} class:inactive={badge.cls === 'inactive'} class:unavailable={badge.cls === 'unavailable'}>{badge.label}</span>
+                {#if i === firstAvail}<span class="block-badge">em uso</span>{/if}
                 <span class="cascade-arrows">
                   <button class="arrow-btn" onclick={() => moveImageItem(i, -1)} disabled={i === 0}>▲</button>
                   <button class="arrow-btn" onclick={() => moveImageItem(i, 1)} disabled={i === imageCascadeOrder.length - 1}>▼</button>
@@ -471,7 +508,7 @@
             <span class="setting-label">Voz TTS</span>
             <div class="voice-list">
               {#each ttsVoices[ttsCurrent] as v}
-                <button class="voice-tag" class:active={ttsVoice === v} onclick={async () => { ttsVoice = v; await luna.setTtsVoice(v); }}>
+                <button class="voice-tag" class:active={ttsVoice === v} onclick={async () => { ttsVoice = v; await luna.setTtsVoice(v); luna.speak('Acho que vamos trabalhar muito bem juntos.'); }}>
                   {v}
                 </button>
               {/each}
@@ -660,4 +697,10 @@
   .arrow-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 4px; color: rgba(255,255,255,0.6); cursor: pointer; font-size: 10px; line-height: 1; padding: 2px 6px; transition: all 0.15s; }
   .arrow-btn:hover:not(:disabled) { background: rgba(139,92,246,0.2); border-color: rgba(139,92,246,0.4); color: #fff; }
   .arrow-btn:disabled { opacity: 0.25; cursor: default; }
+  .cascade-block-off { opacity: 0.55; }
+  .cascade-status { font-size: 9px; padding: 2px 7px; border-radius: 5px; font-weight: 600; letter-spacing: 0.2px; text-transform: uppercase; }
+  .cascade-status.active-badge { background: rgba(59,255,100,0.12); color: #3bff64; }
+  .cascade-status.rate-limited { background: rgba(255,193,7,0.15); color: #ffc107; }
+  .cascade-status.inactive { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.3); }
+  .cascade-status.unavailable { background: rgba(255,77,77,0.12); color: #ff4d4d; }
 </style>

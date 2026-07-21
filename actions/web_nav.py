@@ -62,9 +62,7 @@ def is_web_result_click(text: str) -> bool:
         return True
     if re.search(r"(?:acesse|acessa|acessar|entra|entre)\s+(?:o|a)?\s*(?:primeiro|segundo|\d+)", n):
         return True
-    if "clica" in n and ("web" in n or "pagina" in n or "página" in n):
-        return True
-    return False
+    return bool("clica" in n and ("web" in n or "pagina" in n or "página" in n))
 
 
 def fetch_first_result_url(query: str, index: int = 0) -> str | None:

@@ -8,6 +8,7 @@ Espaço entre letras   = 0.9s apagado
 Espaço entre palavras = 2.0s apagado
 """
 
+import contextlib
 import threading
 import time
 
@@ -103,10 +104,8 @@ def _transmit(text: str):
         if i < len(text) - 1 and text[i + 1] != " ":
             time.sleep(LETTER)
     # Garante luz apagada no fim
-    try:
+    with contextlib.suppress(Exception):
         dev.set_status(False)
-    except Exception:
-        pass
 
 
 def text_to_morse(text: str) -> str:

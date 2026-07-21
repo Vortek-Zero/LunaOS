@@ -8,10 +8,7 @@ def combine():
 
     # Get bounding box of the logo to remove empty transparency around it
     bbox = fg.getbbox()
-    if bbox:
-        fg_cropped = fg.crop(bbox)
-    else:
-        fg_cropped = fg
+    fg_cropped = fg.crop(bbox) if bbox else fg
 
     # We want the logo to occupy about 60% of the background's width
     target_width = int(bg.width * 0.6)

@@ -54,10 +54,8 @@ class ProactivityEngine:
                     suggestion = "Bom dia! Pronto para começar? Gostaria que eu fizesse seu briefing matinal e mostrasse sua agenda de hoje?"
 
             # 3. Lembrar de objetivos de longa data se ocioso
-            if not suggestion and habits:
-                # Sugere revisar objetivos se for fim de semana
-                if now.weekday() in [5, 6] and 14 <= now.hour <= 17:
-                    suggestion = "Final de semana é um ótimo momento para revisar seus objetivos! Gostaria de checar seu progresso no plano 'Evoluir Luna' ou 'Aprender Rust'?"
+            if not suggestion and habits and now.weekday() in [5, 6] and 14 <= now.hour <= 17:
+                suggestion = "Final de semana é um ótimo momento para revisar seus objetivos! Gostaria de checar seu progresso no plano 'Evoluir Luna' ou 'Aprender Rust'?"
 
             if suggestion:
                 self._last_suggestion_time = current_timestamp

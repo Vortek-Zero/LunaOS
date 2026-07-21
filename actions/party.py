@@ -4,6 +4,7 @@ actions/party.py — Modos de piscada da luz da sala.
 Balada, SOS, metrônomo, contagem regressiva, timer de luz.
 """
 
+import contextlib
 import random
 import re
 import threading
@@ -91,10 +92,8 @@ def _party_loop():
             if not _stop_event.is_set():
                 time.sleep(random.uniform(0.1, 0.4))
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dev.set_status(False)
-        except Exception:
-            pass
 
 
 # ── SOS contínuo ─────────────────────────────────────────────
@@ -105,7 +104,7 @@ def _sos_loop():
     dev = _device()
     if not dev:
         return
-    DOT, DASH, SYM, LETTER, WORD = 0.2, 0.6, 0.2, 0.6, 1.5
+    DOT, DASH, SYM, _LETTER, WORD = 0.2, 0.6, 0.2, 0.6, 1.5
     try:
         while not _stop_event.is_set():
             for sym in [".", ".", ".", "-", "-", "-", ".", ".", "."]:
@@ -115,10 +114,8 @@ def _sos_loop():
             if not _stop_event.is_set():
                 time.sleep(WORD)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dev.set_status(False)
-        except Exception:
-            pass
 
 
 # ── Metrônomo ─────────────────────────────────────────────────
@@ -141,10 +138,8 @@ def _metronome_loop(bpm: int):
                 time.sleep(chunk)
                 slept += chunk
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dev.set_status(False)
-        except Exception:
-            pass
 
 
 # ── Contagem regressiva visual ────────────────────────────────
@@ -168,10 +163,8 @@ def _countdown_loop(n: int):
         if not _stop_event.is_set():
             _flash(dev, 1.0)  # flash longo = largada
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dev.set_status(False)
-        except Exception:
-            pass
 
 
 # ── Timer de luz ──────────────────────────────────────────────
@@ -190,10 +183,8 @@ def _light_timer(seconds: int):
             slept += 1
         dev.set_status(False)
     except Exception:
-        try:
+        with contextlib.suppress(Exception):
             dev.set_status(False)
-        except Exception:
-            pass
 
 
 # ── Alarme visual (chamado externamente pelo timer.py) ────────
@@ -208,10 +199,8 @@ def visual_alarm(flashes: int = 6):
         for _ in range(flashes):
             _flash(dev, 0.3, 0.3)
     finally:
-        try:
+        with contextlib.suppress(Exception):
             dev.set_status(False)
-        except Exception:
-            pass
 
 
 # ── Controle de threads ───────────────────────────────────────

@@ -8,6 +8,8 @@ import inspect
 from collections.abc import Callable
 from pathlib import Path
 
+from config import WORKSPACE_DIR
+
 
 class ToolRegistry:
     """
@@ -39,13 +41,13 @@ class ToolRegistry:
             for param_name, param in sig.parameters.items():
                 param_type = "string"
                 if param.annotation != inspect.Parameter.empty:
-                    if param.annotation == int:
+                    if param.annotation is int:
                         param_type = "integer"
-                    elif param.annotation == bool:
+                    elif param.annotation is bool:
                         param_type = "boolean"
-                    elif param.annotation == list:
+                    elif param.annotation is list:
                         param_type = "array"
-                    elif param.annotation == dict:
+                    elif param.annotation is dict:
                         param_type = "object"
                 params.append(
                     {
@@ -139,7 +141,6 @@ class ToolRegistry:
 
 # ── Funções de verificação ─────────────────────────────────
 
-from config import WORKSPACE_DIR
 
 
 def verify_file_exists(filename: str = "", path: str = "") -> bool:

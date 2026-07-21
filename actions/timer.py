@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import contextlib
 import re
 import subprocess
 import threading
@@ -24,10 +25,8 @@ class TimerManager:
         msg = f"Atenção! Seu timer para {name} terminou!"
         tts.speak(msg, blocking=False)
         # Notificação de sistema
-        try:
+        with contextlib.suppress(Exception):
             subprocess.run(["notify-send", "-u", "critical", "Luna: Timer Terminou", msg], check=False)
-        except Exception:
-            pass
 
         # Limpa
         if name in self.timers:

@@ -76,10 +76,9 @@ class LoopGuard:
 
         # 3. Ping-pong detection
         self._tool_sequence.append(tool_name)
-        if len(self._tool_sequence) >= self._ping_pong_window:
-            if self._detect_ping_pong():
-                reason = "Padrão repetitivo de ferramentas detectado (ping-pong)."
-                return self._wrap_verdict(LoopVerdict(blocked=True, reason=reason))
+        if len(self._tool_sequence) >= self._ping_pong_window and self._detect_ping_pong():
+            reason = "Padrão repetitivo de ferramentas detectado (ping-pong)."
+            return self._wrap_verdict(LoopVerdict(blocked=True, reason=reason))
 
         return LoopVerdict()
 
@@ -101,9 +100,8 @@ class LoopGuard:
         seq = list(self._tool_sequence)
         n = len(seq)
         # Period 1: same tool repeated (AAAA)
-        if n >= 4:
-            if len(set(seq[-4:])) == 1:
-                return True
+        if n >= 4 and len(set(seq[-4:])) == 1:
+            return True
         for period in (2, 3):
             if n >= period * 2:
                 tail = seq[-period * 2 :]

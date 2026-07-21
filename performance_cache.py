@@ -318,9 +318,7 @@ class ResponseOptimizer:
         Queries simples/curtas → modelo rápido
         Queries complexas → modelo completo
         """
-        if query_length < 20 and not has_context:
-            return True  # Query muito curta, modelo rápido é suficiente
-        return False
+        return query_length < 20 and not has_context
 
     def estimate_response_time(self, query_length: int, model_size: str = "3b") -> float:
         """
@@ -420,6 +418,147 @@ Taxa de acerto de cache: {hit_rate:.1f}%
 ==================
 """
         return report.strip()
+
+
+class ToolContentCache:
+    """
+    Cache de sessão para conteúdo lido por ferramentas (arquivo, web).
+    Evita re-leitura do mesmo arquivo/URL durante uma sessão.
+    Thread-safe, com expiração curta (arquivo: 60s, web: 300s).
+    """
+
+    def __init__(self, file_ttl: int = 60, web_ttl: int = 300):
+        self._cache: dict[str, dict] = {}
+        self._lock = threading.Lock()
+        self._file_ttl = file_ttl
+        self._web_ttl = web_ttl
+        self._stats = {"hits": 0, "misses": 0}
+
+    def get_file(self, path: str) -> str | None:
+        """Retorna conteúdo cacheado de arquivo, ou None se expirado/não-cacheado."""
+        key = f"file:{path}"
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                self._stats["misses"] += 1
+                return None
+            # Verifica mtime — se o arquivo mudou, invalida
+            try:
+                current_mtime = Path(path).stat().st_mtime
+                if current_mtime != entry.get("mtime"):
+                    del self._cache[key]
+                    self._stats["misses"] += 1
+                    return None
+            except OSError:
+                pass
+            # Verifica TTL
+            if time.time() - entry["ts"] > self._file_ttl:
+                del self._cache[key]
+                self._stats["misses"] += 1
+                return None
+            self._stats["hits"] += 1
+            return entry["content"]
+
+    def set_file(self, path: str, content: str) -> None:
+        """Armazena conteúdo de arquivo no cache."""
+        key = f"file:{path}"
+        mtime = 0.0
+        try:
+            mtime = Path(path).stat().st_mtime
+        except OSError:
+            pass
+        with self._lock:
+            self._cache[key] = {"content": content, "ts": time.time(), "mtime": mtime}
+
+    def get_web(self, url: str) -> str | None:
+        """Retorna conteúdo cacheado de URL, ou None se expirado/não-cacheado."""
+        key = f"web:{url}"
+        with self._lock:
+            entry = self._cache.get(key)
+            if entry is None:
+                self._stats["misses"] += 1
+                return None
+            if time.time() - entry["ts"] > self._web_ttl:
+                del self._cache[key]
+                self._stats["misses"] += 1
+                return None
+            self._stats["hits"] += 1
+            return entry["content"]
+
+    def set_web(self, url: str, content: str) -> None:
+        """Armazena conteúdo de URL no cache."""
+        key = f"web:{url}"
+        with self._lock:
+            self._cache[key] = {"content": content, "ts": time.time()}
+
+    def invalidate(self, path_or_url: str) -> None:
+        """Invalida uma entrada específica."""
+        with self._lock:
+            self._cache.pop(f"file:{path_or_url}", None)
+            self._cache.pop(f"web:{path_or_url}", None)
+
+    def clear(self) -> None:
+        """Limpa todo o cache de sessão."""
+        with self._lock:
+            self._cache.clear()
+
+    def get_stats(self) -> dict:
+        return {
+            "entries": len(self._cache),
+            "hits": self._stats["hits"],
+            "misses": self._stats["misses"],
+            "hit_rate": (
+                self._stats["hits"] / (self._stats["hits"] + self._stats["misses"]) * 100
+                if (self._stats["hits"] + self._stats["misses"]) > 0
+                else 0.0
+            ),
+        }
+
+
+class ToolContentCache:
+    """
+    Cache temporário de leituras de arquivo e web para a sessão.
+    Evita releituras repetidas do mesmo conteúdo durante uma sessão.
+    """
+
+    def __init__(self, max_size: int = 200):
+        self._store: dict[str, str] = {}
+        self._max_size = max_size
+        self._access_order: list[str] = []
+
+    def _evict_if_needed(self, key: str) -> None:
+        if key in self._store:
+            return
+        if len(self._store) >= self._max_size:
+            oldest = self._access_order.pop(0)
+            self._store.pop(oldest, None)
+
+    def get(self, key: str) -> str | None:
+        if key in self._store:
+            self._access_order = [k for k in self._access_order if k != key]
+            self._access_order.append(key)
+            return self._store[key]
+        return None
+
+    def set(self, key: str, value: str) -> None:
+        self._evict_if_needed(key)
+        self._store[key] = value
+        self._access_order = [k for k in self._access_order if k != key]
+        self._access_order.append(key)
+
+    def invalidate(self, key: str) -> None:
+        self._store.pop(key, None)
+        self._access_order = [k for k in self._access_order if k != key]
+
+    def clear(self) -> None:
+        self._store.clear()
+        self._access_order.clear()
+
+    def stats(self) -> dict:
+        return {
+            "entries": len(self._store),
+            "max_size": self._max_size,
+        }
 
 
 if __name__ == "__main__":

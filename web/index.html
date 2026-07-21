@@ -350,6 +350,12 @@
     .arrow-btn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);border-radius:4px;color:rgba(255,255,255,.6);cursor:pointer;font-size:10px;line-height:1;padding:2px 6px;transition:all .15s}
     .arrow-btn:hover:not(:disabled){background:rgba(139,92,246,.2);border-color:rgba(139,92,246,.4);color:#fff}
     .arrow-btn:disabled{opacity:.25;cursor:default}
+    .cascade-block-off{opacity:.55}
+    .cascade-status{font-size:9px;padding:2px 7px;border-radius:5px;font-weight:600;letter-spacing:.2px;text-transform:uppercase}
+    .cascade-status.active-badge{background:rgba(59,255,100,.12);color:#3bff64}
+    .cascade-status.rate-limited{background:rgba(255,193,7,.15);color:#ffc107}
+    .cascade-status.inactive{background:rgba(255,255,255,.06);color:rgba(255,255,255,.3)}
+    .cascade-status.unavailable{background:rgba(255,77,77,.12);color:#ff4d4d}
     .voice-blocks{display:flex;flex-wrap:wrap;gap:4px}
     .voice-block{font-size:.72em;padding:5px 10px;border-radius:8px;
       background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.08);
@@ -1404,7 +1410,7 @@ async function checkStatus(){
     else{dot.className='error';stxt.textContent=r.status===403?'Key inválida':'Erro'}
   }catch{dot.className='error';stxt.textContent='Offline'}
 }
-setInterval(checkStatus,20000);checkStatus();
+setInterval(checkStatus,5000);checkStatus();
 
 function ic(){if(typeof lucide!=='undefined')lucide.createIcons()}
 // ── Tab navigation ──────────────────────────────────────────
@@ -1999,6 +2005,8 @@ async function clearCache(){
 // ── Cascade Config ───────────────────────────────────────────
 let _llmCascadeItems = [];
 let _imageCascadeItems = [];
+let _llmProviderStatus = {};
+let _imageProviderStatus = {};
 
 function cascadeMove(containerId, items, target, index, direction) {
   const swap = index + direction;
@@ -2007,34 +2015,66 @@ function cascadeMove(containerId, items, target, index, direction) {
   renderCascadeBlocks(containerId, items, target);
 }
 
+function providerStatus(item, list) {
+  const norm = item.toLowerCase().replace(/[\s._-]/g, '');
+  return list.find(p => (p.name || '').toLowerCase().replace(/[\s._-]/g, '') === norm) || null;
+}
+
+function cascadeBadge(available, active, rl) {
+  if (rl > 0) return `<span class="cascade-status rate-limited">limitado (${rl}s)</span>`;
+  if (!active) return `<span class="cascade-status inactive">sem chave</span>`;
+  if (!available) return `<span class="cascade-status unavailable">indisponível</span>`;
+  return `<span class="cascade-status active-badge">ativo</span>`;
+}
+
 function renderCascadeBlocks(containerId, items, target) {
   const el = document.getElementById(containerId);
   if (!el) return;
   const isImage = target === 'image';
   const stateKey = isImage ? '_imageCascadeItems' : '_llmCascadeItems';
-  el.innerHTML = items.map((item, i) =>
-    `<div class="cascade-block${i === 0 ? ' active-provider' : ''}">
-       <span class="block-order">${i + 1}</span>
-       <span class="block-name">${item}</span>
-       ${i === 0 ? '<span class="block-badge">em uso</span>' : ''}
-       <span class="cascade-arrows">
-         <button class="arrow-btn" onclick="cascadeMove('${containerId}', ${stateKey}, '${target}', ${i}, -1)" ${i === 0 ? 'disabled' : ''}>▲</button>
-         <button class="arrow-btn" onclick="cascadeMove('${containerId}', ${stateKey}, '${target}', ${i}, 1)" ${i === items.length - 1 ? 'disabled' : ''}>▼</button>
-       </span>
-     </div>`
-  ).join('');
+  const statusMap = isImage ? _imageProviderStatus : _llmProviderStatus;
+  const statusList = statusMap.providers || [];
+  const firstAvail = items.findIndex(item => {
+    const s = providerStatus(item, statusList);
+    return s && s.active && s.available !== false;
+  });
+
+  el.innerHTML = items.map((item, i) => {
+    const s = providerStatus(item, statusList);
+    const avail = s ? (s.available !== false) : false;
+    const active = s ? s.active : false;
+    const rl = s ? (s.rate_limited_for || 0) : 0;
+    const isFirstAvail = i === firstAvail;
+    return `<div class="cascade-block ${isFirstAvail ? 'active-provider' : ''} ${!avail ? 'cascade-block-off' : ''}">
+      <span class="block-order">${i + 1}</span>
+      <span class="block-name">${item}</span>
+      ${cascadeBadge(avail, active, rl)}
+      ${isFirstAvail ? '<span class="block-badge">em uso</span>' : ''}
+      <span class="cascade-arrows">
+        <button class="arrow-btn" onclick="cascadeMove('${containerId}', ${stateKey}, '${target}', ${i}, -1)" ${i === 0 ? 'disabled' : ''}>▲</button>
+        <button class="arrow-btn" onclick="cascadeMove('${containerId}', ${stateKey}, '${target}', ${i}, 1)" ${i === items.length - 1 ? 'disabled' : ''}>▼</button>
+      </span>
+    </div>`;
+  }).join('');
 }
 
 async function loadCascadeConfig() {
+  const ALL_LLM_PROVIDERS = ['mistral','gemini','openrouter','completions','chutes','github','naga','bestai','groq','freetheai','puter'];
   try {
     const ms = await api('GET', '/api/models/status');
+    _llmProviderStatus = ms || {};
     if (ms && ms.cascade) {
-      _llmCascadeItems = Array.isArray(ms.cascade) ? [...ms.cascade] : ms.cascade.split(',').filter(Boolean);
+      const savedOrder = Array.isArray(ms.cascade) ? [...ms.cascade] : ms.cascade.split(',').filter(Boolean);
+      for (const p of ALL_LLM_PROVIDERS) {
+        if (!savedOrder.includes(p)) savedOrder.push(p);
+      }
+      _llmCascadeItems = savedOrder;
       renderCascadeBlocks('llmCascadeBlocks', _llmCascadeItems, 'llm');
     }
   } catch {}
   try {
     const is = await api('GET', '/api/images/status');
+    _imageProviderStatus = is || {};
     if (is && is.cascade) {
       _imageCascadeItems = Array.isArray(is.cascade) ? [...is.cascade] : is.cascade.split(',').filter(Boolean);
     }
@@ -2133,6 +2173,7 @@ async function setTtsVoice(voice) {
     await api('POST', '/api/voice/voice', { voice });
     el.textContent = `Voz: ${voice}`;
     renderTtsConfig();
+    api('POST', '/api/voice/speak', { message: 'Acho que vamos trabalhar muito bem juntos.' }).catch(() => {});
   } catch {
     el.textContent = 'Erro';
     renderTtsConfig();

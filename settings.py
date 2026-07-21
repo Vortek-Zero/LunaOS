@@ -23,6 +23,11 @@ def get(key: str, default=None):
     return _load().get(key, default)
 
 
+def load_all() -> dict:
+    """Retorna todos os settings salvos."""
+    return _load()
+
+
 def set(key: str, value) -> None:
     data = _load()
     data[key] = value

@@ -39,7 +39,7 @@ HEADERS = {
 }
 
 
-async def test_model(session, model: str, label: str) -> dict:
+async def _run_model_test(session, model: str, label: str) -> dict:
     payload = {
         "interface": "puter-chat-completion",
         "provider": "openai-completion",
@@ -130,7 +130,7 @@ async def main():
     async with aiohttp.ClientSession() as session:
         results = []
         for model_name, label in MODELS:
-            results.append(await test_model(session, model_name, label))
+            results.append(await _run_model_test(session, model_name, label))
             await asyncio.sleep(0.5)  # evitar rate limit
 
     print(f"  {'Modelo':<22} {'Status':<6} {'Tempo':<8} {'Custo':<10} Resposta")

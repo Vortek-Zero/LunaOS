@@ -80,8 +80,31 @@ def _repair_json(text: str) -> str:
 
 def generate_plan(user_input: str, context: str = "") -> dict[str, Any]:
     """
-    Gera um plano estratégico usando Llama 70B com reparo de JSON.
+    Gera um plano estratégico usando fast-path heurístico ou LLM.
     """
+    input_lower = user_input.lower().strip()
+
+    # Fast-path heurístico para tarefas operacionais comuns (economiza chamadas LLM e latência)
+    if any(k in input_lower for k in ["crie uma pasta", "criar pasta", "crie a pasta", "mkdir"]):
+        return {
+            "analysis": "Criação de pasta no sistema de arquivos",
+            "goal": user_input,
+            "plan": ["Criar pasta informada no sistema de arquivos"],
+            "complexity": "low",
+            "needs_tools": True,
+            "reasoning": "Fast-path heurístico.",
+        }
+
+    if any(k in input_lower for k in ["leia o arquivo", "ler arquivo", "conteudo do arquivo"]):
+        return {
+            "analysis": "Leitura de arquivo no sistema de arquivos",
+            "goal": user_input,
+            "plan": ["Ler o arquivo especificado"],
+            "complexity": "low",
+            "needs_tools": True,
+            "reasoning": "Fast-path heurístico.",
+        }
+
     llm = get_llm()
 
     messages = [
@@ -92,7 +115,7 @@ def generate_plan(user_input: str, context: str = "") -> dict[str, Any]:
         },
     ]
 
-    model = GROQ_MODELS.get("heavy", "llama-3.3-70b-versatile")
+    model = GROQ_MODELS.get("fast", "meta-llama/llama-4-scout-17b-16e-instruct")
 
     content = ""
     try:

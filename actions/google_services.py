@@ -458,7 +458,7 @@ class GoogleManager:
             sent_body = {"raw": raw}
             if thread_id:
                 sent_body["threadId"] = thread_id
-            sent = service.users().messages().send(userId="me", body=sent_body).execute()
+            service.users().messages().send(userId="me", body=sent_body).execute()
             return f"✅ Resposta enviada para {to}!\n📧 Assunto: {subject}"
         except Exception as e:
             return f"Erro ao responder email: {e}"
@@ -483,7 +483,7 @@ class GoogleManager:
             message["to"] = to
             message["subject"] = subject
             raw = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-            sent = service.users().messages().send(userId="me", body={"raw": raw}).execute()
+            service.users().messages().send(userId="me", body={"raw": raw}).execute()
             return f"✅ Email encaminhado para {to}!\n📧 Assunto: {subject}"
         except Exception as e:
             return f"Erro ao encaminhar email: {e}"

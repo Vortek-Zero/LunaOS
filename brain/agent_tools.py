@@ -187,6 +187,75 @@ LUNA_TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "set_tts_provider",
+            "description": "Altera o provedor de voz/síntese de fala (TTS). Opções: edge_tts, puter, elevenlabs, azure.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "provider": {
+                        "type": "string",
+                        "enum": ["edge_tts", "puter", "elevenlabs", "azure"],
+                        "description": "Nome do provedor TTS para usar."
+                    }
+                },
+                "required": ["provider"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_tts_voice",
+            "description": "Altera a voz ativa do TTS. Escolhe uma voz disponível para o provedor atual.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "voice": {
+                        "type": "string",
+                        "description": "Nome da voz a ser usada (ex: pt-BR-ThalitaMultilingualNeural, nova, alloy)."
+                    }
+                },
+                "required": ["voice"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_cascade_order",
+            "description": "Altera a ordem dos provedores LLM no cascade. Define qual provedor de IA tentar primeiro, segundo, etc. Ex: 'puter,groq,gemini'",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "order": {
+                        "type": "string",
+                        "description": "Ordem dos provedores separada por vírgula (ex: puter,groq,gemini,mistral)"
+                    }
+                },
+                "required": ["order"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_crew_mode",
+            "description": "Ativa ou desativa o Crew Mode. Quando ativo, cada tipo de tarefa usa o melhor modelo LLM especializado.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "true para ativar Crew Mode, false para desativar."
+                    }
+                },
+                "required": ["enabled"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "document_services",
             "description": "Cria ou lê arquivos (Excel, PDF, TXT, CSV).",
             "parameters": {
@@ -365,8 +434,8 @@ LUNA_TOOLS = [
         "function": {
             "name": "write_code",
             "description": (
-                "CRIA ou SOBRESCREVE um arquivo de código em QUALQUER lugar do sistema de arquivos. "
-                "Use caminho absoluto (/home/user/projetos/app.py) ou relativo ao workspace (app.py). "
+                "CRIA ou SOBRESCREVE um arquivo no workspace. "
+                "Use caminho relativo ao workspace (ex: 'app.py' ou 'src/main.py') ou absoluto dentro do workspace. "
                 "Use para criar scripts Python, HTML, CSS, JS, configs, shell scripts, etc. "
                 "Forneça o nome do arquivo e o conteúdo completo. "
                 "O arquivo é SALVO EM DISCO e verificado."
@@ -389,8 +458,8 @@ LUNA_TOOLS = [
         "function": {
             "name": "create_project",
             "description": (
-                "CRIA UM PROJETO COMPLETO com múltiplos arquivos em QUALQUER lugar do sistema. "
-                "Use caminho absoluto (/home/user/projetos/meuapp) ou relativo ao workspace (meuapp). "
+                "CRIA UM PROJETO COMPLETO com múltiplos arquivos no workspace. "
+                "Use nome ou caminho relativo ao workspace. "
                 "Use quando o usuário pedir 'cria um projeto', 'cria um site', 'cria um sistema', "
                 "'faz um programa' ou similar. Cria a pasta do projeto e todos os arquivos."
             ),
@@ -1313,10 +1382,10 @@ def _run_diagnostics() -> str:
         from luna_core import get_luna
 
         luna = get_luna()
-        if hasattr(luna, "_daily_briefing"):
-            test("get_daily_briefing", True, "método disponível")
+        if hasattr(luna, "_routine_manager") and hasattr(luna._routine_manager, "generate_briefing"):
+            test("get_daily_briefing", True, "via _routine_manager.generate_briefing()")
         else:
-            test("get_daily_briefing", False, "método ausente")
+            test("get_daily_briefing", False, "_routine_manager ou generate_briefing ausente")
     except Exception as e:
         test("get_daily_briefing", False, str(e))
 
@@ -1468,6 +1537,59 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
 
         elif name == "crew_run":
             return _format_result(run_crew_task(args.get("task_description", "")))
+
+        elif name == "set_tts_provider":
+            prov = args.get("provider", "")
+            luna = getattr(executor, "_luna_core", None)
+            if not luna:
+                return "FALHOU: LunaCore não disponível."
+            from voice.tts import get_tts
+            get_tts().set_voice(
+                {"edge_tts": "pt-BR-ThalitaMultilingualNeural", "puter": "nova", "elevenlabs": "Rachel", "azure": "pt-BR-ThalitaNeural"}.get(prov, "pt-BR-ThalitaMultilingualNeural")
+            )
+            import os as _os
+
+            import config as _cfg
+            _os.environ["LUNA_TTS_PRIORITY"] = prov
+            _cfg.TTS_PRIORITY = [prov] + (["edge_tts"] if prov != "edge_tts" else [])
+            from settings import set as _save
+            _save("tts_provider", prov)
+            return f"SUCESSO: Provedor TTS alterado para {prov}."
+
+        elif name == "set_tts_voice":
+            voice = args.get("voice", "")
+            if not voice:
+                return "FALHOU: Nenhuma voz informada."
+            from voice.tts import get_tts
+            get_tts().set_voice(voice)
+            import os as _os
+
+            import config as _cfg
+            _os.environ["LUNA_TTS_VOICE"] = voice
+            _cfg.VOICE_CONFIG["voice"] = voice
+            from settings import set as _save
+            _save("tts_voice", voice)
+            return f"SUCESSO: Voz alterada para {voice}."
+
+        elif name == "set_cascade_order":
+            order = args.get("order", "")
+            if not order:
+                return "FALHOU: Nenhuma ordem informada."
+            luna = getattr(executor, "_luna_core", None)
+            if not luna:
+                return "FALHOU: LunaCore não disponível."
+            msg = luna.set_cascade(order)
+            return f"SUCESSO: {msg}"
+
+        elif name == "set_crew_mode":
+            enabled = args.get("enabled", False)
+            luna = getattr(executor, "_luna_core", None)
+            if not luna:
+                return "FALHOU: LunaCore não disponível."
+            msg = luna.set_crew_mode(enabled)
+            from settings import set as _save
+            _save("crew_enabled", enabled)
+            return f"SUCESSO: Crew Mode {'ativado' if enabled else 'desativado'}."
 
         elif name == "run_browser_task":
             return _format_result(get_browser_task_manager().run(args.get("task", "")))
@@ -1756,19 +1878,16 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             return _format_result(ctx or "Nenhuma memória relevante encontrada.")
 
         elif name == "write_code":
-            filename = args.get("filename", "")
+            from actions.path_resolver import resolve_path
+            filename = resolve_path(args.get("filename", ""))
             content = args.get("content", "")
             if not filename:
                 return _format_result("FALHOU: Nome do arquivo não fornecido.")
             if not content:
                 return _format_result("FALHOU: Conteúdo vazio — nada foi escrito.")
             filepath = Path(filename)
-            if filepath.is_absolute():
-                return _format_result(
-                    "FALHOU: Caminhos absolutos não são permitidos por segurança. Use caminho relativo ao workspace."
-                )
-            filepath = WORKSPACE_DIR / filename
-            # Ensure path doesn't escape workspace
+            if not filepath.is_absolute():
+                filepath = WORKSPACE_DIR / filename
             try:
                 filepath = filepath.resolve()
                 filepath.relative_to(WORKSPACE_DIR.resolve())
@@ -1779,7 +1898,8 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
                 filepath.write_text(content, encoding="utf-8")
                 if filepath.exists() and filepath.stat().st_size > 0:
                     size = filepath.stat().st_size
-                    return f"SUCESSO: Código escrito em '{filepath.relative_to(WORKSPACE_DIR)}' ({size} bytes)."
+                    rel_path = filepath.relative_to(WORKSPACE_DIR.resolve())
+                    return f"SUCESSO: Código escrito em '{rel_path}' ({size} bytes)."
                 else:
                     return f"FALHOU: Arquivo '{filepath}' não foi salvo corretamente no disco."
             except Exception as e:
@@ -1793,11 +1913,8 @@ def _execute_tool_call_inner(executor, tool_call) -> str:
             if not files:
                 return _format_result("FALHOU: Nenhum arquivo especificado para o projeto.")
             project_dir = Path(project_name)
-            if project_dir.is_absolute():
-                return _format_result(
-                    "FALHOU: Caminhos absolutos não são permitidos por segurança. Use nome relativo ao workspace."
-                )
-            project_dir = WORKSPACE_DIR / project_name
+            if not project_dir.is_absolute():
+                project_dir = WORKSPACE_DIR / project_name
             try:
                 project_dir = project_dir.resolve()
                 project_dir.relative_to(WORKSPACE_DIR.resolve())

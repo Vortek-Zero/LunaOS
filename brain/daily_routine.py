@@ -278,6 +278,84 @@ class RoutineManager:
         return None
 
 
+    def generate_briefing(self, luna_core=None) -> str:
+        """Gera briefing diário no estilo Jarvis com clima, agenda, lembretes e notas.
+        Movido de luna_core.py para desacoplar responsabilidades."""
+        from datetime import datetime as _dt
+
+        if luna_core is None:
+            return "Briefing indisponível — LunaCore não fornecido."
+
+        executor = luna_core._executor
+        llm = luna_core._llm
+
+        now = _dt.now()
+        weekdays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+        date_str = f"{weekdays[now.weekday()]}, {now.strftime('%d/%m/%Y')} — {now.strftime('%H:%M')}"
+
+        # Clima nas duas cidades
+        from actions.weather import get_weather
+        w_sp = get_weather().get_weather("São Paulo")
+        w_ita = get_weather().get_weather("Itapecerica da Serra")
+
+        # Lembretes do dia
+        from actions.reminders import get_reminders
+        reminders_raw = get_reminders().list_reminders()
+        today_str = now.strftime("%d/%m")
+        reminders_today = [line for line in reminders_raw.splitlines() if today_str in line or "Nenhum" in line]
+        reminders_text = "\n".join(reminders_today) if reminders_today else "Nenhum lembrete para hoje."
+
+        # Notas recentes (últimas 3)
+        from actions.notes import get_notes
+        notes_list = get_notes()._notes[-3:] if get_notes()._notes else []
+        notes_text = "\n".join(f"  • {n}" for n in notes_list) if notes_list else "  Nenhuma nota recente."
+
+        # Google Calendar
+        calendar_text = ""
+        try:
+            if executor.google and executor.google.available:
+                cal_events = executor.google.get_today_events_formatted()
+                if cal_events:
+                    calendar_text = f"\nCOMPROMISSOS DE HOJE:\n{cal_events}\n"
+        except Exception:
+            pass
+
+        # Padrões de atividade (via ActivityLogger)
+        from brain.daily_routine import get_activity_logger
+        patterns = get_activity_logger().get_patterns(days=3)
+        activity_hint = ""
+        if patterns.get("peak_hours"):
+            peak = patterns["peak_hours"]
+            activity_hint = f"\nDICA: Horários de pico de atividade do usuário: {', '.join(f'{h}h' for h in peak)}"
+
+        prompt = f"""Você é Luna, IA assistente pessoal com personalidade do Jarvis do Tony Stark — precisa, elegante, levemente irônica e sempre útil.
+
+Gere um briefing diário completo e natural em português. Seja concisa mas completa. Inclua uma frase motivacional ou curiosidade do dia no final. Tom: confiante, sofisticado, levemente bem-humorado.
+
+DATA/HORA: {date_str}
+
+CLIMA SÃO PAULO:
+{w_sp}
+
+CLIMA ITAPECERICA DA SERRA:
+{w_ita}
+
+LEMBRETES DE HOJE:
+{reminders_text}
+
+NOTAS RECENTES:
+{notes_text}{calendar_text}{activity_hint}
+Gere o briefing agora, direto ao ponto, sem introduções como "Claro!" ou "Aqui está:". Comece já com o briefing."""
+
+        response = llm.generate(prompt, task_type="command", model="main")
+        if response and response.strip().startswith("{"):
+            import json as _json
+            from contextlib import suppress
+            with suppress(Exception):
+                response = _json.loads(response).get("response", response)
+        return response or "Não consegui gerar o briefing agora. Tente novamente."
+
+
 # ── Activity Logger ──────────────────────────────────────────
 
 

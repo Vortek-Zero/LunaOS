@@ -18,6 +18,7 @@ Prioridade:
 
 import json
 import os
+import re
 import time
 import time as _time
 from collections.abc import Generator
@@ -87,7 +88,7 @@ try:
         OPENROUTER_API_KEY,
         OPENROUTER_BASE_URL,
         OPENROUTER_MODELS,
-        PUTER_LLM_BASE_URL,
+        PUTER_API_BASE_URL,
         PUTER_LLM_MODELS,
         PUTER_TOKEN,
     )
@@ -168,7 +169,7 @@ except ImportError:
         "fallback": "opc/nemotron-3-ultra-free",
     }
     PUTER_TOKEN = os.getenv("PUTER_TOKEN", "")
-    PUTER_LLM_BASE_URL = "https://api.puter.com"
+    PUTER_API_BASE_URL = "https://api.puter.com"
     PUTER_LLM_MODELS = {
         "heavy": "gpt-5",
         "main": "o3",
@@ -547,14 +548,18 @@ class LLMWrapper:
 
     def set_cascade_order(self, order: list[str] | str) -> None:
         """Altera a ordem do cascade em tempo real.
-        Aceita lista ou string separada por vírgula."""
+        Aceita lista ou string separada por vírgula.
+        Mantém sempre todos os provedores — apenas reordena."""
         if isinstance(order, str):
             order = [p.strip() for p in order.split(",") if p.strip()]
-        valid = {p for p in self._cascade}
-        order = [p for p in order if p in valid]
-        if order:
+        valid = list(self._cascade.keys())
+        reordered = [p for p in order if p in valid]
+        for p in valid:
+            if p not in reordered:
+                reordered.append(p)
+        if reordered:
             global CASCADE_ORDER
-            CASCADE_ORDER = order
+            CASCADE_ORDER = reordered
 
     def get_cascade_order(self) -> list[str]:
         return list(CASCADE_ORDER)
@@ -579,6 +584,42 @@ class LLMWrapper:
         if crew_model:
             used_model = crew_model
 
+        def _sanitize(res):
+            import re
+            if res is None or not isinstance(res, (str, dict)):
+                return res
+            if isinstance(res, str):
+                return _sanitize_text(res)
+            if isinstance(res, dict):
+                msg = res.get("message")
+                if isinstance(msg, dict) and isinstance(msg.get("content"), str):
+                    msg["content"] = _sanitize_text(msg["content"])
+            return res
+
+        def _sanitize_text(text: str) -> str:
+            """Remove múltiplos formatos de blocos de raciocínio/pensamento do texto."""
+            # Remove <think>...</think> (DeepSeek, Qwen, etc)
+            text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL)
+            # Remove <think> sem fechar (modelo truncou)
+            text = re.sub(r"<think>.*", "", text, flags=re.DOTALL)
+            # Remove <analysis>...</analysis>
+            text = re.sub(r"<analysis>.*?</analysis>", "", text, flags=re.DOTALL)
+            # Remove <reflection>...</reflection>
+            text = re.sub(r"<reflection>.*?</reflection>", "", text, flags=re.DOTALL)
+            # Remove <reasoning>...</reasoning>
+            text = re.sub(r"<reasoning>.*?</reasoning>", "", text, flags=re.DOTALL)
+            # Remove [Thinking Process]...[/Thinking Process]
+            text = re.sub(r"\[Thinking Process\].*?\[/Thinking Process\]", "", text, flags=re.DOTALL)
+            # Remove **Thinking**...seguido por linha vazia ou **Response**/etc
+            text = re.sub(r"\*\*Thinking\*\*.*?(?=\*\*(?:Response|Answer|Output)\*\*|\n\n)", "", text, flags=re.DOTALL)
+            # Remove linhas que começam com "Reasoning:" (com ou sem espaços)
+            lines = text.splitlines()
+            filtered = [line for line in lines if not line.lstrip().startswith("Reasoning:")]
+            text = "\n".join(filtered)
+            # Remove linhas vazias extras no início
+            text = re.sub(r"^\n+", "", text)
+            return text.strip()
+
         # Suporte a sintaxe "provider/model" — ex: "puter/gpt-5.2" ou "groq"
         if "/" in used_model:
             provider_name, _, model_override = used_model.partition("/")
@@ -588,7 +629,7 @@ class LLMWrapper:
             if entry and entry[0]():
                 result = entry[2](prompt, task_type, model_override or entry[1](used_model), stream, messages, tools)
                 if result is not None:
-                    return result
+                    return _sanitize(result)
                 print(f"[LLM] Provedor {provider_name} falhou (retornou None). Fazendo fallback para o cascade normal.")
             else:
                 print(
@@ -617,7 +658,7 @@ class LLMWrapper:
 
             result = generate_fn(prompt, task_type, resolved_model, stream, messages, tools)
             if result is not None:
-                return result
+                return _sanitize(result)
 
         # Ollama local está desabilitado
         if stream:
@@ -1582,7 +1623,7 @@ class LLMWrapper:
                 return self._puter_stream(headers, payload, model, task_type, prompt)
 
             resp = self._session.post(
-                f"{PUTER_LLM_BASE_URL}/drivers/call",
+                f"{PUTER_API_BASE_URL}/drivers/call",
                 headers=headers,
                 json=payload,
                 timeout=120,
@@ -1624,7 +1665,7 @@ class LLMWrapper:
     def _puter_stream(self, headers: dict, payload: dict, model: str, task_type: str, prompt: str) -> Generator:
         try:
             with self._session.post(
-                f"{PUTER_LLM_BASE_URL}/drivers/call",
+                f"{PUTER_API_BASE_URL}/drivers/call",
                 headers=headers,
                 json=payload,
                 timeout=120,

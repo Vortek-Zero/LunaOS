@@ -31,7 +31,7 @@ if _env_file.exists():
                 os.environ.setdefault(_k, _v)
 
 # ── API ───────────────────────────────────────────────────────
-API_HOST = os.getenv("LUNA_API_HOST", "0.0.0.0")
+API_HOST = os.getenv("LUNA_API_HOST", "127.0.0.1")
 API_PORT = int(os.getenv("LUNA_API_PORT", "5050"))
 
 # API Key — gera uma automática se não definida (salva em .api_key)
@@ -101,7 +101,7 @@ APPS_FILE = BASE_DIR / "config" / "apps.json"
 # ── Voice ─────────────────────────────────────────────────────
 VOICE_CONFIG = {
     "voice": os.getenv("LUNA_TTS_VOICE", "pt-BR-ThalitaMultilingualNeural"),
-    "rate": os.getenv("LUNA_TTS_RATE", "+5%"),
+    "rate": os.getenv("LUNA_TTS_RATE", "+20%"),
     "pitch": os.getenv("LUNA_TTS_PITCH", "+2Hz"),
     "volume": os.getenv("LUNA_TTS_VOLUME", "+8%"),
 }
@@ -119,7 +119,9 @@ AZURE_SPEECH_VOICE = os.getenv("AZURE_SPEECH_VOICE", "pt-BR-ThalitaNeural")
 
 # Puter.ai — TTS + LLM + Image via Puter API
 PUTER_TOKEN = os.getenv("PUTER_TOKEN", "")
-PUTER_BASE_URL = "https://api.puter.com"
+PUTER_API_BASE_URL = os.getenv("PUTER_API_BASE_URL", "https://api.puter.com")
+# Mantido por compatibilidade (TTS usa essa)
+PUTER_BASE_URL = PUTER_API_BASE_URL
 
 # TTS
 PUTER_VOICE = os.getenv("PUTER_VOICE", "nova")
@@ -130,6 +132,7 @@ PUTER_SPEED = float(os.getenv("PUTER_SPEED", "0.55"))
 # gpt-5.2 = melhor para dev (pesado, agente autônomo)
 # claude-sonnet-5 = agente autônomo (Anthropic)
 # gpt-4o-mini = econômico para usuários
+# PUTER_LLM_BASE_URL removido — usar PUTER_API_BASE_URL unificado
 PUTER_LLM_MODELS = {
     "heavy": os.getenv("PUTER_LLM_HEAVY", "gpt-5.2"),
     "main": os.getenv("PUTER_LLM_MAIN", "o3"),
@@ -321,7 +324,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
 # Qwen 3 32B e Llama 4 Scout são MUITO superiores ao Llama 3.1 8B
 GROQ_MODELS = {
     "heavy": "llama-3.3-70b-versatile",  # escrita criativa + análise pesada
-    "main": "qwen/qwen3-32b",  # chat/conversa/planejamento — inteligente e rápido
+    "main": "qwen/qwen3.6-27b",  # chat/conversa/planejamento — inteligente e rápido
     "fast": "meta-llama/llama-4-scout-17b-16e-instruct",  # comandos rápidos
 }
 

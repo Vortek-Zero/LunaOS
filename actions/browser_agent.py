@@ -13,6 +13,7 @@ Suporta contexto persistente (salva cookies/logins entre sessões).
 
 import asyncio
 import base64
+import contextlib
 import json
 import os
 import re
@@ -226,10 +227,8 @@ class BrowserAgent:
             print(f"[BrowserAgent] Passo {step}/{max_steps}")
 
             # Aguarda rede estabilizar
-            try:
+            with contextlib.suppress(Exception):
                 await self._page.wait_for_load_state("networkidle", timeout=3000)
-            except Exception:
-                pass
 
             # Screenshot
             img_b64 = await self._screenshot_b64()
@@ -286,10 +285,8 @@ class BrowserAgent:
             try:
                 return loop.run_until_complete(_main())
             finally:
-                try:
+                with contextlib.suppress(Exception):
                     loop.close()
-                except Exception:
-                    pass
 
         import concurrent.futures
 
@@ -307,10 +304,8 @@ class BrowserAgent:
     def close(self):
         """Fecha o browser."""
         if self._running:
-            try:
+            with contextlib.suppress(Exception):
                 asyncio.run(self._stop())
-            except Exception:
-                pass
 
     def navigate(self, url: str) -> str:
         """Navega para uma URL diretamente."""

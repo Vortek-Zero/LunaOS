@@ -159,9 +159,7 @@ def _is_writing_verb(text_norm: str) -> bool:
         return True
     if re.search(r"(?:quero|preciso|me\s+(?:faz|faca|da|de))\s+(?:um|uma)\s+" + text_objects, text_norm):
         return True
-    if re.search(r"(?:continue|continua|continuar)\s+(?:a\s+)?(?:historia|conto|narrativa|texto)", text_norm):
-        return True
-    return False
+    return bool(re.search(r"(?:continue|continua|continuar)\s+(?:a\s+)?(?:historia|conto|narrativa|texto)", text_norm))
 
 
 from config import WORKSPACE_DIR

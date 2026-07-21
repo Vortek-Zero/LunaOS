@@ -344,18 +344,18 @@ class TTSEngine:
             import json
             from urllib.request import Request, urlopen
 
-            from config import PUTER_BASE_URL, PUTER_MODEL, PUTER_SPEED, PUTER_TOKEN, PUTER_VOICE
+            from config import PUTER_BASE_URL, PUTER_MODEL, PUTER_SPEED, PUTER_TOKEN
 
             if not PUTER_TOKEN:
                 return False
             payload = json.dumps(
                 {
                     "interface": "puter-tts",
-                    "method": "generate",
+                    "method": "synthesize",
                     "args": {
                         "text": text,
                         "model": PUTER_MODEL,
-                        "voice": PUTER_VOICE,
+                        "voice": self.voice,
                         "speed": PUTER_SPEED,
                     },
                 }
@@ -368,7 +368,7 @@ class TTSEngine:
                     "Content-Type": "application/json",
                 },
             )
-            with urlopen(req, timeout=60) as resp:
+            with urlopen(req, timeout=8) as resp:
                 data = json.loads(resp.read().decode())
                 audio_b64 = data.get("result", {}).get("audio", "") or data.get("audio", "")
                 if not audio_b64:
@@ -430,21 +430,23 @@ class TTSEngine:
             output_path = TTS_TEMP_FILE
         if not HAS_EDGE_TTS:
             return False
-        try:
-            rate = rate or self.rate
-            pitch = pitch or self.pitch
-            communicate = edge_tts.Communicate(
-                text,
-                self.voice,
-                rate=rate,
-                pitch=pitch,
-                volume=self.volume,
-            )
-            await communicate.save(output_path)
-            return True
-        except Exception as e:
-            print(err("TTS_EDGE_FAILED", str(e)))
-            return False
+        voices_to_try = [self.voice, "pt-BR-ThalitaMultilingualNeural"]
+        for voice in voices_to_try:
+            try:
+                rate = rate or self.rate
+                pitch = pitch or self.pitch
+                communicate = edge_tts.Communicate(
+                    text,
+                    voice,
+                    rate=rate,
+                    pitch=pitch,
+                    volume=self.volume,
+                )
+                await communicate.save(output_path)
+                return True
+            except Exception:
+                continue
+        return False
 
     async def _play_elevenlabs(self, text: str, output_path: str = None) -> bool:
         if output_path is None:

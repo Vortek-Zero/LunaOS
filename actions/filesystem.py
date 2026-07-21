@@ -18,9 +18,13 @@ HOME = Path.home()
 ALLOWED_ROOTS = [HOME, Path("/tmp"), WORKSPACE_DIR]
 
 
+from actions.path_resolver import resolve_path
+
+
 class FilesystemManager:
     def _resolve(self, path_str: str) -> Path:
-        p = Path(path_str).expanduser()
+        resolved_str = resolve_path(path_str)
+        p = Path(resolved_str).expanduser()
         if not p.is_absolute():
             p = HOME / p
         resolved = p.resolve()
