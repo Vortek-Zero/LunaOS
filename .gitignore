@@ -9,23 +9,19 @@ brain/chroma_db/
 build/
 claw-code/
 client_secret_*.json
-# Config overrides
 config/ssl/
+config/user_profile.json
+config/devices.json
+config/goals.json
 credentials.json
 crewAI/
-data/browser_profile/
-data/cache.json
-data/chat_history.db
-data/settings.json
-data/users.json
+data/
 *.db-shm
 *.db-wal
 dist/
 .DS_Store
 *.egg-info/
 .env
-# Environment & secrets
-# External repos
 langgraph/
 lights/tinytuya.json
 *.log
@@ -35,25 +31,20 @@ luna-desktop/packaging/aur/src/
 luna-desktop/packaging/aur/*.zst
 luna-desktop/src-tauri/icons_backup/
 luna-desktop/src-tauri/target/
-# ML models
 n8n_install/
 Nina-folders/
 *.onnx
 openclaw/
 OpenJarvis/
-# OS files
 piper_models/
 __pycache__/
 *.py[cod]
-# Python
-# Runtime data
-# Tauri desktop
 temp/
 Terminal-assistent/
 token.json
-# uv
 uv.lock
 .venv/
 venv/
-# Virtual environments
 voice/models/
+.mypy_cache/
+*.jsonl
