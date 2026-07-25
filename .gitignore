@@ -23,6 +23,9 @@ dist/
 *.egg-info/
 .env
 langgraph/
+lights/devices.json
+lights/tuya-raw.json
+lights/snapshot.json
 lights/tinytuya.json
 *.log
 luna-desktop/packaging/aur/LunaOS/
