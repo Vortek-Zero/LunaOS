@@ -15,9 +15,9 @@ except OSError:
 import speech_recognition as sr
 import tinytuya
 
-DEVICE_ID = "eb64a81b56fb8003dexqdd"
-LOCAL_KEY = "Ek&~Ah`=4s}5.'Z#"
-IP_DEVICE = "192.168.1.5"
+DEVICE_ID = os.getenv("TUYA_DEVICE_ID", "eb64a81b56fb8003dexqdd")
+LOCAL_KEY = os.getenv("TUYA_LOCAL_KEY", "Ek&~Ah`=4s}5.'Z#")
+IP_DEVICE = os.getenv("TUYA_IP", "192.168.1.5")
 MIC_INDEX = 9
 
 device = tinytuya.OutletDevice(dev_id=DEVICE_ID, address=IP_DEVICE, local_key=LOCAL_KEY, version=3.4)

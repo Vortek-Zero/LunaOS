@@ -21,7 +21,7 @@ def main():
         print(gm.create_calendar_event("Reunião de Teste com Luna", now))
 
         print("\n--- TESTE 4: ENVIANDO EMAIL ---")
-        print(gm.send_email("miguelpera282@gmail.com", "Assunto Teste Luna", "Olá, email enviado pela Luna!"))
+        print(gm.send_email("email@exemplo.com", "Assunto Teste Luna", "Olá, email enviado pela Luna!"))
 
         print("\n--- TESTE 5: GOOGLE DRIVE LIST ---")
         print(gm.google_drive_list(5))

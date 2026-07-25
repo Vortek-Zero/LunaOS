@@ -1,8 +1,10 @@
+import os
+
 import tinytuya
 
-DEVICE_ID = "eb64a81b56fb8003dexqdd"
-LOCAL_KEY = "Ek&~Ah`=4s}5.'Z#"
-IP_DEVICE = "192.168.1.5"
+DEVICE_ID = os.getenv("TUYA_DEVICE_ID", "eb64a81b56fb8003dexqdd")
+LOCAL_KEY = os.getenv("TUYA_LOCAL_KEY", "Ek&~Ah`=4s}5.'Z#")
+IP_DEVICE = os.getenv("TUYA_IP", "192.168.1.5")
 
 print("Iniciando teste de relé com tinytuya...")
 try:
